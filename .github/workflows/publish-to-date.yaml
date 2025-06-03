@@ -1,4 +1,4 @@
-name: Run Simple Node Script
+name: pubish page to date structure
 
 on:
   repository_dispatch:
