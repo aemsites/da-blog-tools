@@ -8,10 +8,14 @@ function main() {
   console.log('AEM_PAGE_PATH:', AEM_PAGE_PATH);
   // console.log(process.env); // uncomment out if you want to see all the env variables
 
-  if (AEM_PAGE_PATH && AEM_PAGE_PATH.startsWith('/drafts/')) {
-    console.log('AEM_PAGE_PATH starts with /drafts/');
+  if (
+    AEM_PAGE_PATH &&
+    AEM_PAGE_PATH.startsWith('/drafts/') &&
+    AEM_PAGE_PATH.endsWith('.md')
+  ) {
+    console.log('AEM_PAGE_PATH starts with /drafts/ and ends with .md');
   } else {
-    console.log('AEM_PAGE_PATH does not start with /drafts/');
+    console.log('AEM_PAGE_PATH does not match the required pattern');
   }
 }
 
