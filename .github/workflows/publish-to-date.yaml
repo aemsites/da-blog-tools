@@ -16,6 +16,7 @@ jobs:
     env:
       DA_TOKEN: ${{ secrets.DA_TOKEN }}
       HELIX_TOKEN: ${{ secrets.HELIX_TOKEN }}
+      AEM_PAGE_PATH: ${{ github.event.client_payload.path }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
