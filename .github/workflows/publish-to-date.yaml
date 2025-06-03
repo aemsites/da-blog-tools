@@ -1,0 +1,27 @@
+name: Run Simple Node Script
+
+on:
+  repository_dispatch:
+    types:
+      - resource-published
+  workflow_dispatch:
+    inputs:
+      aem-page-path:
+        description: 'Path of individual page published.'
+        required: true
+
+jobs:
+  run-node-script:
+    runs-on: ubuntu-latest
+    env:
+      DA_TOKEN: ${{ secrets.DA_TOKEN }}
+      HELIX_TOKEN: ${{ secrets.HELIX_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run simple script
+        run: node .github/actions/publisher.js 
