@@ -24,5 +24,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Run simple script
+      - name: Install dependencies
+        working-directory: .github/actions
+        run: npm install
+      - name: Run publisher
         run: node .github/actions/publisher.js 
