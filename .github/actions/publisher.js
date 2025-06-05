@@ -92,7 +92,7 @@ async function main() {
 
   } else {
     log('error', 'AEM_PAGE_PATH does not match the required pattern');
-    process.exit(1);
+    return;
   }
 }
 
