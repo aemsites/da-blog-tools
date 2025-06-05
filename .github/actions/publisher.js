@@ -66,6 +66,7 @@ function mdToHtml(path) {
  * Main entry point
  */
 async function main() {
+  log('info', `DEBUG_EVENT_PAYLOAD: ${process.env.DEBUG_EVENT_PAYLOAD}`);
   log('info', `AEM_PAGE_PATH: ${AEM_PAGE_PATH}`);
 
   const hasValidPrefix =
@@ -91,7 +92,7 @@ async function main() {
     await publishPage(dirPath, 'live');
 
   } else {
-    log('error', 'AEM_PAGE_PATH does not match the required pattern');
+    log('info', 'AEM_PAGE_PATH does not match the required pattern');
     return;
   }
 }

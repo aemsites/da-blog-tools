@@ -19,6 +19,7 @@ jobs:
       AEM_PAGE_PATH: ${{ github.event.client_payload.path }}
       ORG_ID: ${{ vars.ORG_ID }}
       REPO: ${{ vars.REPO }}
+      DEBUG_EVENT_PAYLOAD: ${{ toJson(github.event) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
