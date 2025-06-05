@@ -17,6 +17,8 @@ const HELIX_TOKEN = requireEnv('HELIX_TOKEN');
 const AEM_PAGE_PATH = requireEnv('AEM_PAGE_PATH');
 const ORG_ID = requireEnv('ORG_ID');
 const REPO = requireEnv('REPO');
+const HLX_ORG = requireEnv('HLX_ORG');
+const HLX_SITE = requireEnv('HLX_SITE');
 const SITE_ROOT = 'blog';
 const PUBLISH_ROOT = `/${ORG_ID}/${REPO}/${SITE_ROOT}/`;
 
@@ -66,8 +68,10 @@ function mdToHtml(path) {
  * Main entry point
  */
 async function main() {
-  log('info', `DEBUG_EVENT_PAYLOAD: ${process.env.DEBUG_EVENT_PAYLOAD}`);
+  // log('info', `DEBUG_EVENT_PAYLOAD: ${process.env.DEBUG_EVENT_PAYLOAD}`); // uncomment to debug event payload (see what gh sends)
   log('info', `AEM_PAGE_PATH: ${AEM_PAGE_PATH}`);
+  log('info', `HLX_ORG: ${HLX_ORG}`);
+  log('info', `HLX_SITE: ${HLX_SITE}`);
 
   const hasValidPrefix =
     AEM_PAGE_PATH && VALID_PREFIXES.some(prefix => AEM_PAGE_PATH.startsWith(prefix));
