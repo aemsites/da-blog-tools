@@ -21,6 +21,8 @@ jobs:
       REPO: ${{ vars.REPO }}
       HLX_ORG: ${{ github.event.client_payload.org }}
       HLX_SITE: ${{ github.event.client_payload.site }}
+      SITE_CONFIG: ${{ vars.SITE_CONFIG }}
+      VALID_PREFIXES: ${{ vars.VALID_PREFIXES }}
       DEBUG_EVENT_PAYLOAD: ${{ toJson(github.event) }}
     steps:
       - name: Checkout repository

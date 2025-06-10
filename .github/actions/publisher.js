@@ -15,16 +15,37 @@ function requireEnv(name) {
 const DA_TOKEN = requireEnv('DA_TOKEN');
 const HELIX_TOKEN = requireEnv('HELIX_TOKEN');
 const AEM_PAGE_PATH = requireEnv('AEM_PAGE_PATH');
-const ORG_ID = requireEnv('ORG_ID');
-const REPO = requireEnv('REPO');
 const HLX_ORG = requireEnv('HLX_ORG');
 const HLX_SITE = requireEnv('HLX_SITE');
-const SITE_ROOT = 'blog';
-const PUBLISH_ROOT = `/${ORG_ID}/${REPO}/${SITE_ROOT}/`;
+const SITE_CONFIG_JSON = requireEnv('SITE_CONFIG');
+const VALID_PREFIXES_JSON = requireEnv('VALID_PREFIXES');
+
+// Parse site configuration
+let SITE_CONFIG;
+try {
+  SITE_CONFIG = JSON.parse(SITE_CONFIG_JSON);
+} catch (err) {
+  throw new Error(`Invalid SITE_CONFIG JSON: ${err.message}`);
+}
+
+// Parse valid prefixes
+let VALID_PREFIXES;
+try {
+  VALID_PREFIXES = JSON.parse(VALID_PREFIXES_JSON);
+  if (!Array.isArray(VALID_PREFIXES)) {
+    throw new Error('VALID_PREFIXES must be an array');
+  }
+} catch (err) {
+  throw new Error(`Invalid VALID_PREFIXES JSON: ${err.message}`);
+}
+
+// Validate HLX_SITE and get corresponding SITE_ROOT
+const SITE_ROOT = SITE_CONFIG[HLX_SITE];
+
+const PUBLISH_ROOT = `/${HLX_ORG}/${HLX_SITE}/${SITE_ROOT}/`;
 
 const DA_URL = 'https://admin.da.live';
 const HELIX_URL = 'https://admin.hlx.page';
-const VALID_PREFIXES = ['/drafts/'];
 
 /**
  * Logs messages with a consistent prefix.
@@ -72,6 +93,13 @@ async function main() {
   log('info', `AEM_PAGE_PATH: ${AEM_PAGE_PATH}`);
   log('info', `HLX_ORG: ${HLX_ORG}`);
   log('info', `HLX_SITE: ${HLX_SITE}`);
+  log('info', `SITE_ROOT: ${SITE_ROOT || 'NOT_CONFIGURED'}`);
+
+  // Check if site is configured
+  if (!SITE_ROOT) {
+    log('info', `HLX_SITE "${HLX_SITE}" not configured. Available sites: ${Object.keys(SITE_CONFIG).join(', ')}`);
+    return;
+  }
 
   const hasValidPrefix =
     AEM_PAGE_PATH && VALID_PREFIXES.some(prefix => AEM_PAGE_PATH.startsWith(prefix));
@@ -110,7 +138,7 @@ async function unpublishPage(pagePath, environment) {
   log('info', `Unpublishing page from helix ${environment}: ${pagePath}`);
 
   try {
-    const response = await fetch(`${HELIX_URL}/${environment}/${ORG_ID}/${REPO}/main/${pagePath}`, {
+    const response = await fetch(`${HELIX_URL}/${environment}/${HLX_ORG}/${HLX_SITE}/main/${pagePath}`, {
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${HELIX_TOKEN}`,
@@ -140,7 +168,7 @@ async function publishPage(pagePath, environment) {
   log('info', `Publishing page to helix ${environment}: ${pagePath}`);
 
   try {
-    const response = await fetch(`${HELIX_URL}/${environment}/${ORG_ID}/${REPO}/main/${pagePath}`, {
+    const response = await fetch(`${HELIX_URL}/${environment}/${HLX_ORG}/${HLX_SITE}/main/${pagePath}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${HELIX_TOKEN}`,
@@ -182,7 +210,7 @@ async function movePageToDateStructure(pagePath) {
   form.set('destination', dirPath);
 
   try {
-    const response = await fetch(`${DA_URL}/move/${ORG_ID}/${REPO}/${sourcePath}`, {
+    const response = await fetch(`${DA_URL}/move/${HLX_ORG}/${HLX_SITE}/${sourcePath}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${DA_TOKEN}`,

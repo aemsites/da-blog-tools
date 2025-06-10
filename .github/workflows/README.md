@@ -26,10 +26,41 @@ Add these secrets to your repository settings (`Settings > Secrets and variables
 
 Add these variables to your repository settings (`Settings > Secrets and variables > Actions > Variables`):
 
-- `ORG_ID` - Your organization ID
-- `REPO` - Your repository name
+- `SITE_CONFIG` - JSON mapping of site names to root paths (see Site Configuration below)
+- `VALID_PREFIXES` - JSON array of valid path prefixes (see Valid Prefixes below)
 
-### 3. Dependencies
+### 3. Site Configuration
+
+The `SITE_CONFIG` variable should contain a JSON object mapping HLX site names to their corresponding root paths:
+
+```json
+{
+  "msft-blogs": "blog",
+  "product-docs": "docs", 
+  "marketing-site": "content",
+  "help-center": "help"
+}
+```
+
+**Example:**
+- If `HLX_SITE` is `"msft-blogs"`, pages will be published to `/blog/YYYY/MM/DD/`
+- If `HLX_SITE` is `"product-docs"`, pages will be published to `/docs/YYYY/MM/DD/`
+- If `HLX_SITE` is not in the configuration, the workflow will complete gracefully without processing
+
+### 4. Valid Prefixes
+
+The `VALID_PREFIXES` variable should contain a JSON array of path prefixes that are valid for processing:
+
+```json
+["/drafts/", "/staging/", "/temp/"]
+```
+
+**Example:**
+- Pages must start with one of these prefixes to be processed
+- If `AEM_PAGE_PATH` doesn't start with any valid prefix, the workflow will complete gracefully without processing
+- Common use case: `["/drafts/"]` to only process draft pages
+
+### 5. Dependencies
 
 The workflow automatically installs Node.js dependencies in `.github/actions/`:
 
@@ -79,6 +110,8 @@ The workflow uses these environment variables:
 | `REPO` | Variable | Repository name |
 | `HLX_ORG` | Event payload | Helix organization |
 | `HLX_SITE` | Event payload | Helix site |
+| `SITE_CONFIG` | Variable | JSON mapping of sites to root paths |
+| `VALID_PREFIXES` | Variable | JSON array of valid path prefixes |
 | `DEBUG_EVENT_PAYLOAD` | Event payload | Full event data (for debugging) |
 
 ## File Structure
@@ -97,19 +130,22 @@ The workflow uses these environment variables:
 
 The workflow processes paths as follows:
 
-**Input:** `/drafts/my-article.md`
+**Input:** `/drafts/my-article.md` (with `HLX_SITE: "msft-blogs"`)
 **Output:** `/blog/2024/01/15/my-article.html`
 
 - Removes `/drafts/` prefix
 - Adds date-based directory structure (`YYYY/MM/DD`)
 - Converts `.md` extension to `.html`
-- Adds blog root path
+- Adds configured site root path based on `SITE_CONFIG`
 
 ## Error Handling
 
-- **Invalid path pattern**: Workflow completes successfully but logs info message and stops processing
+- **Unconfigured site**: Workflow completes successfully but logs info message and stops processing
+- **Invalid path pattern**: Workflow completes successfully but logs info message and stops processing  
 - **API errors**: Workflow fails with detailed error messages
 - **Missing environment variables**: Workflow fails at startup with clear error message
+- **Invalid SITE_CONFIG JSON**: Workflow fails at startup with parsing error
+- **Invalid VALID_PREFIXES JSON**: Workflow fails at startup with parsing error
 
 ## Troubleshooting
 
