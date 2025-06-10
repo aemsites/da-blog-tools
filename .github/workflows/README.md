@@ -35,7 +35,7 @@ The `SITE_CONFIG` variable should contain a JSON object mapping HLX site names t
 
 ```json
 {
-  "msft-blogs": "blog",
+  "adbe-blogs": "blog",
   "product-docs": "docs", 
   "marketing-site": "content",
   "help-center": "help"
