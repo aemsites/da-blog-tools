@@ -43,7 +43,7 @@ The `SITE_CONFIG` variable should contain a JSON object mapping HLX site names t
 ```
 
 **Example:**
-- If `HLX_SITE` is `"msft-blogs"`, pages will be published to `/blog/YYYY/MM/DD/`
+- If `HLX_SITE` is `"adbe-blogs"`, pages will be published to `/blog/YYYY/MM/DD/`
 - If `HLX_SITE` is `"product-docs"`, pages will be published to `/docs/YYYY/MM/DD/`
 - If `HLX_SITE` is not in the configuration, the workflow will complete gracefully without processing
 
@@ -130,7 +130,7 @@ The workflow uses these environment variables:
 
 The workflow processes paths as follows:
 
-**Input:** `/drafts/my-article.md` (with `HLX_SITE: "msft-blogs"`)
+**Input:** `/drafts/my-article.md` (with `HLX_SITE: "adbe-blogs"`)
 **Output:** `/blog/2024/01/15/my-article.html`
 
 - Removes `/drafts/` prefix
