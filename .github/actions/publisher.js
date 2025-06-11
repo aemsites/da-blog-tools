@@ -12,13 +12,19 @@ function requireEnv(name) {
   return process.env[name];
 }
 
-const DA_TOKEN = requireEnv('DA_TOKEN');
+// const DA_TOKEN = requireEnv('DA_TOKEN');
 const HELIX_TOKEN = requireEnv('HELIX_TOKEN');
 const AEM_PAGE_PATH = requireEnv('AEM_PAGE_PATH');
 const HLX_ORG = requireEnv('HLX_ORG');
 const HLX_SITE = requireEnv('HLX_SITE');
 const SITE_CONFIG_JSON = requireEnv('SITE_CONFIG');
 const VALID_PREFIXES_JSON = requireEnv('VALID_PREFIXES');
+
+// DA items
+const IMS_CLIENT_ID = requireEnv('IMS_CLIENT_ID');
+const IMS_CLIENT_SECRET = requireEnv('IMS_CLIENT_SECRET');
+const IMS_GRANT_TYPE = requireEnv('IMS_GRANT_TYPE');
+const IMS_PERM_CODE = requireEnv('IMS_PERM_CODE');
 
 // Parse site configuration
 let SITE_CONFIG;
@@ -86,6 +92,45 @@ function mdToHtml(path) {
 }
 
 /**
+ * Gets a new IMS token from Adobe IMS
+ * @returns {Promise<string>} The access token
+ */
+async function getImsToken() {
+  log('info', 'Getting new IMS token...');
+  
+  const params = new URLSearchParams();
+  params.append('client_id', IMS_CLIENT_ID);
+  params.append('client_secret', IMS_CLIENT_SECRET);
+  params.append('grant_type', IMS_GRANT_TYPE);
+  params.append('code', IMS_PERM_CODE);
+
+  try {
+    const response = await fetch('https://ims-na1.adobelogin.com/ims/token/v4', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+      },
+      body: params,
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      log('info', 'IMS token retrieved successfully');
+      return data.access_token;
+    } else {
+      log('error', `IMS token request failed with status ${response.status}`);
+      const errorText = await response.text();
+      log('error', `IMS error response: ${errorText}`);
+      throw new Error(`Failed to get IMS token: ${response.status}`);
+    }
+  } catch (err) {
+    log('error', `Error getting IMS token: ${err}`);
+    throw err;
+  }
+}
+
+/**
  * Main entry point
  */
 async function main() {
@@ -101,6 +146,9 @@ async function main() {
     return;
   }
 
+  // Get fresh DA token
+  const DA_TOKEN = await getImsToken();
+
   const hasValidPrefix =
     AEM_PAGE_PATH && VALID_PREFIXES.some(prefix => AEM_PAGE_PATH.startsWith(prefix));
 
@@ -114,7 +162,7 @@ async function main() {
     await unpublishPage(AEM_PAGE_PATH, 'preview');
 
     // step 3: move da page to date structure
-    const dirPath = await movePageToDateStructure(AEM_PAGE_PATH);
+    const dirPath = await movePageToDateStructure(AEM_PAGE_PATH, DA_TOKEN);
     log('info', `new path: ${dirPath}`);
 
     // step 4: publish page to preview
@@ -190,9 +238,10 @@ async function publishPage(pagePath, environment) {
 /**
  * Moves a page to a date-based directory structure.
  * @param {string} pagePath
+ * @param {string} DA_TOKEN
  * @returns {Promise<string>} The new path
  */
-async function movePageToDateStructure(pagePath) {
+async function movePageToDateStructure(pagePath, DA_TOKEN) {
   // Use date-fns for formatting
   const datePath = format(new Date(), 'yyyy/MM/dd');
 

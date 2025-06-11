@@ -6,12 +6,13 @@ This GitHub Actions workflow automatically publishes pages from drafts to a date
 
 The `publish-to-date.yaml` workflow performs the following steps:
 
-1. **Unpublishes** the page from Helix live environment
-2. **Unpublishes** the page from Helix preview environment  
-3. **Moves** the page from `/drafts/` to a date-based structure (`/blog/YYYY/MM/DD/`)
-4. **Converts** `.md` files to `.html` during the move
-5. **Publishes** the page to Helix preview environment
-6. **Publishes** the page to Helix live environment
+1. **Authenticates** with Adobe IMS to get a fresh Document Authoring token
+2. **Unpublishes** the page from Helix live environment
+3. **Unpublishes** the page from Helix preview environment  
+4. **Moves** the page from `/drafts/` to a date-based structure (`/blog/YYYY/MM/DD/`)
+5. **Converts** `.md` files to `.html` during the move
+6. **Publishes** the page to Helix preview environment
+7. **Publishes** the page to Helix live environment
 
 ## Installation
 
@@ -19,8 +20,9 @@ The `publish-to-date.yaml` workflow performs the following steps:
 
 Add these secrets to your repository settings (`Settings > Secrets and variables > Actions`):
 
-- `DA_TOKEN` - Document Authoring API token (creating a long lived token is TBD)
 - `HELIX_TOKEN` - Helix API token (how to create one: https://www.aem.live/docs/admin.html#tag/siteConfig/operation/createSiteApiKey)
+- `IMS_CLIENT_SECRET` - Adobe IMS client secret for Document Authoring authentication
+- `IMS_PERM_CODE` - Adobe IMS permanent code for Document Authoring authentication
 
 ### 2. Required Variables
 
@@ -28,6 +30,8 @@ Add these variables to your repository settings (`Settings > Secrets and variabl
 
 - `SITE_CONFIG` - JSON mapping of site names to root paths (see Site Configuration below)
 - `VALID_PREFIXES` - JSON array of valid path prefixes (see Valid Prefixes below)
+- `IMS_CLIENT_ID` - Adobe IMS client ID for Document Authoring authentication
+- `IMS_GRANT_TYPE` - Adobe IMS grant type (typically "authorization_code")
 
 ### 3. Site Configuration
 
@@ -103,15 +107,18 @@ The workflow uses these environment variables:
 
 | Variable | Source | Description |
 |----------|--------|-------------|
-| `DA_TOKEN` | Secret | Document Authoring API token |
 | `HELIX_TOKEN` | Secret | Helix API token |
 | `AEM_PAGE_PATH` | Event payload | Path of the page to publish |
-| `ORG_ID` | Variable | Organization ID |
-| `REPO` | Variable | Repository name |
+| `ORG_ID` | Variable | Organization ID (deprecated, from event payload) |
+| `REPO` | Variable | Repository name (deprecated, from event payload) |
 | `HLX_ORG` | Event payload | Helix organization |
 | `HLX_SITE` | Event payload | Helix site |
 | `SITE_CONFIG` | Variable | JSON mapping of sites to root paths |
 | `VALID_PREFIXES` | Variable | JSON array of valid path prefixes |
+| `IMS_CLIENT_ID` | Variable | Adobe IMS client ID |
+| `IMS_CLIENT_SECRET` | Secret | Adobe IMS client secret |
+| `IMS_GRANT_TYPE` | Variable | Adobe IMS grant type |
+| `IMS_PERM_CODE` | Secret | Adobe IMS permanent code |
 | `DEBUG_EVENT_PAYLOAD` | Event payload | Full event data (for debugging) |
 
 ## File Structure
@@ -138,10 +145,24 @@ The workflow processes paths as follows:
 - Converts `.md` extension to `.html`
 - Adds configured site root path based on `SITE_CONFIG`
 
+## Authentication
+
+The workflow uses two different authentication methods:
+
+### Document Authoring (DA) Authentication
+- Uses Adobe IMS OAuth flow
+- Automatically generates fresh tokens on each run
+- Requires `IMS_CLIENT_ID`, `IMS_CLIENT_SECRET`, `IMS_GRANT_TYPE`, and `IMS_PERM_CODE`
+
+### Helix Authentication
+- Uses a long-lived API key
+- Requires `HELIX_TOKEN` secret
+
 ## Error Handling
 
 - **Unconfigured site**: Workflow completes successfully but logs info message and stops processing
 - **Invalid path pattern**: Workflow completes successfully but logs info message and stops processing  
+- **IMS authentication failure**: Workflow fails with detailed error messages
 - **API errors**: Workflow fails with detailed error messages
 - **Missing environment variables**: Workflow fails at startup with clear error message
 - **Invalid SITE_CONFIG JSON**: Workflow fails at startup with parsing error
@@ -160,14 +181,16 @@ log('info', `DEBUG_EVENT_PAYLOAD: ${process.env.DEBUG_EVENT_PAYLOAD}`);
 ### Common Issues
 
 1. **Missing environment variables**: Ensure all required secrets and variables are set
-2. **Invalid path format**: Path must start with `/drafts/` and end with `.md`
-3. **API authentication**: Verify tokens have correct permissions
-4. **Network issues**: Check if DA and Helix APIs are accessible
+2. **Invalid path format**: Path must start with a valid prefix and end with `.md`
+3. **IMS authentication**: Verify IMS credentials have correct permissions and are not expired
+4. **Helix API authentication**: Verify Helix token has correct permissions
+5. **Network issues**: Check if DA and Helix APIs are accessible
 
 ## API Endpoints
 
 The workflow interacts with these APIs:
 
+- **Adobe IMS**: `https://ims-na1.adobelogin.com/ims/token/v4`
 - **Document Authoring**: `https://admin.da.live`
 - **Helix**: `https://admin.hlx.page`
 

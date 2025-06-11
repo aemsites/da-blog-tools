@@ -14,7 +14,6 @@ jobs:
   run-node-script:
     runs-on: ubuntu-latest
     env:
-      DA_TOKEN: ${{ secrets.DA_TOKEN }}
       HELIX_TOKEN: ${{ secrets.HELIX_TOKEN }}
       AEM_PAGE_PATH: ${{ github.event.client_payload.path }}
       ORG_ID: ${{ vars.ORG_ID }}
@@ -24,6 +23,10 @@ jobs:
       SITE_CONFIG: ${{ vars.SITE_CONFIG }}
       VALID_PREFIXES: ${{ vars.VALID_PREFIXES }}
       DEBUG_EVENT_PAYLOAD: ${{ toJson(github.event) }}
+      IMS_CLIENT_ID: ${{ vars.IMS_CLIENT_ID }}
+      IMS_CLIENT_SECRET: ${{ secrets.IMS_CLIENT_SECRET }}
+      IMS_GRANT_TYPE: ${{ vars.IMS_GRANT_TYPE }}
+      IMS_PERM_CODE: ${{ secrets.IMS_PERM_CODE }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
