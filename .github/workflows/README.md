@@ -20,7 +20,7 @@ The `publish-to-date.yaml` workflow performs the following steps:
 Add these secrets to your repository settings (`Settings > Secrets and variables > Actions`):
 
 - `DA_TOKEN` - Document Authoring API token (creating a long lived token is TBD)
-- `HELIX_TOKEN` - Helix API token (how to create one: https://www.aem.live/docs/admin.html#tag/siteConfig/operation/updateSiteToken)
+- `HELIX_TOKEN` - Helix API token (how to create one: https://www.aem.live/docs/admin.html#tag/siteConfig/operation/createSiteApiKey)
 
 ### 2. Required Variables
 
