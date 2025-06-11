@@ -117,7 +117,6 @@ The workflow uses these environment variables:
 | `VALID_PREFIXES` | Variable | JSON array of valid path prefixes |
 | `IMS_CLIENT_ID` | Variable | Adobe IMS client ID |
 | `IMS_CLIENT_SECRET` | Secret | Adobe IMS client secret |
-| `IMS_GRANT_TYPE` | Variable | Adobe IMS grant type |
 | `IMS_PERM_CODE` | Secret | Adobe IMS permanent code |
 | `DEBUG_EVENT_PAYLOAD` | Event payload | Full event data (for debugging) |
 

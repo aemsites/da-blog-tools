@@ -25,7 +25,6 @@ jobs:
       DEBUG_EVENT_PAYLOAD: ${{ toJson(github.event) }}
       IMS_CLIENT_ID: ${{ vars.IMS_CLIENT_ID }}
       IMS_CLIENT_SECRET: ${{ secrets.IMS_CLIENT_SECRET }}
-      IMS_GRANT_TYPE: ${{ vars.IMS_GRANT_TYPE }}
       IMS_PERM_CODE: ${{ secrets.IMS_PERM_CODE }}
     steps:
       - name: Checkout repository

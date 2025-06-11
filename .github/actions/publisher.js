@@ -23,7 +23,7 @@ const VALID_PREFIXES_JSON = requireEnv('VALID_PREFIXES');
 // DA items
 const IMS_CLIENT_ID = requireEnv('IMS_CLIENT_ID');
 const IMS_CLIENT_SECRET = requireEnv('IMS_CLIENT_SECRET');
-const IMS_GRANT_TYPE = requireEnv('IMS_GRANT_TYPE');
+const IMS_GRANT_TYPE = 'authorization_code';
 const IMS_PERM_CODE = requireEnv('IMS_PERM_CODE');
 
 // Parse site configuration
