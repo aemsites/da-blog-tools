@@ -24,6 +24,8 @@ Add these secrets to your repository settings (`Settings > Secrets and variables
 - `IMS_CLIENT_SECRET` - Adobe IMS client secret for Document Authoring authentication
 - `IMS_PERM_CODE` - Adobe IMS permanent code for Document Authoring authentication
 
+> NOTE: the user that the `IMS_CLIENT_ID` is associated with will need to be added to the PERMISSIONS sheet with `write` access the site you want this workflow to fire otherwise you may get a 40X error.
+
 ### 2. Required Variables
 
 Add these variables to your repository settings (`Settings > Secrets and variables > Actions > Variables`):
