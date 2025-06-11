@@ -111,8 +111,6 @@ The workflow uses these environment variables:
 |----------|--------|-------------|
 | `HELIX_TOKEN` | Secret | Helix API token |
 | `AEM_PAGE_PATH` | Event payload | Path of the page to publish |
-| `ORG_ID` | Variable | Organization ID (deprecated, from event payload) |
-| `REPO` | Variable | Repository name (deprecated, from event payload) |
 | `HLX_ORG` | Event payload | Helix organization |
 | `HLX_SITE` | Event payload | Helix site |
 | `SITE_CONFIG` | Variable | JSON mapping of sites to root paths |

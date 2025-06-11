@@ -16,8 +16,6 @@ jobs:
     env:
       HELIX_TOKEN: ${{ secrets.HELIX_TOKEN }}
       AEM_PAGE_PATH: ${{ github.event.client_payload.path }}
-      ORG_ID: ${{ vars.ORG_ID }}
-      REPO: ${{ vars.REPO }}
       HLX_ORG: ${{ github.event.client_payload.org }}
       HLX_SITE: ${{ github.event.client_payload.site }}
       SITE_CONFIG: ${{ vars.SITE_CONFIG }}
