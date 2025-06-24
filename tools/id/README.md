@@ -50,7 +50,7 @@ https://main--msft-blogs-tools--aemsites.aem.page/blogs/?p=123456
 
 ## Data Storage
 
-The tool maintains a JSON sheet at `.da/ghost-links.json` with the following structure:
+The tool maintains a JSON sheet at `.da/ghost-links.json` with something like this structure:
 
 ```json
 {
