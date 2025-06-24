@@ -21,8 +21,9 @@ This tool is designed to work within Adobe's Document Authoring environment. It 
 2. **Add/Edit the library sheet** with the following values:
    - title: Insert-Id
    - path: /tools/id/generate-id.html
+3. create a sheet at `.da\ghost-links`. No need to preview or publish. You should also consider changing the name from `.da` to something more meaningful. If you do, update the variable in the `generate-id.js`.
 
-3. **Update the Ghost Link Base** (in `generate-id.js`):
+4. **Update the Ghost Link Base** (in `generate-id.js`):
    ```javascript
    const GHOST_LINK_BASE = '/blogs/'; // Change to your site's base path
    ```
@@ -50,7 +51,7 @@ https://main--msft-blogs-tools--aemsites.aem.page/blogs/?p=123456
 
 ## Data Storage
 
-The tool maintains a JSON sheet at `.da/ghost-links.json` with something like this structure:
+The tool maintains a JSON sheet (you should create it ahead of using it) at `.da/ghost-links.json` with something like this structure:
 
 ```json
 {
@@ -70,6 +71,13 @@ The tool maintains a JSON sheet at `.da/ghost-links.json` with something like th
 ```
 
 ## Technical Details
+
+### Edge worker implementation
+
+On `.page` requests, look for the `p` query string. If it contains a numeric value, request the ghost link json:
+`https://admin.da.live/source/{{org}}/{{site}}/.da/ghost-links.json`
+
+This will contain a source (id) to URL map. Destination is the path to the page. you can then issue a HTTP 301 redirect to that path.
 
 ### Dependencies
 - **DA SDK**: `https://da.live/nx/utils/sdk.js`
