@@ -1,6 +1,8 @@
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { DA_ORIGIN } from 'https://da.live/nx/public/utils/constants.js';
 
+// change this prefix to something like '.your-prefix/ghost-links.json'. Using .da might result in 
+// the sheet being inaccessible to the tool at some point.
 const GHOST_LINKS_SHEET = '.da/ghost-links.json';
 // change this to the url of the site you are working on
 const GHOST_LINK_BASE = '/blogs/';
