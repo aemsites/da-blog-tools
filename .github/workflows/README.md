@@ -23,7 +23,7 @@ Add these secrets to your repository settings (`Settings > Secrets and variables
 - `HELIX_TOKEN` - Helix API token (how to create one: https://www.aem.live/docs/admin.html#tag/siteConfig/operation/createSiteApiKey)
 - `IMS_CLIENT_SECRET` - Adobe IMS client secret for Document Authoring authentication
 
-> NOTE: the user that the `IMS_CLIENT_ID` is associated with will need to be added to the PERMISSIONS sheet with `write` access the site you want this workflow to fire otherwise you may get a 40X error.
+> NOTE: the user that the `IMS_CLIENT_ID` is associated with will need to be added to the PERMISSIONS sheet with `write` access the site you want this workflow to fire otherwise you may get a 40X error. This username is named 'Technical Account Email' in the developer console where you generated the token and retreived the secret.
 
 ### 2. Required Variables
 
@@ -149,7 +149,7 @@ The workflow uses two different authentication methods:
 ### Document Authoring (DA) Authentication
 - Uses Adobe IMS OAuth flow
 - Automatically generates fresh tokens on each run
-- Requires `IMS_CLIENT_ID`, `IMS_CLIENT_SECRET`, `IMS_GRANT_TYPE`, and `IMS_PERM_CODE`
+- Requires `IMS_CLIENT_ID` and `IMS_CLIENT_SECRET`
 
 ### Helix Authentication
 - Uses a long-lived API key
