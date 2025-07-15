@@ -102,6 +102,7 @@ async function getImsToken() {
   params.append('client_id', IMS_CLIENT_ID);
   params.append('client_secret', IMS_CLIENT_SECRET);
   params.append('grant_type', 'client_credentials');
+  params.append('scope', IMS_SCOPE);
 
   try {
     const response = await fetch('https://ims-na1.adobelogin.com/ims/token/v4', {
