@@ -1,4 +1,4 @@
 mountpoints:
   /:
-    url: https://content.da.live/aemsites/msft-blogs-tools/
+    url: https://content.da.live/aemsites/da-blogs-tools/
     type: markup
