@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page Scheduler</title>
+  <link rel="stylesheet" href="scheduler.css">
+</head>
+<body>
+  <div class="scheduler-form-wrapper">
+    <form class="scheduler-form" role="form" aria-label="Schedule page form">
+      <div class="input-group">
+        <label for="page-path">Page</label>
+        <input type="text" id="page-path" readonly aria-label="Current page path">
+      </div>
+
+      <div class="input-group">
+        <label for="action-select">Action</label>
+        <select id="action-select" class="action-select" aria-label="Select action to schedule">
+          <option value="preview">Preview</option>
+          <option value="publish">Publish</option>
+          <option value="unpublish">Unpublish</option>
+        </select>
+      </div>
+
+      <div class="input-group">
+        <label for="date-input">When</label>
+        <div class="cron-expression-container" role="group" aria-label="Schedule date and time">
+          <input type="date" id="date-input" aria-label="Schedule date">
+          <input type="time" id="time-input" aria-label="Schedule time">
+          <button type="button" class="custom-button" aria-label="Switch to custom cron expression">Custom</button>
+          <input type="text" class="custom-input" id="custom-input" placeholder="Enter cron expression" aria-label="Custom cron expression">
+        </div>
+      </div>
+
+      <div class="current-schedule-label" role="heading" aria-level="2">
+        <span>Active Schedules </span>
+        <img src="/.da/icons/info-icon.png" class="info-icon" alt="Information" role="img" aria-label="Schedule information">
+      </div>
+
+      <div class="current-schedule" role="region" aria-label="Active schedules">
+        <div class="schedule-content"></div>
+      </div>
+
+      <div class="button-group">
+        <div class="message-wrapper" role="status" aria-live="polite">
+          <span class="message"></span>
+        </div>
+        <div class="button-actions">
+          <button type="button" class="docs-button" aria-label="Open scheduling documentation in new tab">Read Documentation</button>
+          <button type="button" class="schedule-button" aria-label="Schedule the selected action">
+            <img src="/.da/icons/pending-icon.png" alt="">
+            Schedule
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+  <script type="module" src="scheduler.js"></script>
+</body>
+</html>
