@@ -22,7 +22,6 @@ Add these secrets to your repository settings (`Settings > Secrets and variables
 
 - `HELIX_TOKEN` - Helix API token (how to create one: https://www.aem.live/docs/admin.html#tag/siteConfig/operation/createSiteApiKey)
 - `IMS_CLIENT_SECRET` - Adobe IMS client secret for Document Authoring authentication
-- `IMS_PERM_CODE` - Adobe IMS permanent code for Document Authoring authentication
 
 > NOTE: the user that the `IMS_CLIENT_ID` is associated with will need to be added to the PERMISSIONS sheet with `write` access the site you want this workflow to fire otherwise you may get a 40X error.
 
@@ -33,7 +32,6 @@ Add these variables to your repository settings (`Settings > Secrets and variabl
 - `SITE_CONFIG` - JSON mapping of site names to root paths (see Site Configuration below)
 - `VALID_PREFIXES` - JSON array of valid path prefixes (see Valid Prefixes below)
 - `IMS_CLIENT_ID` - Adobe IMS client ID for Document Authoring authentication
-- `IMS_GRANT_TYPE` - Adobe IMS grant type (typically "authorization_code")
 
 ### 3. Site Configuration
 

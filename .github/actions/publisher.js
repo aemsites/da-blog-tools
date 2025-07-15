@@ -23,8 +23,8 @@ const VALID_PREFIXES_JSON = requireEnv('VALID_PREFIXES');
 // DA items
 const IMS_CLIENT_ID = requireEnv('IMS_CLIENT_ID');
 const IMS_CLIENT_SECRET = requireEnv('IMS_CLIENT_SECRET');
-const IMS_GRANT_TYPE = 'authorization_code';
-const IMS_PERM_CODE = requireEnv('IMS_PERM_CODE');
+// these are the scopes we need for the DA API - they are the cloud manager scopes
+const IMS_SCOPE = 'openid, AdobeID, read_organizations, additional_info.projectedProductContext, read_pc.dma_aem_ams';
 
 // Parse site configuration
 let SITE_CONFIG;
@@ -101,8 +101,7 @@ async function getImsToken() {
   const params = new URLSearchParams();
   params.append('client_id', IMS_CLIENT_ID);
   params.append('client_secret', IMS_CLIENT_SECRET);
-  params.append('grant_type', IMS_GRANT_TYPE);
-  params.append('code', IMS_PERM_CODE);
+  params.append('grant_type', 'client_credentials');
 
   try {
     const response = await fetch('https://ims-na1.adobelogin.com/ims/token/v4', {
