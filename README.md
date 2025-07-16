@@ -1,10 +1,15 @@
-# AEM Block Collection
+# AEM Document Authoring (DA) Blog Tools
 
-This project provides a foundation for starting an AEM Edge Delivery Services project. It includes many common blocks and features a project might need.
+This project provides a collection of tools and plugins for implementing an AEM DA Edge Delivery Services blog project. It includes many common blocks and features a project might need.
 
 ## DA compatible
 
 This specific repo has been _slightly_ modified to be compatible with DA's live preview.
+
+## Blog features:
+* **Publish to Date** workflow. [README](.github/workflows/README.md)
+* **ID Generator** plugin. [README](tools/id/README.md)
+* **Scheduler** plugin. [README](tools/scheduler/README.md)
 
 ## Getting started
 
