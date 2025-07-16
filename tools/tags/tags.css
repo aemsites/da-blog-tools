@@ -1,0 +1,187 @@
+/* Tags Tool Styles */
+
+/* Main container */
+.tags-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: Arial, sans-serif;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Header */
+.tags-header {
+  margin: 5px 20px 5px 20px;
+  text-align: center;
+  flex-shrink: 0;
+  font-style: oblique;
+}
+
+/* Error message */
+.error-message {
+  color: #721c24;
+  background-color: #f8d7da;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #f5c6cb;
+  margin-bottom: 20px;
+}
+
+/* Warning message */
+.warning-message {
+  color: #856404;
+  background-color: #fff3cd;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #ffeaa7;
+}
+
+/* Search container */
+.search-container {
+  margin: 0 20px 20px 20px;
+  flex-shrink: 0;
+}
+
+/* Search input */
+.search-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 16px;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: #007bff;
+}
+
+.search-input:blur {
+  border-color: #dee2e6;
+}
+
+/* Results container */
+.results-container {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  margin: 0 20px;
+}
+
+/* No results message */
+.no-results {
+  padding: 20px;
+  text-align: center;
+  color: #6c757d;
+}
+
+/* Tag item */
+.tag-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f8f9fa;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tag-item:hover {
+  background-color: #f8f9fa;
+}
+
+/* Checkbox */
+.tag-checkbox {
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Tag info */
+.tag-info {
+  flex: 1;
+  cursor: pointer;
+}
+
+.tag-value {
+  font-weight: bold;
+  color: #212529;
+  margin-bottom: 4px;
+}
+
+.tag-key {
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.tag-comments {
+  font-size: 12px;
+  color: #6c757d;
+  font-style: italic;
+  margin-top: 2px;
+}
+
+/* Action buttons container */
+.action-container {
+  display: flex;
+  gap: 10px;
+  margin: 20px;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 20px 0;
+  border-top: 1px solid #dee2e6;
+  background-color: white;
+}
+
+/* Button base styles */
+.btn {
+  padding: 10px 20px;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+/* Secondary button */
+.btn-secondary {
+  background-color: #6c757d;
+}
+
+.btn-secondary:hover {
+  background-color: #5a6268;
+}
+
+/* Primary button */
+.btn-primary {
+  background-color: #007bff;
+  font-weight: bold;
+}
+
+.btn-primary:hover {
+  background-color: #0056b3;
+}
+
+/* Disabled button */
+.btn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+}
+
+/* Error button state */
+.btn-error {
+  background-color: #dc3545;
+}
+
+/* Summary */
+.summary {
+  background-color: #f8f9fa;
+  padding: 15px;
+  border-radius: 6px;
+  border: 1px solid #dee2e6;
+  font-size: 14px;
+  margin: 0 20px 20px 20px;
+  flex-shrink: 0;
+} 
