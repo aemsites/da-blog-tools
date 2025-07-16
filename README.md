@@ -2,6 +2,8 @@
 
 This project provides a collection of tools and plugins for implementing an AEM DA Edge Delivery Services blog project. It includes many common blocks and features a project might need.
 
+> try them out here: [da-blog-tools](https://da.live/#/aemsites/da-blog-tools) (ask for access)
+
 ## DA compatible
 
 This specific repo has been _slightly_ modified to be compatible with DA's live preview.
