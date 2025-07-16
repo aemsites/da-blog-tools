@@ -6,12 +6,24 @@ This project provides a collection of tools and plugins for implementing an AEM 
 
 This specific repo has been _slightly_ modified to be compatible with DA's live preview.
 
-## Blog features:
-* **Publish to Date** workflow. [README](.github/workflows/README.md)
-* **ID Generator** plugin. [README](tools/id/README.md)
-* **Scheduler** plugin. [README](tools/scheduler/README.md)
+## Blog tools features:
+- **Publish to Date** workflow. [README](.github/workflows/README.md)
+- **ID Generator** plugin. [README](tools/id/README.md)
+- **Meta ID** plugin. [README](tools/meta-id/README.md)
+- **Scheduler** plugin. [README](tools/scheduler/README.md)
 
-## Getting started
+### Enabling plugins:
+
+> Site _CONFIG_ > _library_ (sheet)
+
+| title | path | icon | ref | format | experience |
+| ----- | ---- | ---- | --- | ------ | ---------- |
+| ID Generate | `/tools/id/generate-id.html`      |
+| Meta ID     | `/tools/meta-id/meta-id.html`     | 
+| Scheduler   | `/tools/scheduler/scheduler.html` | `https://da.live/blocks/edit/img/S2_icon_Calendar_20_N.svg` |  |  | dialog |
+
+
+## Getting started developing
 
 ### 1. Github
 1. Use this template to make a new repo.
