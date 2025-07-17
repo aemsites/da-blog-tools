@@ -30,6 +30,15 @@
 
 ## Usage
 
+### Configuration
+
+> Site _CONFIG_ > _library_
+
+| title | path | icon | ref | format | experience |
+| ------- | --------------------------------------------------------------------------------------------------------- | - | - | - | - |
+| `Name`  | `/tools/plugins/da-library/da-library.html?content=/path/to/file.json&format=%3ACONTENT%3A` |   |   |   |   |
+
+
 ### Basic URL (Relative Path)
 
 ```
@@ -50,22 +59,39 @@ da-library.html?content=https://api.example.com/data/authors.json
 
 You can customize the value sent by providing a `format` parameter in the URL. Use the placeholder `CONTENT` to indicate where the item's key should be inserted.
 
-#### Example: Add a comma after each value
+#### Example: Add a comma after each value `CONTENT,`
 
 ```
 da-library.html?content=/docs/library/content-type.json&format=CONTENT%2C
 ```
 
-#### Example: Custom attribute format
+#### Example: Custom attribute format `data-bi-bhvr = 'CONTENT'`
 
 ```
 da-library.html?content=/docs/library/content-type.json&format=data-bi-bhvr%20%3D%20%27CONTENT%27
 ```
 
-- `%2C` = comma
-- `%20` = space
-- `%3D` = equals sign
-- `%27` = single quote
+#### Example: Colon-wrapped format `:CONTENT:`
+
+```
+da-library.html?content=/docs/library/content-type.json&format=%3ACONTENT%3A
+```
+
+#### Example: Double curly braces format `{{CONTENT}}`
+
+```
+da-library.html?content=/docs/library/content-type.json&format=%7B%7BCONTENT%7D%7D
+```
+
+#### URL Encoding Reference
+
+- `%2C` = comma `,`
+- `%20` = space ` `
+- `%3D` = equals sign `=`
+- `%27` = single quote `'`
+- `%3A` = colon `:`
+- `%7B` = opening curly brace `{`
+- `%7D` = closing curly brace `}`
 
 ### Result
 
