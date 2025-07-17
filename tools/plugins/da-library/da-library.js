@@ -80,11 +80,11 @@ async function displayListValue() {
         </div>
       `;
       const { context, actions } = await DA_SDK;
-      
+
       // Check if contentPath is a full URL or relative path
       const isFullUrl = contentPath.startsWith('http://') || contentPath.startsWith('https://');
       const adminApiUrl = isFullUrl ? contentPath : `${DA_ORIGIN}/source/${context.org}/${context.repo}${contentPath}`;
-      
+
       // Use regular fetch for full URLs, daFetch for relative paths
       const response = isFullUrl ? await fetch(adminApiUrl) : await actions.daFetch(adminApiUrl);
       if (!response.ok) {
