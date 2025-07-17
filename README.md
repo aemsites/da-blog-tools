@@ -13,16 +13,20 @@ This specific repo has been _slightly_ modified to be compatible with DA's live 
 - **ID Generator** plugin. [README](tools/id/README.md)
 - **Meta ID** plugin. [README](tools/meta-id/README.md)
 - **Scheduler** plugin. [README](tools/scheduler/README.md)
+- **Tagger** plugin. [README](tools/tags/README.md)
+- **DA Library** plugin. [README](tools/plugins/da-library/README.md)
 
 ### Enabling plugins:
 
 > Site _CONFIG_ > _library_ (sheet)
 
-| title | path | icon | ref | format | experience |
-| ----- | ---- | ---- | --- | ------ | ---------- |
-| ID Generate | `/tools/id/generate-id.html`      |
-| Meta ID     | `/tools/meta-id/meta-id.html`     | 
-| Scheduler   | `/tools/scheduler/scheduler.html` | `https://da.live/blocks/edit/img/S2_icon_Calendar_20_N.svg` |  |  | dialog |
+| title       | path                                                                         | icon                                                        | ref | format | experience |
+| ----------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------- | --- | ------ | ---------- |
+| ID Generate | `/tools/id/generate-id.html`                                                 |
+| Meta ID     | `/tools/meta-id/meta-id.html`                                                | 
+| Scheduler   | `/tools/scheduler/scheduler.html`                                            | `https://da.live/blocks/edit/img/S2_icon_Calendar_20_N.svg` |     |        | dialog     |
+| Tags        | `/tools/tags/tags.html`                                                      |
+| DA Library  | `/tools/plugins/da-library/da-library.html?content=/docs/library/alist.json` |
 
 
 ## Getting started developing
