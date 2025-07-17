@@ -1,5 +1,10 @@
 # DA Library Plugin
 
+## Example UI
+
+![Example UI: Content-Type Selection](screenshot.png)
+*Example: The plugin displays a list of content types fetched from a JSON source. Clicking an item sends the formatted value to the DA interface.*
+
 ## Overview
 
 **da-library** is an interim solution for integrating and using legacy `.da/config.json` plugins within the new DA platform. This plugin allows you to fetch and render lists of items from JSON sources, and send formatted values back to the DA interface. It is designed to bridge the gap while migrating from the old plugin system to the new DA SDK-based approach.
