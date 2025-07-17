@@ -1,0 +1,125 @@
+body {
+    font-family: Arial, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #f5f5f5;
+}
+
+.container {
+    background-color: white;
+    padding: 5px 5px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.result {
+    background-color: #e8f5e8;
+    border: 1px solid #4caf50;
+    border-radius: 4px;
+    padding: 3px;
+    margin: 3px 0;
+}
+
+.no-value {
+    background-color: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 4px;
+    padding: 15px;
+    margin: 20px 0;
+}
+
+h1 {
+    color: #333;
+    text-align: center;
+}
+
+.example {
+    background-color: #f8f9fa;
+    border-left: 4px solid #007bff;
+    padding: 15px;
+    margin: 20px 0;
+}
+
+/* DA Library Type List Styles */
+.da-library-type-list {
+    list-style: none;
+    padding: 0;
+    margin: 3px 0;
+}
+
+.da-library-type-item {
+    margin-bottom: 8px;
+}
+
+.da-library-type-item-btn {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid #e1e5e9;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+}
+
+.da-library-type-item-btn:hover {
+    background-color: #f8f9fa;
+    border-color: #007bff;
+}
+
+.da-library-type-item-detail {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+.da-library-type-item-detail span {
+    flex: 1;
+    font-size: 14px;
+    color: #333;
+}
+
+.icon {
+    width: 16px;
+    height: 16px;
+    fill: #666;
+}
+
+.icon-placeholder {
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    background-color: #f0f0f0;
+    border-radius: 2px;
+    font-size: 10px;
+    text-align: center;
+    line-height: 16px;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.spinner {
+    width: 30px;
+    height: 30px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #007bff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 10px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
