@@ -28,6 +28,8 @@ This specific repo has been _slightly_ modified to be compatible with DA's live 
 | Tags        | `/tools/tags/tags.html`                                                      |
 | DA Library  | `/tools/plugins/da-library/da-library.html?content=/docs/library/alist.json` |
 
+> NOTE: you can also run these plugins without copying any code to your repo by making the path: `https://main--da-blog-tools--aemsites.aem.live/{path-to-plugin}`
+
 
 ## Getting started developing
 
