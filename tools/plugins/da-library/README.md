@@ -12,8 +12,10 @@
 ## Purpose
 
 - Provide compatibility for existing `.da/config.json` plugin data sources.
-- Allow users to select and send formatted values from JSON lists.
+- Allow users to select and send formatted values (key, value) from JSON lists.
 - Support flexible formatting via a URL parameter.
+
+> NOTE: This plugin only supports key value json reponses.
 
 ## How It Works
 
