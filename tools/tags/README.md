@@ -22,7 +22,7 @@ A multi-select, searchable tag picker for Adobe Document Authoring (DA) Edge Del
        {
          "key": "tag-key-1",
          "value": "Tag Value 1",
-         "comments": "Optional description"
+         "comments": "Optional description / unsed in UI"
        },
        {
          "key": "tag-key-2",
