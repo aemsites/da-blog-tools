@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DA Chat - Configurable AI Chatbot</title>
+    <link rel="stylesheet" href="da-chat.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="chat-container">
+        <!-- Header -->
+        <div class="chat-header">
+            <h1>DA Chat</h1>
+            <div class="model-selector">
+                <select id="modelSelect" class="model-dropdown">
+                    <option value="">Select Model...</option>
+                </select>
+                <button id="configBtn" class="config-btn" title="Configure Models">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Chat Messages -->
+        <div class="chat-messages" id="chatMessages">
+            <div class="welcome-message">
+                <div class="welcome-content">
+                    <h2>Welcome to DA Chat!</h2>
+                    <p>Select a model from the dropdown above to start chatting. You can configure different models and MCP servers in the settings.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="chat-input-area">
+            <div class="input-container">
+                <textarea 
+                    id="messageInput" 
+                    class="message-input" 
+                    placeholder="Type your message here..."
+                    rows="1"
+                ></textarea>
+                <button id="sendBtn" class="send-btn" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 2L11 13"></path>
+                        <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuration Modal -->
+    <div id="configModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Model Configuration</h2>
+                <button id="closeModal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="config-section">
+                    <h3>Available Models</h3>
+                    <div id="modelsList" class="models-list">
+                        <!-- Models will be populated here -->
+                    </div>
+                    <button id="addModelBtn" class="add-btn">+ Add New Model</button>
+                </div>
+                
+                <div class="config-section">
+                    <h3>MCP Server Configuration</h3>
+                    <div id="mcpServersList" class="mcp-servers-list">
+                        <!-- MCP servers will be populated here -->
+                    </div>
+                    <button id="addMcpServerBtn" class="add-btn">+ Add MCP Server</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="saveConfig" class="save-btn">Save Configuration</button>
+                <button id="cancelConfig" class="cancel-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Model Form Modal -->
+    <div id="modelFormModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modelFormTitle">Add Model</h2>
+                <button id="closeModelForm" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="modelForm">
+                    <div class="form-group">
+                        <label for="modelName">Model Name:</label>
+                        <input type="text" id="modelName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="modelType">Model Type:</label>
+                        <select id="modelType" required>
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="local">Local Model</option>
+                            <option value="custom">Custom API</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="apiKey">API Key:</label>
+                        <input type="password" id="apiKey" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="apiEndpoint">API Endpoint:</label>
+                        <input type="url" id="apiEndpoint">
+                    </div>
+                    <div class="form-group">
+                        <label for="modelIdentifier">Model Identifier:</label>
+                        <input type="text" id="modelIdentifier" placeholder="e.g., gpt-4, claude-3-sonnet">
+                    </div>
+                    <div class="form-group">
+                        <label for="maxTokens">Max Tokens:</label>
+                        <input type="number" id="maxTokens" value="4096" min="1" max="32000">
+                    </div>
+                    <div class="form-group">
+                        <label for="temperature">Temperature:</label>
+                        <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
+                        <span id="temperatureValue">0.7</span>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button id="saveModel" class="save-btn">Save Model</button>
+                <button id="cancelModel" class="cancel-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MCP Server Form Modal -->
+    <div id="mcpFormModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="mcpFormTitle">Add MCP Server</h2>
+                <button id="closeMcpForm" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="mcpForm">
+                    <div class="form-group">
+                        <label for="mcpName">Server Name:</label>
+                        <input type="text" id="mcpName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mcpUrl">Server URL:</label>
+                        <input type="url" id="mcpUrl" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mcpAuth">Authentication (optional):</label>
+                        <input type="text" id="mcpAuth" placeholder="Bearer token or API key">
+                    </div>
+                    <div class="form-group">
+                        <label for="mcpDescription">Description:</label>
+                        <textarea id="mcpDescription" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button id="saveMcp" class="save-btn">Save MCP Server</button>
+                <button id="cancelMcp" class="cancel-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="da-chat.js" type="module"></script>
+</body>
+</html>
