@@ -65,7 +65,7 @@ class DAChat {
                 {
                     id: 'filesystem',
                     name: 'File System',
-                    url: 'http://localhost:3000/mcp/filesystem',
+                    url: 'http://localhost:3001',
                     auth: '',
                     description: 'Access to local file system'
                 },
