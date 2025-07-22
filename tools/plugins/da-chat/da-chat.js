@@ -6,6 +6,8 @@ class DAChat {
         this.currentModel = null;
         this.chatHistory = [];
         this.isLoading = false;
+        this.editingModelId = null;
+        this.editingServerId = null;
         
         this.init();
     }
@@ -35,6 +37,16 @@ class DAChat {
                     apiKey: '',
                     apiEndpoint: 'https://api.openai.com/v1',
                     modelIdentifier: 'gpt-4',
+                    maxTokens: 4096,
+                    temperature: 0.7
+                },
+                {
+                    id: 'azure-gpt-4',
+                    name: 'Azure GPT-4',
+                    type: 'openai',
+                    apiKey: '',
+                    apiEndpoint: 'https://your-resource.openai.azure.com',
+                    modelIdentifier: 'your-deployment-name',
                     maxTokens: 4096,
                     temperature: 0.7
                 },
@@ -101,7 +113,10 @@ class DAChat {
                     <div class="model-item-name">${model.name}</div>
                     <div class="model-item-type">${model.type} - ${model.modelIdentifier}</div>
                 </div>
-                <button class="delete-btn" onclick="daChat.deleteModel('${model.id}')">Delete</button>
+                <div class="model-item-actions">
+                    <button class="edit-btn" data-model-id="${model.id}">Edit</button>
+                    <button class="delete-btn" data-model-id="${model.id}">Delete</button>
+                </div>
             `;
             list.appendChild(item);
         });
@@ -119,7 +134,10 @@ class DAChat {
                     <div class="mcp-server-name">${server.name}</div>
                     <div class="mcp-server-url">${server.url}</div>
                 </div>
-                <button class="delete-btn" onclick="daChat.deleteMcpServer('${server.id}')">Delete</button>
+                <div class="mcp-server-actions">
+                    <button class="edit-btn" data-server-id="${server.id}">Edit</button>
+                    <button class="delete-btn" data-server-id="${server.id}">Delete</button>
+                </div>
             `;
             list.appendChild(item);
         });
@@ -227,6 +245,27 @@ class DAChat {
                 this.hideMcpForm();
             }
         });
+
+        // Event delegation for delete and edit buttons
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('delete-btn')) {
+                if (e.target.hasAttribute('data-model-id')) {
+                    const modelId = e.target.getAttribute('data-model-id');
+                    this.deleteModel(modelId);
+                } else if (e.target.hasAttribute('data-server-id')) {
+                    const serverId = e.target.getAttribute('data-server-id');
+                    this.deleteMcpServer(serverId);
+                }
+            } else if (e.target.classList.contains('edit-btn')) {
+                if (e.target.hasAttribute('data-model-id')) {
+                    const modelId = e.target.getAttribute('data-model-id');
+                    this.editModel(modelId);
+                } else if (e.target.hasAttribute('data-server-id')) {
+                    const serverId = e.target.getAttribute('data-server-id');
+                    this.editMcpServer(serverId);
+                }
+            }
+        });
     }
 
     // Model Management
@@ -277,6 +316,42 @@ class DAChat {
         this.mcpServers = this.mcpServers.filter(s => s.id !== serverId);
         this.updateMcpServersList();
         this.saveConfiguration();
+    }
+
+    editModel(modelId) {
+        const model = this.models.find(m => m.id === modelId);
+        if (!model) return;
+        
+        this.editingModelId = modelId;
+        this.populateModelForm(model);
+        this.showModelForm();
+    }
+
+    editMcpServer(serverId) {
+        const server = this.mcpServers.find(s => s.id === serverId);
+        if (!server) return;
+        
+        this.editingServerId = serverId;
+        this.populateMcpForm(server);
+        this.showMcpForm();
+    }
+
+    populateModelForm(model) {
+        document.getElementById('modelName').value = model.name;
+        document.getElementById('modelType').value = model.type;
+        document.getElementById('apiKey').value = model.apiKey;
+        document.getElementById('apiEndpoint').value = model.apiEndpoint || '';
+        document.getElementById('modelIdentifier').value = model.modelIdentifier || '';
+        document.getElementById('maxTokens').value = model.maxTokens || 4096;
+        document.getElementById('temperature').value = model.temperature || 0.7;
+        document.getElementById('temperatureValue').textContent = model.temperature || 0.7;
+    }
+
+    populateMcpForm(server) {
+        document.getElementById('mcpName').value = server.name;
+        document.getElementById('mcpUrl').value = server.url;
+        document.getElementById('mcpAuth').value = server.auth || '';
+        document.getElementById('mcpDescription').value = server.description || '';
     }
 
     // Chat Functionality
@@ -341,7 +416,8 @@ class DAChat {
         
         for (const server of this.mcpServers) {
             try {
-                const response = await fetch(server.url + '/context', {
+                // Get context
+                const contextResponse = await fetch(server.url + '/context', {
                     method: 'GET',
                     headers: {
                         'Content-Type': 'application/json',
@@ -349,8 +425,22 @@ class DAChat {
                     }
                 });
                 
-                if (response.ok) {
-                    context[server.id] = await response.json();
+                if (contextResponse.ok) {
+                    context[server.id] = await contextResponse.json();
+                }
+
+                // Get available tools
+                const toolsResponse = await fetch(server.url + '/tools', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(server.auth && { 'Authorization': server.auth })
+                    }
+                });
+                
+                if (toolsResponse.ok) {
+                    const toolsData = await toolsResponse.json();
+                    context[`${server.id}_tools`] = toolsData;
                 }
             } catch (error) {
                 console.warn(`Failed to get context from ${server.name}:`, error);
@@ -358,6 +448,30 @@ class DAChat {
         }
         
         return context;
+    }
+
+    async executeMcpTool(serverId, tool, params) {
+        const server = this.mcpServers.find(s => s.id === serverId);
+        if (!server) {
+            throw new Error(`MCP server ${serverId} not found`);
+        }
+
+        const response = await fetch(server.url + '/tools', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(server.auth && { 'Authorization': server.auth })
+            },
+            body: JSON.stringify({ tool, params })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.result;
     }
 
     async callModel(message, context) {
@@ -378,15 +492,57 @@ class DAChat {
     }
 
     async callOpenAI(message, context, model) {
-        const response = await fetch(`${model.apiEndpoint}/chat/completions`, {
-            method: 'POST',
-            headers: {
+        // Check if this is an Azure OpenAI endpoint
+        const isAzure = model.apiEndpoint.includes('azure.com') || model.apiEndpoint.includes('openai.azure.com');
+        
+        let endpoint, headers;
+        
+        if (isAzure) {
+            // Azure OpenAI format: https://{resource-name}.openai.azure.com/openai/deployments/{deployment-name}/chat/completions?api-version=2024-02-15-preview
+            const deploymentName = model.modelIdentifier; // In Azure, modelIdentifier should be the deployment name
+            endpoint = `${model.apiEndpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=2024-02-15-preview`;
+            headers = {
+                'Content-Type': 'application/json',
+                'api-key': model.apiKey // Azure uses api-key header instead of Authorization
+            };
+        } else {
+            // Standard OpenAI format
+            endpoint = `${model.apiEndpoint}/chat/completions`;
+            headers = {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${model.apiKey}`
-            },
+            };
+        }
+
+        // Prepare system message with MCP context
+        let systemMessage = "You are a helpful AI assistant.";
+        
+        if (context.mcpServers && context.mcpServers.length > 0) {
+            systemMessage += "\n\nYou have access to the following MCP (Model Context Protocol) servers:\n";
+            
+            context.mcpServers.forEach(server => {
+                systemMessage += `- ${server.name}: ${server.description || 'No description'}\n`;
+            });
+            
+            if (context.mcpData) {
+                systemMessage += "\nCurrent MCP context:\n";
+                Object.keys(context.mcpData).forEach(serverId => {
+                    const data = context.mcpData[serverId];
+                    if (data && typeof data === 'object') {
+                        systemMessage += `\n${serverId} server data: ${JSON.stringify(data, null, 2)}\n`;
+                    }
+                });
+            }
+            
+            systemMessage += "\nWhen users ask about files, directories, or system information, use the MCP server data to provide accurate responses. You can access file system information through the configured MCP servers.";
+        }
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers,
             body: JSON.stringify({
-                model: model.modelIdentifier,
                 messages: [
+                    { role: 'system', content: systemMessage },
                     ...this.chatHistory.map(msg => ({
                         role: msg.role,
                         content: msg.content
@@ -399,8 +555,15 @@ class DAChat {
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error?.message || `HTTP ${response.status}`);
+            let errorMessage = `HTTP ${response.status}`;
+            try {
+                const error = await response.json();
+                errorMessage = error.error?.message || error.message || errorMessage;
+            } catch (e) {
+                // If error response is not JSON, use status text
+                errorMessage = response.statusText || errorMessage;
+            }
+            throw new Error(errorMessage);
         }
 
         const data = await response.json();
@@ -408,6 +571,29 @@ class DAChat {
     }
 
     async callAnthropic(message, context, model) {
+        // Prepare system message with MCP context
+        let systemMessage = "You are a helpful AI assistant.";
+        
+        if (context.mcpServers && context.mcpServers.length > 0) {
+            systemMessage += "\n\nYou have access to the following MCP (Model Context Protocol) servers:\n";
+            
+            context.mcpServers.forEach(server => {
+                systemMessage += `- ${server.name}: ${server.description || 'No description'}\n`;
+            });
+            
+            if (context.mcpData) {
+                systemMessage += "\nCurrent MCP context:\n";
+                Object.keys(context.mcpData).forEach(serverId => {
+                    const data = context.mcpData[serverId];
+                    if (data && typeof data === 'object') {
+                        systemMessage += `\n${serverId} server data: ${JSON.stringify(data, null, 2)}\n`;
+                    }
+                });
+            }
+            
+            systemMessage += "\nWhen users ask about files, directories, or system information, use the MCP server data to provide accurate responses. You can access file system information through the configured MCP servers.";
+        }
+
         const response = await fetch(`${model.apiEndpoint}/v1/messages`, {
             method: 'POST',
             headers: {
@@ -419,6 +605,7 @@ class DAChat {
                 model: model.modelIdentifier,
                 max_tokens: model.maxTokens,
                 temperature: model.temperature,
+                system: systemMessage,
                 messages: [
                     ...this.chatHistory.map(msg => ({
                         role: msg.role,
@@ -533,14 +720,61 @@ class DAChat {
 
     updateMessage(messageDiv, content) {
         const contentDiv = messageDiv.querySelector('.message-content');
-        contentDiv.innerHTML = '';
-        contentDiv.textContent = content;
+        contentDiv.innerHTML = this.formatMessage(content);
         
         // Update chat history
         const lastMessage = this.chatHistory[this.chatHistory.length - 1];
         if (lastMessage && lastMessage.role === 'assistant') {
             lastMessage.content = content;
         }
+    }
+
+    formatMessage(content) {
+        if (!content) return '';
+        
+        // Convert markdown to HTML
+        let formatted = content
+            // Code blocks
+            .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>')
+            // Inline code
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            // Bold
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            // Italic
+            .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+            // Headers
+            .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+            .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+            .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+            // Lists
+            .replace(/^\* (.*$)/gm, '<li>$1</li>')
+            .replace(/^- (.*$)/gm, '<li>$1</li>')
+            // Wrap lists in ul tags
+            .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+            // Line breaks
+            .replace(/\n/g, '<br>')
+            // Links
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+        
+        // Format file listings and JSON data
+        formatted = this.formatFileListings(formatted);
+        
+        return formatted;
+    }
+
+    formatFileListings(content) {
+        // Format JSON-like file listings
+        return content.replace(/\{[\s\S]*?\}/g, (match) => {
+            try {
+                const data = JSON.parse(match);
+                if (data && typeof data === 'object') {
+                    return `<div class="json-data">${JSON.stringify(data, null, 2)}</div>`;
+                }
+            } catch (e) {
+                // Not valid JSON, return as is
+            }
+            return match;
+        });
     }
 
     updateSendButton() {
@@ -563,23 +797,31 @@ class DAChat {
     }
 
     showModelForm() {
-        document.getElementById('modelFormTitle').textContent = 'Add Model';
-        document.getElementById('modelForm').reset();
+        const isEditing = this.editingModelId !== null;
+        document.getElementById('modelFormTitle').textContent = isEditing ? 'Edit Model' : 'Add Model';
+        if (!isEditing) {
+            document.getElementById('modelForm').reset();
+        }
         document.getElementById('modelFormModal').classList.add('show');
     }
 
     hideModelForm() {
         document.getElementById('modelFormModal').classList.remove('show');
+        this.editingModelId = null;
     }
 
     showMcpForm() {
-        document.getElementById('mcpFormTitle').textContent = 'Add MCP Server';
-        document.getElementById('mcpForm').reset();
+        const isEditing = this.editingServerId !== null;
+        document.getElementById('mcpFormTitle').textContent = isEditing ? 'Edit MCP Server' : 'Add MCP Server';
+        if (!isEditing) {
+            document.getElementById('mcpForm').reset();
+        }
         document.getElementById('mcpFormModal').classList.add('show');
     }
 
     hideMcpForm() {
         document.getElementById('mcpFormModal').classList.remove('show');
+        this.editingServerId = null;
     }
 
     // Form Handlers
@@ -602,7 +844,20 @@ class DAChat {
             return;
         }
         
-        this.addModel(modelData);
+        if (this.editingModelId) {
+            // Update existing model
+            const modelIndex = this.models.findIndex(m => m.id === this.editingModelId);
+            if (modelIndex !== -1) {
+                this.models[modelIndex] = { ...this.models[modelIndex], ...modelData };
+                this.updateModelDropdown();
+                this.updateModelsList();
+                this.saveConfiguration();
+            }
+        } else {
+            // Add new model
+            this.addModel(modelData);
+        }
+        
         this.hideModelForm();
     }
 
@@ -622,7 +877,19 @@ class DAChat {
             return;
         }
         
-        this.addMcpServer(serverData);
+        if (this.editingServerId) {
+            // Update existing server
+            const serverIndex = this.mcpServers.findIndex(s => s.id === this.editingServerId);
+            if (serverIndex !== -1) {
+                this.mcpServers[serverIndex] = { ...this.mcpServers[serverIndex], ...serverData };
+                this.updateMcpServersList();
+                this.saveConfiguration();
+            }
+        } else {
+            // Add new server
+            this.addMcpServer(serverData);
+        }
+        
         this.hideMcpForm();
     }
 
@@ -633,10 +900,6 @@ class DAChat {
 }
 
 // Initialize the chat when the page loads
-let daChat;
 document.addEventListener('DOMContentLoaded', () => {
-    daChat = new DAChat();
+    new DAChat();
 });
-
-// Make daChat globally available for button onclick handlers
-window.daChat = daChat;
