@@ -1,3 +1,5 @@
+import DA_SDK from 'https://da.live/nx/utils/sdk.js';
+
 // DA Chat - Configurable AI Chatbot with MCP Support
 class DAChat {
     constructor() {
@@ -8,16 +10,29 @@ class DAChat {
         this.isLoading = false;
         this.editingModelId = null;
         this.editingServerId = null;
+        this.stdioConnections = new Map(); // Store stdio MCP connections
+        this.daToken = null; // Store DA SDK token
         
         this.init();
     }
 
-    init() {
+    async init() {
         this.loadConfiguration();
         this.setupEventListeners();
         this.updateModelDropdown();
         this.updateModelsList();
         this.updateMcpServersList();
+        
+        // Initialize DA SDK
+        try {
+            const { context, token, actions } = await DA_SDK;
+            console.log('DA SDK initialized:', { context, token, actions });
+            
+            // Set the DA token for MCP servers
+            this.setDaTokenForMcpServers(token);
+        } catch (error) {
+            console.error('Failed to initialize DA SDK:', error);
+        }
     }
 
     // Configuration Management
@@ -65,16 +80,21 @@ class DAChat {
                 {
                     id: 'filesystem',
                     name: 'File System',
+                    transport: 'http',
                     url: 'http://localhost:3001',
                     auth: '',
                     description: 'Access to local file system'
                 },
                 {
-                    id: 'github',
-                    name: 'GitHub',
-                    url: 'http://localhost:3000/mcp/github',
+                    id: 'helix-mcp',
+                    name: 'Helix MCP',
+                    transport: 'stdio',
+                    command: 'https://github.com/cloudadoption/helix-mcp',
                     auth: '',
-                    description: 'GitHub repository access'
+                    env: {
+                        HELIX_ADMIN_API_TOKEN: ''
+                    },
+                    description: 'Helix and Document Authoring Admin API access (DA_ADMIN_API_TOKEN will be auto-set from SDK)'
                 }
             ];
         }
@@ -129,10 +149,17 @@ class DAChat {
         this.mcpServers.forEach(server => {
             const item = document.createElement('div');
             item.className = 'mcp-server-item';
+            
+            const transport = server.transport || 'http';
+            const endpoint = transport === 'http' ? server.url : server.command;
+            
             item.innerHTML = `
                 <div class="mcp-server-info">
                     <div class="mcp-server-name">${server.name}</div>
-                    <div class="mcp-server-url">${server.url}</div>
+                    <div class="mcp-server-url">
+                        <span class="transport-badge ${transport}">${transport.toUpperCase()}</span>
+                        ${endpoint}
+                    </div>
                 </div>
                 <div class="mcp-server-actions">
                     <button class="edit-btn" data-server-id="${server.id}">Edit</button>
@@ -220,6 +247,30 @@ class DAChat {
 
         document.getElementById('closeMcpForm').addEventListener('click', () => {
             this.hideMcpForm();
+        });
+
+        // Transport type switching
+        document.getElementById('mcpTransport').addEventListener('change', (e) => {
+            const transport = e.target.value;
+            const httpFields = document.getElementById('httpFields');
+            const stdioFields = document.getElementById('stdioFields');
+            const envFields = document.getElementById('envFields');
+            
+            if (transport === 'http') {
+                httpFields.style.display = 'block';
+                stdioFields.style.display = 'none';
+                envFields.style.display = 'none';
+                document.getElementById('mcpUrl').required = true;
+                document.getElementById('mcpCommand').required = false;
+                document.getElementById('mcpEnv').required = false;
+            } else {
+                httpFields.style.display = 'none';
+                stdioFields.style.display = 'block';
+                envFields.style.display = 'block';
+                document.getElementById('mcpUrl').required = false;
+                document.getElementById('mcpCommand').required = true;
+                document.getElementById('mcpEnv').required = false; // Optional but recommended
+            }
         });
 
         // Temperature range
@@ -349,9 +400,22 @@ class DAChat {
 
     populateMcpForm(server) {
         document.getElementById('mcpName').value = server.name;
-        document.getElementById('mcpUrl').value = server.url;
+        document.getElementById('mcpTransport').value = server.transport || 'http';
         document.getElementById('mcpAuth').value = server.auth || '';
         document.getElementById('mcpDescription').value = server.description || '';
+        
+        // Trigger transport change to show/hide fields
+        const transportEvent = new Event('change');
+        document.getElementById('mcpTransport').dispatchEvent(transportEvent);
+        
+        if (server.transport === 'http') {
+            document.getElementById('mcpUrl').value = server.url || '';
+        } else {
+            document.getElementById('mcpCommand').value = server.command || server.url || '';
+            if (server.env) {
+                document.getElementById('mcpEnv').value = JSON.stringify(server.env, null, 2);
+            }
+        }
     }
 
     // Chat Functionality
@@ -416,31 +480,39 @@ class DAChat {
         
         for (const server of this.mcpServers) {
             try {
-                // Get context
-                const contextResponse = await fetch(server.url + '/context', {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        ...(server.auth && { 'Authorization': server.auth })
+                if (server.transport === 'stdio') {
+                    // Handle stdio transport
+                    const stdioContext = await this.getStdioMcpContext(server);
+                    if (stdioContext) {
+                        context[server.id] = stdioContext;
                     }
-                });
-                
-                if (contextResponse.ok) {
-                    context[server.id] = await contextResponse.json();
-                }
+                } else {
+                    // Handle HTTP transport
+                    const contextResponse = await fetch(server.url + '/context', {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(server.auth && { 'Authorization': server.auth })
+                        }
+                    });
+                    
+                    if (contextResponse.ok) {
+                        context[server.id] = await contextResponse.json();
+                    }
 
-                // Get available tools
-                const toolsResponse = await fetch(server.url + '/tools', {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        ...(server.auth && { 'Authorization': server.auth })
+                    // Get available tools
+                    const toolsResponse = await fetch(server.url + '/tools', {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(server.auth && { 'Authorization': server.auth })
+                        }
+                    });
+                    
+                    if (toolsResponse.ok) {
+                        const toolsData = await toolsResponse.json();
+                        context[`${server.id}_tools`] = toolsData;
                     }
-                });
-                
-                if (toolsResponse.ok) {
-                    const toolsData = await toolsResponse.json();
-                    context[`${server.id}_tools`] = toolsData;
                 }
             } catch (error) {
                 console.warn(`Failed to get context from ${server.name}:`, error);
@@ -448,6 +520,148 @@ class DAChat {
         }
         
         return context;
+    }
+
+    async getStdioMcpContext(server) {
+        try {
+            const connection = await this.getStdioConnection(server);
+            if (!connection) return null;
+
+            // Get server info and tools
+            const tools = await this.callStdioMethod(connection, 'tools/list', {});
+            const resources = await this.callStdioMethod(connection, 'resources/list', {});
+            
+            return {
+                server: server.name,
+                transport: 'stdio',
+                tools: tools?.result || [],
+                resources: resources?.result || [],
+                status: 'connected'
+            };
+        } catch (error) {
+            console.error(`Failed to get stdio context from ${server.name}:`, error);
+            return null;
+        }
+    }
+
+    async getStdioConnection(server) {
+        if (this.stdioConnections.has(server.id)) {
+            return this.stdioConnections.get(server.id);
+        }
+
+        try {
+            // Create a new stdio connection
+            const connection = await this.createStdioConnection(server);
+            this.stdioConnections.set(server.id, connection);
+            return connection;
+        } catch (error) {
+            console.error(`Failed to create stdio connection for ${server.name}:`, error);
+            return null;
+        }
+    }
+
+    async createStdioConnection(server) {
+        return new Promise((resolve, reject) => {
+            const ws = new WebSocket('ws://localhost:3003');
+            
+            const connection = {
+                ws: ws,
+                serverId: server.id,
+                pendingCalls: new Map(),
+                isConnected: false
+            };
+            
+            ws.onopen = () => {
+                console.log(`Connected to stdio MCP server for ${server.name}`);
+                connection.isConnected = true;
+                
+                // Connect to the MCP server
+                ws.send(JSON.stringify({
+                    type: 'connect',
+                    serverId: server.id,
+                    params: {
+                        command: server.command || server.url,
+                        env: server.env || {}
+                    }
+                }));
+            };
+            
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                handleStdioMessage(connection, message);
+            };
+            
+            ws.onerror = (error) => {
+                console.error(`WebSocket error for ${server.name}:`, error);
+                reject(error);
+            };
+            
+            ws.onclose = () => {
+                console.log(`WebSocket closed for ${server.name}`);
+                connection.isConnected = false;
+            };
+            
+            // Set a timeout for connection
+            setTimeout(() => {
+                if (!connection.isConnected) {
+                    reject(new Error('Connection timeout'));
+                }
+            }, 10000);
+            
+            resolve(connection);
+        });
+    }
+
+    handleStdioMessage(connection, message) {
+        switch (message.type) {
+            case 'connected':
+                if (message.status === 'ready') {
+                    console.log(`MCP server ${connection.serverId} ready`);
+                }
+                break;
+            case 'response':
+                const pendingCall = connection.pendingCalls.get(message.method);
+                if (pendingCall) {
+                    connection.pendingCalls.delete(message.method);
+                    if (message.error) {
+                        pendingCall.reject(new Error(message.error));
+                    } else {
+                        pendingCall.resolve(message.result);
+                    }
+                }
+                break;
+            case 'error':
+                console.error(`MCP server error:`, message.error);
+                break;
+        }
+    }
+
+    async callStdioMethod(connection, method, params) {
+        return new Promise((resolve, reject) => {
+            if (!connection.isConnected) {
+                reject(new Error('Connection not established'));
+                return;
+            }
+            
+            // Store the promise callbacks
+            connection.pendingCalls.set(method, { resolve, reject });
+            
+            // Send the method call
+            connection.ws.send(JSON.stringify({
+                type: 'call',
+                serverId: connection.serverId,
+                method: method,
+                params: params
+            }));
+            
+            // Set a timeout
+            setTimeout(() => {
+                if (connection.pendingCalls.has(method)) {
+                    connection.pendingCalls.delete(method);
+                    reject(new Error('Method call timeout'));
+                }
+            }, 30000);
+        });
     }
 
     async executeMcpTool(serverId, tool, params) {
@@ -865,16 +1079,38 @@ class DAChat {
         const form = document.getElementById('mcpForm');
         const formData = new FormData(form);
         
+        const transport = formData.get('mcpTransport') || document.getElementById('mcpTransport').value;
+        
         const serverData = {
             name: formData.get('mcpName') || document.getElementById('mcpName').value,
-            url: formData.get('mcpUrl') || document.getElementById('mcpUrl').value,
+            transport: transport,
             auth: formData.get('mcpAuth') || document.getElementById('mcpAuth').value,
             description: formData.get('mcpDescription') || document.getElementById('mcpDescription').value
         };
         
-        if (!serverData.name || !serverData.url) {
-            alert('Please fill in all required fields');
-            return;
+        if (transport === 'http') {
+            serverData.url = formData.get('mcpUrl') || document.getElementById('mcpUrl').value;
+            if (!serverData.name || !serverData.url) {
+                alert('Please fill in all required fields');
+                return;
+            }
+        } else {
+            serverData.command = formData.get('mcpCommand') || document.getElementById('mcpCommand').value;
+            if (!serverData.name || !serverData.command) {
+                alert('Please fill in all required fields');
+                return;
+            }
+            
+            // Parse environment variables
+            const envText = formData.get('mcpEnv') || document.getElementById('mcpEnv').value;
+            if (envText.trim()) {
+                try {
+                    serverData.env = JSON.parse(envText);
+                } catch (error) {
+                    alert('Invalid JSON in environment variables field');
+                    return;
+                }
+            }
         }
         
         if (this.editingServerId) {
@@ -896,6 +1132,54 @@ class DAChat {
     // Utility Functions
     generateId() {
         return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    }
+
+    setDaTokenForMcpServers(token) {
+        if (!token) {
+            console.warn('No DA token available for MCP servers');
+            return;
+        }
+
+        // Store the token for later use
+        this.daToken = token;
+
+        // Update existing MCP servers that need the DA token
+        let updated = false;
+        this.mcpServers.forEach(server => {
+            if (server.transport === 'stdio' && server.command && server.command.includes('helix-mcp')) {
+                if (!server.env) {
+                    server.env = {};
+                }
+                if (server.env.DA_ADMIN_API_TOKEN !== token) {
+                    server.env.DA_ADMIN_API_TOKEN = token;
+                    updated = true;
+                    console.log(`Updated DA_ADMIN_API_TOKEN for ${server.name}`);
+                }
+            }
+        });
+
+        if (updated) {
+            this.saveConfiguration();
+            this.updateMcpServersList();
+        }
+    }
+
+    getDaToken() {
+        return this.daToken;
+    }
+
+    async refreshDaToken() {
+        try {
+            const { token } = await DA_SDK;
+            if (token && token !== this.daToken) {
+                this.setDaTokenForMcpServers(token);
+                console.log('DA token refreshed');
+            }
+            return token;
+        } catch (error) {
+            console.error('Failed to refresh DA token:', error);
+            return null;
+        }
     }
 }
 
