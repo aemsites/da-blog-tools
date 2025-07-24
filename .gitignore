@@ -9,3 +9,4 @@ helix-importer-ui
 *.bak
 .idea
 tools/node_modules/*
+tools/plugins/da-chat/node_modules/*
