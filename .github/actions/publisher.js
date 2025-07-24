@@ -227,6 +227,13 @@ async function publishPage(pagePath, environment) {
       log('info', `Publish to ${environment} successful`);
     } else {
       log('error', `Publish failed with status ${response.status}`);
+      
+      // Log X-Error header if present
+      const xErrorHeader = response.headers.get('X-Error');
+      if (xErrorHeader) {
+        log('error', `X-Error header: ${xErrorHeader}`);
+      }
+      
       process.exit(1);
     }
   } catch (err) {
