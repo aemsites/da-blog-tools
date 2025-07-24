@@ -353,7 +353,7 @@ async function init() {
   const url = `${DA_SOURCE}/${context.org}/${context.repo}/${CRON_TAB_PATH}`;
   const opts = {
     headers: {
-      Authorization: `Bearer: ${token}`,
+      Authorization: `Bearer ${token}`,
     },
   };
   // Handle schedule button
