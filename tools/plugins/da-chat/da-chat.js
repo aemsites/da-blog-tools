@@ -453,7 +453,7 @@ class DAChat {
             console.log('AI Response before tool processing:', response);
             
             // Check if response contains tool execution requests
-            const finalResponse = await this.processToolExecutions(response);
+            const finalResponse = await this.processToolExecutions(response, context);
             
             console.log('Final response after tool processing:', finalResponse);
             
@@ -823,7 +823,7 @@ class DAChat {
         }
     }
 
-    async processToolExecutions(response) {
+    async processToolExecutions(response, context) {
         // Look for tool execution patterns in the AI response
         const toolExecutionRegex = /window\.executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\);?/g;
         
@@ -833,6 +833,11 @@ class DAChat {
         let processedResponse = response;
         
         console.log('Processing response for tool executions:', response);
+        
+        // Clean up any leftover markdown code blocks or javascript references
+        processedResponse = processedResponse.replace(/```javascript\s*\n?/g, '');
+        processedResponse = processedResponse.replace(/```\s*\n?/g, '');
+        processedResponse = processedResponse.replace(/javascript\s*$/gm, '');
         
         // First try the strict pattern
         while ((match = toolExecutionRegex.exec(response)) !== null) {
@@ -862,9 +867,13 @@ class DAChat {
                 // Execute the tool
                 const result = await this.executeMcpTool(serverId, toolName, params);
                 
-                // Replace the function call with the formatted result
-                const formattedResult = this.formatToolResult(result);
-                processedResponse = processedResponse.replace(fullMatch, formattedResult);
+                // Get AI analysis of the tool results
+                console.log('Calling AI for analysis...');
+                const resultData = this.extractResultData(result);
+                const analysisPrompt = `Analyze this data and provide insights based on the user's original question. Do NOT show the raw data. Instead, answer the user's question, identify key patterns, highlight important findings, and provide actionable insights. IMPORTANT: Provide your analysis as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks. Here's the data: ${JSON.stringify(resultData, null, 2)}`;
+                const analysisResponse = await this.callModel(analysisPrompt, context);
+                console.log('Analysis response:', analysisResponse);
+                processedResponse = processedResponse.replace(fullMatch, analysisResponse);
                 
             } catch (error) {
                 console.error(`Failed to execute tool ${toolName}:`, error);
@@ -901,9 +910,13 @@ class DAChat {
                 // Execute the tool
                 const result = await this.executeMcpTool(serverId, toolName, params);
                 
-                // Replace the function call with the formatted result
-                const formattedResult = this.formatToolResult(result);
-                processedResponse = processedResponse.replace(fullMatch, formattedResult);
+                // Get AI analysis of the tool results
+                console.log('Calling AI for analysis...');
+                const resultData = this.extractResultData(result);
+                const analysisPrompt = `Analyze this data and provide insights based on the user's original question. Do NOT show the raw data. Instead, answer the user's question, identify key patterns, highlight important findings, and provide actionable insights. IMPORTANT: Provide your analysis as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks. Here's the data: ${JSON.stringify(resultData, null, 2)}`;
+                const analysisResponse = await this.callModel(analysisPrompt, context);
+                console.log('Analysis response:', analysisResponse);
+                processedResponse = processedResponse.replace(fullMatch, analysisResponse);
                 
             } catch (error) {
                 console.error(`Failed to execute tool ${toolName}:`, error);
@@ -941,9 +954,13 @@ class DAChat {
                 // Execute the tool
                 const result = await this.executeMcpTool(serverId, toolName, params);
                 
-                // Replace the function call with the formatted result
-                const formattedResult = this.formatToolResult(result);
-                processedResponse = processedResponse.replace(fullMatch, formattedResult);
+                // Get AI analysis of the tool results
+                console.log('Calling AI for analysis...');
+                const resultData = this.extractResultData(result);
+                const analysisPrompt = `Analyze this data and provide insights based on the user's original question. Do NOT show the raw data. Instead, answer the user's question, identify key patterns, highlight important findings, and provide actionable insights. IMPORTANT: Provide your analysis as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks. Here's the data: ${JSON.stringify(resultData, null, 2)}`;
+                const analysisResponse = await this.callModel(analysisPrompt, context);
+                console.log('Analysis response:', analysisResponse);
+                processedResponse = processedResponse.replace(fullMatch, analysisResponse);
                 
             } catch (error) {
                 console.error(`Failed to execute tool ${toolName}:`, error);
@@ -951,6 +968,13 @@ class DAChat {
                 processedResponse = processedResponse.replace(fullMatch, errorStr);
             }
         }
+        
+        // Final cleanup: remove any remaining markdown artifacts
+        processedResponse = processedResponse.replace(/```javascript\s*\n?/g, '');
+        processedResponse = processedResponse.replace(/```\s*\n?/g, '');
+        processedResponse = processedResponse.replace(/javascript\s*$/gm, '');
+        processedResponse = processedResponse.replace(/^\s*```\s*$/gm, '');
+        processedResponse = processedResponse.replace(/^\s*`\s*$/gm, '');
         
         return processedResponse;
     }
@@ -978,7 +1002,7 @@ class DAChat {
         
         // Add critical instruction to force tool execution
         const dateInfo = this.getCurrentDateInfo();
-        const criticalInstruction = `\n\nCRITICAL INSTRUCTION: When users ask for specific actions, you MUST include the tool execution code in your response. Do NOT just say 'I will check' - actually include the code like: window.executeMcpTool('mdev1df57ar85i4luoi', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/'})\n\nIMPORTANT: For rum-data tool, use lowercase parameter names: domainkey, url, aggregation, startdate, enddate. Valid aggregation values: 'pageviews', 'visits', 'bounces', 'organic', 'earned', 'lcp', 'cls', 'inp', 'ttfb', 'engagement', 'errors'.\n\nCURRENT DATE INFO: Today is ${dateInfo.today}, 7 days ago was ${dateInfo.sevenDaysAgo}, 30 days ago was ${dateInfo.thirtyDaysAgo}. Use these dates for date ranges.\n`;
+        const criticalInstruction = `\n\nCRITICAL INSTRUCTION: When users ask for specific actions, you MUST include the tool execution code in your response. Do NOT just say 'I will check' - actually include the code like: window.executeMcpTool('mdev1df57ar85i4luoi', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/'})\n\nIMPORTANT: For rum-data tool, use lowercase parameter names: domainkey, url, aggregation, startdate, enddate. Valid aggregation values: 'pageviews', 'visits', 'bounces', 'organic', 'earned', 'lcp', 'cls', 'inp', 'ttfb', 'engagement', 'errors'.\n\nCURRENT DATE INFO: Today is ${dateInfo.today}, 7 days ago was ${dateInfo.sevenDaysAgo}, 30 days ago was ${dateInfo.thirtyDaysAgo}. Use these dates for date ranges.\n\nRESPONSE STYLE: Be direct and concise. Do NOT say things like "I will use the tool" or "Here's the execution" - just include the tool execution code directly. When tool results are provided, immediately analyze the data and provide insights without repeating what you're going to do.\n\nANALYSIS INSTRUCTION: When tool results are provided, you MUST analyze the data and provide insights. Do NOT just show the data again. Instead, answer the user's original question, identify key patterns, highlight important findings, and provide actionable insights based on the data.\n\nCRITICAL: Do NOT explain your logic or reasoning. Do NOT say "I'll query" or "I'll check" or "Here's the execution". Just execute the tool directly with the code.`;
         
         let endpoint, headers;
         
@@ -1284,6 +1308,12 @@ class DAChat {
     formatMessage(content) {
         if (!content) return '';
         
+        // Check if content already contains HTML tags (from AI analysis)
+        if (content.includes('<') && content.includes('>')) {
+            // Content is already HTML, just return it
+            return content;
+        }
+        
         // Convert markdown to HTML
         let formatted = content
             // Code blocks
@@ -1303,8 +1333,8 @@ class DAChat {
             .replace(/^- (.*$)/gm, '<li>$1</li>')
             // Wrap lists in ul tags
             .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-            // Line breaks
-            .replace(/\n/g, '<br>')
+            // Line breaks - convert to spaces for natural text flow
+            .replace(/\n/g, ' ')
             // Links
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
         
@@ -1327,6 +1357,44 @@ class DAChat {
             }
             return match;
         });
+    }
+
+    extractResultData(result) {
+        try {
+            // If result is a string that contains JSON, parse it
+            let data = result;
+            if (typeof result === 'string') {
+                try {
+                    data = JSON.parse(result);
+                } catch (e) {
+                    // If it's not JSON, return as is
+                    return result;
+                }
+            }
+
+            // Handle different result structures
+            if (data && typeof data === 'object') {
+                // If it has a content array with text (like the page-status result)
+                if (data.content && Array.isArray(data.content)) {
+                    const textContent = data.content.find(item => item.type === 'text');
+                    if (textContent && textContent.text) {
+                        try {
+                            const parsedContent = JSON.parse(textContent.text);
+                            return parsedContent;
+                        } catch (e) {
+                            return textContent.text;
+                        }
+                    }
+                }
+                
+                // Return the data as is
+                return data;
+            }
+            
+            return data;
+        } catch (error) {
+            return result;
+        }
     }
 
     formatToolResult(result) {
