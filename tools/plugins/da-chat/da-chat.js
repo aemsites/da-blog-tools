@@ -94,7 +94,7 @@ class DAChat {
                     env: {
                         HELIX_ADMIN_API_TOKEN: ''
                     },
-                    description: 'Helix and Document Authoring Admin API access (DA_ADMIN_API_TOKEN will be auto-set from SDK)'
+                    description: 'Helix and Document Authoring Admin API access (DA_ADMIN_API_TOKEN and HELIX_ADMIN_API_TOKEN will be auto-set from SDK)'
                 }
             ];
         }
@@ -445,8 +445,15 @@ class DAChat {
             // Send to model
             const response = await this.callModel(message, context);
             
+            console.log('AI Response before tool processing:', response);
+            
+            // Check if response contains tool execution requests
+            const finalResponse = await this.processToolExecutions(response);
+            
+            console.log('Final response after tool processing:', finalResponse);
+            
             // Update loading message with response
-            this.updateMessage(loadingMessage, response);
+            this.updateMessage(loadingMessage, finalResponse);
         } catch (error) {
             console.error('Error sending message:', error);
             this.updateMessage(loadingMessage, `Error: ${error.message}`);
@@ -477,14 +484,17 @@ class DAChat {
 
     async getMcpContext() {
         const context = {};
+        console.log('Getting MCP context for servers:', this.mcpServers.map(s => s.name));
         
         for (const server of this.mcpServers) {
             try {
+                console.log(`Processing server: ${server.name} (${server.transport})`);
                 if (server.transport === 'stdio') {
                     // Handle stdio transport
                     const stdioContext = await this.getStdioMcpContext(server);
                     if (stdioContext) {
                         context[server.id] = stdioContext;
+                        console.log(`Added stdio context for ${server.name}:`, stdioContext);
                     }
                 } else {
                     // Handle HTTP transport
@@ -519,37 +529,72 @@ class DAChat {
             }
         }
         
+        console.log('Final MCP context:', context);
         return context;
     }
 
     async getStdioMcpContext(server) {
         try {
+            console.log(`Getting stdio context for ${server.name}...`);
             const connection = await this.getStdioConnection(server);
-            if (!connection) return null;
+            if (!connection) {
+                console.warn(`No stdio connection available for ${server.name}. Skipping stdio context.`);
+                return {
+                    server: server.name,
+                    transport: 'stdio',
+                    status: 'unavailable',
+                    error: 'Stdio MCP server not running'
+                };
+            }
 
+            console.log(`Calling tools/list for ${server.name}...`);
             // Get server info and tools
             const tools = await this.callStdioMethod(connection, 'tools/list', {});
-            const resources = await this.callStdioMethod(connection, 'resources/list', {});
+            console.log(`Tools response for ${server.name}:`, tools);
             
+            const result = {
+                server: server.name,
+                transport: 'stdio',
+                tools: tools?.tools || tools?.result || [],
+                resources: [], // Helix MCP doesn't support resources/list
+                status: 'connected'
+            };
+            
+            console.log(`Final context for ${server.name}:`, result);
+            return result;
+        } catch (error) {
+            console.error(`Failed to get stdio context from ${server.name}:`, error);
             return {
                 server: server.name,
                 transport: 'stdio',
-                tools: tools?.result || [],
-                resources: resources?.result || [],
-                status: 'connected'
+                status: 'error',
+                error: error.message
             };
-        } catch (error) {
-            console.error(`Failed to get stdio context from ${server.name}:`, error);
-            return null;
         }
     }
 
     async getStdioConnection(server) {
         if (this.stdioConnections.has(server.id)) {
-            return this.stdioConnections.get(server.id);
+            const connection = this.stdioConnections.get(server.id);
+            if (connection.isConnected && connection.isReady) {
+                return connection;
+            } else {
+                // Remove stale connection
+                this.stdioConnections.delete(server.id);
+                if (connection.ws) {
+                    connection.ws.close();
+                }
+            }
         }
 
         try {
+            // Check if stdio server is running
+            const healthCheck = await fetch('http://localhost:3003/health').catch(() => null);
+            if (!healthCheck || !healthCheck.ok) {
+                console.warn('Stdio MCP server not running. Please start it with: node stdio-mcp-server.js');
+                return null;
+            }
+            
             // Create a new stdio connection
             const connection = await this.createStdioConnection(server);
             this.stdioConnections.set(server.id, connection);
@@ -562,17 +607,20 @@ class DAChat {
 
     async createStdioConnection(server) {
         return new Promise((resolve, reject) => {
+            console.log(`Attempting to connect to stdio MCP server for ${server.name}...`);
+            
             const ws = new WebSocket('ws://localhost:3003');
             
             const connection = {
                 ws: ws,
                 serverId: server.id,
                 pendingCalls: new Map(),
-                isConnected: false
+                isConnected: false,
+                isReady: false
             };
             
             ws.onopen = () => {
-                console.log(`Connected to stdio MCP server for ${server.name}`);
+                console.log(`WebSocket connected to stdio MCP server for ${server.name}`);
                 connection.isConnected = true;
                 
                 // Connect to the MCP server
@@ -587,78 +635,146 @@ class DAChat {
             };
             
             ws.onmessage = (event) => {
-                const message = JSON.parse(event.data);
-                handleStdioMessage(connection, message);
+                try {
+                    const message = JSON.parse(event.data);
+                    this.handleStdioMessage(connection, message, resolve);
+                } catch (error) {
+                    console.error(`Failed to parse WebSocket message:`, error);
+                }
             };
             
             ws.onerror = (error) => {
                 console.error(`WebSocket error for ${server.name}:`, error);
-                reject(error);
+                reject(new Error(`WebSocket connection failed: ${error.message || 'Unknown error'}`));
             };
             
-            ws.onclose = () => {
-                console.log(`WebSocket closed for ${server.name}`);
+            ws.onclose = (event) => {
+                console.log(`WebSocket closed for ${server.name}:`, event.code, event.reason);
                 connection.isConnected = false;
+                connection.isReady = false;
             };
             
             // Set a timeout for connection
             setTimeout(() => {
-                if (!connection.isConnected) {
-                    reject(new Error('Connection timeout'));
+                if (!connection.isReady) {
+                    ws.close();
+                    reject(new Error('Connection timeout - stdio MCP server not ready'));
                 }
-            }, 10000);
+            }, 15000);
             
-            resolve(connection);
+            // Don't resolve immediately - wait for the server to be ready
         });
     }
 
-    handleStdioMessage(connection, message) {
+    handleStdioMessage(connection, message, resolveConnection) {
+        console.log(`Received message from ${connection.serverId}:`, message.type);
+        
         switch (message.type) {
             case 'connected':
                 if (message.status === 'ready') {
                     console.log(`MCP server ${connection.serverId} ready`);
+                    connection.isReady = true;
+                    if (resolveConnection) {
+                        resolveConnection(connection);
+                    }
+                } else if (message.status === 'already_connected') {
+                    console.log(`MCP server ${connection.serverId} already connected`);
+                    connection.isReady = true;
+                    if (resolveConnection) {
+                        resolveConnection(connection);
+                    }
                 }
                 break;
             case 'response':
-                const pendingCall = connection.pendingCalls.get(message.method);
-                if (pendingCall) {
-                    connection.pendingCalls.delete(message.method);
-                    if (message.error) {
-                        pendingCall.reject(new Error(message.error));
-                    } else {
-                        pendingCall.resolve(message.result);
+                console.log(`Received response:`, message);
+                console.log(`Pending calls:`, Array.from(connection.pendingCalls.entries()));
+                
+                // Try to find the pending call by callId first, then by method
+                let foundCall = null;
+                
+                if (message.callId && connection.pendingCalls.has(message.callId)) {
+                    foundCall = { callId: message.callId, call: connection.pendingCalls.get(message.callId) };
+                    console.log(`Found call by callId: ${message.callId}`);
+                } else {
+                    // Fallback: find by method name
+                    for (const [callId, call] of connection.pendingCalls.entries()) {
+                        if (message.method === call.method) {
+                            foundCall = { callId, call };
+                            console.log(`Found call by method: ${message.method} -> ${callId}`);
+                            break;
+                        }
                     }
+                }
+                
+                if (foundCall) {
+                    connection.pendingCalls.delete(foundCall.callId);
+                    console.log(`Resolving call with result:`, message.result);
+                    if (message.error) {
+                        // Handle error object properly
+                        const errorMessage = typeof message.error === 'object' 
+                            ? message.error.message || JSON.stringify(message.error)
+                            : message.error;
+                        foundCall.call.reject(new Error(errorMessage));
+                    } else {
+                        foundCall.call.resolve(message.result);
+                    }
+                } else {
+                    console.warn(`No pending call found for response:`, message);
+                    console.warn(`Available pending calls:`, Array.from(connection.pendingCalls.keys()));
                 }
                 break;
             case 'error':
                 console.error(`MCP server error:`, message.error);
+                // If there's a pending connection resolution, reject it
+                if (resolveConnection) {
+                    const errorMessage = typeof message.error === 'object' 
+                        ? message.error.message || JSON.stringify(message.error)
+                        : message.error;
+                    resolveConnection.reject(new Error(errorMessage));
+                }
                 break;
+            default:
+                console.log(`Unknown message type: ${message.type}`);
         }
     }
 
     async callStdioMethod(connection, method, params) {
         return new Promise((resolve, reject) => {
             if (!connection.isConnected) {
-                reject(new Error('Connection not established'));
+                reject(new Error('WebSocket connection not established'));
                 return;
             }
             
-            // Store the promise callbacks
-            connection.pendingCalls.set(method, { resolve, reject });
+            if (!connection.isReady) {
+                reject(new Error('MCP server not ready'));
+                return;
+            }
+            
+            // Generate a unique call ID
+            const callId = Date.now().toString();
+            
+            // Store the promise callbacks with the call ID
+            connection.pendingCalls.set(callId, { resolve, reject, method });
             
             // Send the method call
-            connection.ws.send(JSON.stringify({
+            const message = {
                 type: 'call',
                 serverId: connection.serverId,
                 method: method,
-                params: params
-            }));
+                params: params,
+                callId: callId
+            };
+            
+            console.log(`Sending method call:`, message);
+            connection.ws.send(JSON.stringify(message));
+            
+            console.log(`Sent method call to ${connection.serverId}: ${method} (ID: ${callId})`);
             
             // Set a timeout
             setTimeout(() => {
-                if (connection.pendingCalls.has(method)) {
-                    connection.pendingCalls.delete(method);
-                    reject(new Error('Method call timeout'));
+                if (connection.pendingCalls.has(callId)) {
+                    connection.pendingCalls.delete(callId);
+                    reject(new Error(`Method call timeout: ${method}`));
                 }
             }, 30000);
         });
@@ -670,22 +786,153 @@ class DAChat {
             throw new Error(`MCP server ${serverId} not found`);
         }
 
-        const response = await fetch(server.url + '/tools', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(server.auth && { 'Authorization': server.auth })
-            },
-            body: JSON.stringify({ tool, params })
-        });
+        if (server.transport === 'stdio') {
+            // Execute stdio MCP tool
+            const connection = await this.getStdioConnection(server);
+            if (!connection) {
+                throw new Error(`No stdio connection available for ${server.name}`);
+            }
+            
+            console.log(`Executing stdio tool: ${tool} with params:`, params);
+            const result = await this.callStdioMethod(connection, tool, params);
+            console.log(`Tool execution result:`, result);
+            return result;
+        } else {
+            // Execute HTTP MCP tool
+            const response = await fetch(server.url + '/tools', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(server.auth && { 'Authorization': server.auth })
+                },
+                body: JSON.stringify({ tool, params })
+            });
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || `HTTP ${response.status}`);
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || `HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.result;
         }
+    }
 
-        const data = await response.json();
-        return data.result;
+    async processToolExecutions(response) {
+        // Look for tool execution patterns in the AI response
+        const toolExecutionRegex = /window\.executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\)/g;
+        
+        // Also look for tool execution patterns inside code blocks
+        const codeBlockRegex = /```(?:javascript|js)?\s*\n?window\.executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\)\s*\n?```/g;
+        let match;
+        let processedResponse = response;
+        
+        console.log('Processing response for tool executions:', response);
+        
+        // First try the strict pattern
+        while ((match = toolExecutionRegex.exec(response)) !== null) {
+            const [fullMatch, serverId, toolName, paramsStr] = match;
+            
+            try {
+                // Parse the parameters
+                console.log('Attempting to parse params (pattern 1):', paramsStr);
+                
+                // Convert JavaScript object syntax to valid JSON
+                let jsonParams = paramsStr;
+                // Replace unquoted property names with quoted ones
+                jsonParams = jsonParams.replace(/(\w+):/g, '"$1":');
+                // Replace single quotes with double quotes
+                jsonParams = jsonParams.replace(/'/g, '"');
+                
+                console.log('Converted to JSON:', jsonParams);
+                const params = JSON.parse(jsonParams);
+                
+                console.log(`Executing tool: ${toolName} on server ${serverId} with params:`, params);
+                
+                // Execute the tool
+                const result = await this.executeMcpTool(serverId, toolName, params);
+                
+                // Replace the function call with the result
+                const resultStr = JSON.stringify(result, null, 2);
+                processedResponse = processedResponse.replace(fullMatch, `\n\n**Tool Execution Result:**\n\`\`\`json\n${resultStr}\n\`\`\`\n`);
+                
+            } catch (error) {
+                console.error(`Failed to execute tool ${toolName}:`, error);
+                const errorStr = `Error executing ${toolName}: ${error.message}`;
+                processedResponse = processedResponse.replace(fullMatch, `\n\n**Tool Execution Error:**\n\`\`\`\n${errorStr}\n\`\`\`\n`);
+            }
+        }
+        
+        // Look for tool execution patterns inside code blocks
+        while ((match = codeBlockRegex.exec(processedResponse)) !== null) {
+            const [fullMatch, serverId, toolName, paramsStr] = match;
+            
+            try {
+                // Parse the parameters
+                console.log('Attempting to parse params (code block):', paramsStr);
+                
+                // Convert JavaScript object syntax to valid JSON
+                let jsonParams = paramsStr;
+                // Replace unquoted property names with quoted ones
+                jsonParams = jsonParams.replace(/(\w+):/g, '"$1":');
+                // Replace single quotes with double quotes
+                jsonParams = jsonParams.replace(/'/g, '"');
+                
+                console.log('Converted to JSON:', jsonParams);
+                const params = JSON.parse(jsonParams);
+                
+                console.log(`Executing tool (code block): ${toolName} on server ${serverId} with params:`, params);
+                
+                // Execute the tool
+                const result = await this.executeMcpTool(serverId, toolName, params);
+                
+                // Replace the function call with the result
+                const resultStr = JSON.stringify(result, null, 2);
+                processedResponse = processedResponse.replace(fullMatch, `\n\n**Tool Execution Result:**\n\`\`\`json\n${resultStr}\n\`\`\`\n`);
+                
+            } catch (error) {
+                console.error(`Failed to execute tool ${toolName}:`, error);
+                const errorStr = `Error executing ${toolName}: ${error.message}`;
+                processedResponse = processedResponse.replace(fullMatch, `\n\n**Tool Execution Error:**\n\`\`\`\n${errorStr}\n\`\`\`\n`);
+            }
+        }
+        
+        // Also look for simpler patterns like: executeMcpTool('serverId', 'toolName', {params})
+        const simplePattern = /executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\)/g;
+        while ((match = simplePattern.exec(processedResponse)) !== null) {
+            const [fullMatch, serverId, toolName, paramsStr] = match;
+            
+            try {
+                // Parse the parameters
+                console.log('Attempting to parse params (simple pattern):', paramsStr);
+                
+                // Convert JavaScript object syntax to valid JSON
+                let jsonParams = paramsStr;
+                // Replace unquoted property names with quoted ones
+                jsonParams = jsonParams.replace(/(\w+):/g, '"$1":');
+                // Replace single quotes with double quotes
+                jsonParams = jsonParams.replace(/'/g, '"');
+                
+                console.log('Converted to JSON:', jsonParams);
+                const params = JSON.parse(jsonParams);
+                
+                console.log(`Executing tool (simple pattern): ${toolName} on server ${serverId} with params:`, params);
+                
+                // Execute the tool
+                const result = await this.executeMcpTool(serverId, toolName, params);
+                
+                // Replace the function call with the result
+                const resultStr = JSON.stringify(result, null, 2);
+                processedResponse = processedResponse.replace(fullMatch, `\n\n**Tool Execution Result:**\n\`\`\`json\n${resultStr}\n\`\`\`\n`);
+                
+            } catch (error) {
+                console.error(`Failed to execute tool ${toolName}:`, error);
+                const errorStr = `Error executing ${toolName}: ${error.message}`;
+                processedResponse = processedResponse.replace(fullMatch, `\n\n**Tool Execution Error:**\n\`\`\`\n${errorStr}\n\`\`\`\n`);
+            }
+        }
+        
+        return processedResponse;
     }
 
     async callModel(message, context) {
@@ -708,6 +955,9 @@ class DAChat {
     async callOpenAI(message, context, model) {
         // Check if this is an Azure OpenAI endpoint
         const isAzure = model.apiEndpoint.includes('azure.com') || model.apiEndpoint.includes('openai.azure.com');
+        
+        // Add critical instruction to force tool execution
+        const criticalInstruction = "\n\nCRITICAL INSTRUCTION: When users ask for specific actions, you MUST include the tool execution code in your response. Do NOT just say 'I will check' - actually include the code like: window.executeMcpTool('mdev1df57ar85i4luoi', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/'})\n";
         
         let endpoint, headers;
         
@@ -739,18 +989,53 @@ class DAChat {
             });
             
             if (context.mcpData) {
-                systemMessage += "\nCurrent MCP context:\n";
+                console.log('MCP Data being sent to AI:', context.mcpData);
+                systemMessage += "\n\n=== AVAILABLE MCP TOOLS AND CAPABILITIES ===\n";
                 Object.keys(context.mcpData).forEach(serverId => {
                     const data = context.mcpData[serverId];
                     if (data && typeof data === 'object') {
-                        systemMessage += `\n${serverId} server data: ${JSON.stringify(data, null, 2)}\n`;
+                        systemMessage += `\n${serverId} server:\n`;
+                        systemMessage += `- Status: ${data.status || 'unknown'}\n`;
+                        systemMessage += `- Transport: ${data.transport || 'unknown'}\n`;
+                        
+                        if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
+                            systemMessage += `- Available Tools (${data.tools.length}):\n`;
+                            data.tools.forEach(tool => {
+                                systemMessage += `  * ${tool.name}: ${tool.title || tool.description || 'No description'}\n`;
+                            });
+                        } else {
+                            systemMessage += `- Available Tools: None found\n`;
+                        }
+                        
+                        if (data.resources && Array.isArray(data.resources) && data.resources.length > 0) {
+                            systemMessage += `- Available Resources (${data.resources.length}):\n`;
+                            data.resources.forEach(resource => {
+                                systemMessage += `  * ${resource.name}: ${resource.title || resource.description || 'No description'}\n`;
+                            });
+                        }
+                        
+                        if (data.error) {
+                            systemMessage += `- Error: ${data.error}\n`;
+                        }
                     }
                 });
+                
+                systemMessage += "\n=== INSTRUCTIONS ===\n";
+                systemMessage += "You have access to the above MCP tools and can use them to help users. ";
+                systemMessage += "When users ask about system information, files, or need to perform actions, ";
+                systemMessage += "you can leverage these tools to provide accurate and helpful responses.\n\n";
+                systemMessage += "TO EXECUTE TOOLS: You can execute tools by calling the global function:\n";
+                systemMessage += "window.executeMcpTool(serverId, toolName, parameters)\n\n";
+                systemMessage += "For example:\n";
+                systemMessage += "- To check page status: window.executeMcpTool('mdev1df57ar85i4luoi', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/some-page'})\n";
+                systemMessage += "- To echo a message: window.executeMcpTool('mdev1df57ar85i4luoi', 'echo', {message: 'Hello world'})\n\n";
+                systemMessage += "When users request specific actions, actually execute the appropriate tools and show the results.\n";
             }
-            
-            systemMessage += "\nWhen users ask about files, directories, or system information, use the MCP server data to provide accurate responses. You can access file system information through the configured MCP servers.";
         }
 
+        // Add critical instruction to force tool execution
+        systemMessage += criticalInstruction;
+        
         const response = await fetch(endpoint, {
             method: 'POST',
             headers,
@@ -796,16 +1081,48 @@ class DAChat {
             });
             
             if (context.mcpData) {
-                systemMessage += "\nCurrent MCP context:\n";
+                console.log('MCP Data being sent to AI:', context.mcpData);
+                systemMessage += "\n\n=== AVAILABLE MCP TOOLS AND CAPABILITIES ===\n";
                 Object.keys(context.mcpData).forEach(serverId => {
                     const data = context.mcpData[serverId];
                     if (data && typeof data === 'object') {
-                        systemMessage += `\n${serverId} server data: ${JSON.stringify(data, null, 2)}\n`;
+                        systemMessage += `\n${serverId} server:\n`;
+                        systemMessage += `- Status: ${data.status || 'unknown'}\n`;
+                        systemMessage += `- Transport: ${data.transport || 'unknown'}\n`;
+                        
+                        if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
+                            systemMessage += `- Available Tools (${data.tools.length}):\n`;
+                            data.tools.forEach(tool => {
+                                systemMessage += `  * ${tool.name}: ${tool.title || tool.description || 'No description'}\n`;
+                            });
+                        } else {
+                            systemMessage += `- Available Tools: None found\n`;
+                        }
+                        
+                        if (data.resources && Array.isArray(data.resources) && data.resources.length > 0) {
+                            systemMessage += `- Available Resources (${data.resources.length}):\n`;
+                            data.resources.forEach(resource => {
+                                systemMessage += `  * ${resource.name}: ${resource.title || resource.description || 'No description'}\n`;
+                            });
+                        }
+                        
+                        if (data.error) {
+                            systemMessage += `- Error: ${data.error}\n`;
+                        }
                     }
                 });
+                
+                systemMessage += "\n=== INSTRUCTIONS ===\n";
+                systemMessage += "You have access to the above MCP tools and can use them to help users. ";
+                systemMessage += "When users ask about system information, files, or need to perform actions, ";
+                systemMessage += "you can leverage these tools to provide accurate and helpful responses.\n\n";
+                systemMessage += "TO EXECUTE TOOLS: You can execute tools by calling the global function:\n";
+                systemMessage += "window.executeMcpTool(serverId, toolName, parameters)\n\n";
+                systemMessage += "For example:\n";
+                systemMessage += "- To check page status: window.executeMcpTool('mdev1df57ar85i4luoi', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/some-page'})\n";
+                systemMessage += "- To echo a message: window.executeMcpTool('mdev1df57ar85i4luoi', 'echo', {message: 'Hello world'})\n\n";
+                systemMessage += "When users request specific actions, actually execute the appropriate tools and show the results.\n";
             }
-            
-            systemMessage += "\nWhen users ask about files, directories, or system information, use the MCP server data to provide accurate responses. You can access file system information through the configured MCP servers.";
         }
 
         const response = await fetch(`${model.apiEndpoint}/v1/messages`, {
@@ -1150,10 +1467,19 @@ class DAChat {
                 if (!server.env) {
                     server.env = {};
                 }
+                
+                // Set DA_ADMIN_API_TOKEN
                 if (server.env.DA_ADMIN_API_TOKEN !== token) {
                     server.env.DA_ADMIN_API_TOKEN = token;
                     updated = true;
                     console.log(`Updated DA_ADMIN_API_TOKEN for ${server.name}`);
+                }
+                
+                // Set HELIX_ADMIN_API_TOKEN if not present (use DA token as fallback)
+                if (!server.env.HELIX_ADMIN_API_TOKEN) {
+                    server.env.HELIX_ADMIN_API_TOKEN = token;
+                    updated = true;
+                    console.log(`Set HELIX_ADMIN_API_TOKEN for ${server.name} (using DA token as fallback)`);
                 }
             }
         });
@@ -1183,7 +1509,21 @@ class DAChat {
     }
 }
 
+// Global function for AI to execute MCP tools
+window.executeMcpTool = async function(serverId, tool, params) {
+    if (window.daChatInstance) {
+        try {
+            const result = await window.daChatInstance.executeMcpTool(serverId, tool, params);
+            return { success: true, result };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    } else {
+        return { success: false, error: 'DA Chat not initialized' };
+    }
+};
+
 // Initialize the chat when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    new DAChat();
+    window.daChatInstance = new DAChat();
 });
