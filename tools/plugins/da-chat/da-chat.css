@@ -882,3 +882,89 @@ body {
 * {
     transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
 }
+
+/* Tool result formatting */
+.tool-result {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 12px 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.tool-result h4 {
+    margin: 0 0 12px 0 !important;
+    color: #4a9eff !important;
+    font-size: 1.1em !important;
+    border-bottom: 1px solid #333;
+    padding-bottom: 8px;
+}
+
+.tool-result.page-status {
+    border-left: 4px solid #4a9eff;
+}
+
+.tool-result ul {
+    margin: 8px 0;
+    padding-left: 16px;
+}
+
+.tool-result li {
+    margin: 6px 0;
+    line-height: 1.4;
+}
+
+.tool-result strong {
+    color: #e0e0e0;
+    font-weight: 600;
+}
+
+.tool-result code {
+    background: #2a2a2a;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.85em;
+    color: #f0f0f0;
+}
+
+.tool-result a {
+    color: #4a9eff;
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.tool-result a:hover {
+    text-decoration: underline;
+}
+
+/* Status badges */
+.tool-result .status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.tool-result .status-200 {
+    background: #1a4d1a;
+    color: #4caf50;
+}
+
+.tool-result .status-404 {
+    background: #4d1a1a;
+    color: #f44336;
+}
+
+.tool-result .status-error {
+    background: #4d1a1a;
+    color: #f44336;
+}
+
+.tool-result .status-warning {
+    background: #4d3d1a;
+    color: #ff9800;
+}

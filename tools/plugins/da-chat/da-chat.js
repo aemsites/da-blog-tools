@@ -825,10 +825,10 @@ class DAChat {
 
     async processToolExecutions(response) {
         // Look for tool execution patterns in the AI response
-        const toolExecutionRegex = /window\.executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\)/g;
+        const toolExecutionRegex = /window\.executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\);?/g;
         
         // Also look for tool execution patterns inside code blocks
-        const codeBlockRegex = /```(?:javascript|js)?\s*\n?window\.executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\)\s*\n?```/g;
+        const codeBlockRegex = /```(?:javascript|js)?\s*\n?window\.executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\);?\s*\n?```/g;
         let match;
         let processedResponse = response;
         
@@ -913,7 +913,7 @@ class DAChat {
         }
         
         // Also look for simpler patterns like: executeMcpTool('serverId', 'toolName', {params})
-        const simplePattern = /executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\)/g;
+        const simplePattern = /executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\);?/g;
         while ((match = simplePattern.exec(processedResponse)) !== null) {
             const [fullMatch, serverId, toolName, paramsStr] = match;
             
@@ -977,7 +977,8 @@ class DAChat {
         const isAzure = model.apiEndpoint.includes('azure.com') || model.apiEndpoint.includes('openai.azure.com');
         
         // Add critical instruction to force tool execution
-        const criticalInstruction = "\n\nCRITICAL INSTRUCTION: When users ask for specific actions, you MUST include the tool execution code in your response. Do NOT just say 'I will check' - actually include the code like: window.executeMcpTool('mdev1df57ar85i4luoi', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/'})\n\nIMPORTANT: For rum-data tool, use lowercase parameter names: domainkey, url, aggregation, startdate, enddate. Valid aggregation values: 'pageviews', 'visits', 'bounces', 'organic', 'earned', 'lcp', 'cls', 'inp', 'ttfb', 'engagement', 'errors'\n";
+        const dateInfo = this.getCurrentDateInfo();
+        const criticalInstruction = `\n\nCRITICAL INSTRUCTION: When users ask for specific actions, you MUST include the tool execution code in your response. Do NOT just say 'I will check' - actually include the code like: window.executeMcpTool('mdev1df57ar85i4luoi', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/'})\n\nIMPORTANT: For rum-data tool, use lowercase parameter names: domainkey, url, aggregation, startdate, enddate. Valid aggregation values: 'pageviews', 'visits', 'bounces', 'organic', 'earned', 'lcp', 'cls', 'inp', 'ttfb', 'engagement', 'errors'.\n\nCURRENT DATE INFO: Today is ${dateInfo.today}, 7 days ago was ${dateInfo.sevenDaysAgo}, 30 days ago was ${dateInfo.thirtyDaysAgo}. Use these dates for date ranges.\n`;
         
         let endpoint, headers;
         
@@ -1341,6 +1342,9 @@ class DAChat {
                 }
             }
 
+            console.log('formatToolResult - data type:', typeof data, 'isArray:', Array.isArray(data));
+            console.log('formatToolResult - data keys:', data && typeof data === 'object' ? Object.keys(data) : 'not object');
+
             // Handle different result structures
             if (data && typeof data === 'object') {
                 // If it has a content array with text (like the page-status result)
@@ -1349,10 +1353,65 @@ class DAChat {
                     if (textContent && textContent.text) {
                         try {
                             const parsedContent = JSON.parse(textContent.text);
-                            return this.formatPageStatusResult(parsedContent);
+                            console.log('Parsed content type:', typeof parsedContent, 'isArray:', Array.isArray(parsedContent));
+                            
+                            // Check if this looks like page status data
+                            if (parsedContent.webPath || parsedContent.live || parsedContent.preview) {
+                                return this.formatPageStatusResult(parsedContent);
+                            } else if (Array.isArray(parsedContent) && parsedContent.length > 0 && (parsedContent[0].url || parsedContent[0].urlL)) {
+                                // This looks like RUM data array
+                                console.log('Detected RUM data array in content');
+                                return this.formatRumDataResult(data);
+                            } else if (parsedContent.aggregation || parsedContent.url) {
+                                // This looks like RUM data object
+                                return this.formatRumDataResult(data);
+                            } else {
+                                // Otherwise format as generic tool result
+                                return this.formatObjectResult(parsedContent);
+                            }
                         } catch (e) {
+                            // If parsing fails, check if the original data looks like RUM data
+                            if (data.content && data.content.length > 0) {
+                                return this.formatRumDataResult(data);
+                            }
                             return textContent.text;
                         }
+                    }
+                }
+                
+                // Check if this is a direct array of performance data (RUM data)
+                if (Array.isArray(data) && data.length > 0 && (data[0].url || data[0].urlL)) {
+                    console.log('Detected array of RUM data');
+                    return this.formatRumDataResult({ content: [{ type: 'text', text: JSON.stringify(data) }] });
+                }
+                
+                // Check if this is a single performance data object (RUM data)
+                if (data.url || data.urlL) {
+                    console.log('Detected single RUM data object');
+                    return this.formatRumDataResult({ content: [{ type: 'text', text: JSON.stringify([data]) }] });
+                }
+                
+                // Check if this is an object with numbered keys that contain RUM data
+                if (!Array.isArray(data) && typeof data === 'object') {
+                    const keys = Object.keys(data);
+                    const firstKey = keys[0];
+                    console.log('Checking numbered keys - firstKey:', firstKey, 'isNaN:', isNaN(firstKey));
+                    if (firstKey && !isNaN(firstKey) && data[firstKey]) {
+                        console.log('First item:', data[firstKey]);
+                        if (data[firstKey].url || data[firstKey].urlL) {
+                            console.log('Detected object with numbered RUM data keys');
+                            const rumArray = Object.values(data);
+                            return this.formatRumDataResult({ content: [{ type: 'text', text: JSON.stringify(rumArray) }] });
+                        }
+                    }
+                }
+                
+                // Check if this looks like RUM data even without numbered keys
+                if (!Array.isArray(data) && typeof data === 'object') {
+                    const values = Object.values(data);
+                    if (values.length > 0 && values[0] && typeof values[0] === 'object' && (values[0].url || values[0].urlL)) {
+                        console.log('Detected object with RUM data values');
+                        return this.formatRumDataResult({ content: [{ type: 'text', text: JSON.stringify(values) }] });
                     }
                 }
                 
@@ -1444,6 +1503,102 @@ class DAChat {
         return formatted;
     }
 
+    formatRumDataResult(data) {
+        let formatted = '\n\n**📈 RUM Data Results**\n\n';
+        
+        if (data.content && Array.isArray(data.content)) {
+            const textContent = data.content.find(item => item.type === 'text');
+            if (textContent && textContent.text) {
+                try {
+                    const rumData = JSON.parse(textContent.text);
+                    
+                    // Check if this is an array of performance data
+                    if (Array.isArray(rumData)) {
+                        formatted += '**📊 Performance Data:**\n\n';
+                        rumData.forEach((item, index) => {
+                            // Extract page name from URL
+                            const url = item.url || item.urlL || 'Unknown page';
+                            const pageName = url.split('/').pop() || url;
+                            
+                            formatted += `**${index + 1}.** \`${pageName}\`\n`;
+                            formatted += `   - **URL:** ${url}\n`;
+                            formatted += `   - **Sample Count:** ${item.count || 'N/A'}\n`;
+                            formatted += `   - **Total Load Time:** ${item.sum || 'N/A'}ms\n`;
+                            formatted += `   - **Average Load Time:** ${item.mean || 'N/A'}ms\n`;
+                            formatted += `   - **Median (P50):** ${item.p50 || 'N/A'}ms\n`;
+                            formatted += `   - **75th Percentile (P75):** ${item.p75 || 'N/A'}ms\n`;
+                            if (item.errorRate !== undefined) {
+                                formatted += `   - **Error Rate:** ${item.errorRate.toFixed(1)}%\n`;
+                            }
+                            formatted += '\n';
+                        });
+                        return formatted;
+                    }
+                    
+                    // Handle other RUM data formats
+                    formatted += `**Aggregation:** \`${rumData.aggregation || 'Unknown'}\`\n`;
+                    formatted += `**URL:** \`${rumData.url || 'Unknown'}\`\n`;
+                    formatted += `**Date Range:** \`${rumData.startdate || 'Unknown'} to ${rumData.enddate || 'Unknown'}\`\n\n`;
+                    
+                    if (rumData.data && Array.isArray(rumData.data)) {
+                        formatted += '**📊 Data Points:**\n\n';
+                        rumData.data.forEach((item, index) => {
+                            formatted += `**${index + 1}.** \`${item.page || item.url || 'Unknown page'}\`\n`;
+                            formatted += `   - **Views:** ${item.pageviews || item.views || 'N/A'}\n`;
+                            formatted += `   - **Visits:** ${item.visits || 'N/A'}\n`;
+                            if (item.avgTimeOnPage) {
+                                formatted += `   - **Avg Time:** ${item.avgTimeOnPage}\n`;
+                            }
+                            formatted += '\n';
+                        });
+                    } else if (rumData.summary) {
+                        formatted += '**📋 Summary:**\n';
+                        formatted += `\`\`\`json\n${JSON.stringify(rumData.summary, null, 2)}\n\`\`\`\n\n`;
+                    } else {
+                        formatted += '**📋 Raw Data:**\n';
+                        formatted += `\`\`\`json\n${JSON.stringify(rumData, null, 2)}\n\`\`\`\n\n`;
+                    }
+                } catch (e) {
+                    // Try to parse as array of performance data
+                    try {
+                        const performanceData = JSON.parse(textContent.text);
+                        if (Array.isArray(performanceData)) {
+                            formatted += '**📊 Performance Data:**\n\n';
+                            performanceData.forEach((item, index) => {
+                                // Extract page name from URL
+                                const url = item.url || item.urlL || 'Unknown page';
+                                const pageName = url.split('/').pop() || url;
+                                
+                                formatted += `**${index + 1}.** \`${pageName}\`\n`;
+                                formatted += `   - **URL:** ${url}\n`;
+                                formatted += `   - **Sample Count:** ${item.count || 'N/A'}\n`;
+                                formatted += `   - **Total Load Time:** ${item.sum || 'N/A'}ms\n`;
+                                formatted += `   - **Average Load Time:** ${item.mean || 'N/A'}ms\n`;
+                                formatted += `   - **Median (P50):** ${item.p50 || 'N/A'}ms\n`;
+                                formatted += `   - **75th Percentile (P75):** ${item.p75 || 'N/A'}ms\n`;
+                                if (item.errorRate !== undefined) {
+                                    formatted += `   - **Error Rate:** ${item.errorRate.toFixed(1)}%\n`;
+                                }
+                                formatted += '\n';
+                            });
+                        } else {
+                            formatted += '**📋 Raw Response:**\n';
+                            formatted += `\`\`\`\n${textContent.text}\n\`\`\`\n\n`;
+                        }
+                    } catch (e2) {
+                        formatted += '**📋 Raw Response:**\n';
+                        formatted += `\`\`\`\n${textContent.text}\n\`\`\`\n\n`;
+                    }
+                }
+            }
+        } else {
+            formatted += '**📋 Raw Data:**\n';
+            formatted += `\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n\n`;
+        }
+        
+        return formatted;
+    }
+
     getStatusBadge(status) {
         if (status === 200) {
             return '🟢 **200 OK**';
@@ -1456,6 +1611,30 @@ class DAChat {
         } else {
             return `⚪ **${status}**`;
         }
+    }
+
+    getCurrentDateInfo() {
+        const now = new Date();
+        const today = now.toISOString().split('T')[0]; // YYYY-MM-DD format
+        
+        // Calculate 7 days ago
+        const sevenDaysAgo = new Date(now);
+        sevenDaysAgo.setDate(now.getDate() - 7);
+        const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+        
+        // Calculate 30 days ago
+        const thirtyDaysAgo = new Date(now);
+        thirtyDaysAgo.setDate(now.getDate() - 30);
+        const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+        
+        return {
+            today,
+            sevenDaysAgo: sevenDaysAgoStr,
+            thirtyDaysAgo: thirtyDaysAgoStr,
+            currentYear: now.getFullYear(),
+            currentMonth: now.getMonth() + 1,
+            currentDay: now.getDate()
+        };
     }
 
     updateSendButton() {
