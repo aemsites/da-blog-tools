@@ -23,6 +23,11 @@ class DAChat {
         this.updateModelsList();
         this.updateMcpServersList();
         
+        // Auto-select the first model if only one is configured
+        if (this.models.length === 1 && !this.currentModel) {
+            this.selectModel(this.models[0].id);
+        }
+        
         // Initialize DA SDK
         try {
             const { context, token, actions } = await DA_SDK;
@@ -839,10 +844,15 @@ class DAChat {
                 
                 // Convert JavaScript object syntax to valid JSON
                 let jsonParams = paramsStr;
+                // Remove JavaScript comments (both // and /* */)
+                jsonParams = jsonParams.replace(/\/\/.*$/gm, ''); // Remove single-line comments
+                jsonParams = jsonParams.replace(/\/\*[\s\S]*?\*\//g, ''); // Remove multi-line comments
                 // Replace unquoted property names with quoted ones
                 jsonParams = jsonParams.replace(/(\w+):/g, '"$1":');
                 // Replace single quotes with double quotes
                 jsonParams = jsonParams.replace(/'/g, '"');
+                // Remove trailing commas before closing braces/brackets
+                jsonParams = jsonParams.replace(/,(\s*[}\]])/g, '$1');
                 
                 console.log('Converted to JSON:', jsonParams);
                 const params = JSON.parse(jsonParams);
@@ -852,14 +862,14 @@ class DAChat {
                 // Execute the tool
                 const result = await this.executeMcpTool(serverId, toolName, params);
                 
-                // Replace the function call with the result
-                const resultStr = JSON.stringify(result, null, 2);
-                processedResponse = processedResponse.replace(fullMatch, `\n\n**Tool Execution Result:**\n\`\`\`json\n${resultStr}\n\`\`\`\n`);
+                // Replace the function call with the formatted result
+                const formattedResult = this.formatToolResult(result);
+                processedResponse = processedResponse.replace(fullMatch, formattedResult);
                 
             } catch (error) {
                 console.error(`Failed to execute tool ${toolName}:`, error);
-                const errorStr = `Error executing ${toolName}: ${error.message}`;
-                processedResponse = processedResponse.replace(fullMatch, `\n\n**Tool Execution Error:**\n\`\`\`\n${errorStr}\n\`\`\`\n`);
+                const errorStr = `**❌ Tool Execution Error:** ${error.message}`;
+                processedResponse = processedResponse.replace(fullMatch, errorStr);
             }
         }
         
@@ -873,10 +883,15 @@ class DAChat {
                 
                 // Convert JavaScript object syntax to valid JSON
                 let jsonParams = paramsStr;
+                // Remove JavaScript comments (both // and /* */)
+                jsonParams = jsonParams.replace(/\/\/.*$/gm, ''); // Remove single-line comments
+                jsonParams = jsonParams.replace(/\/\*[\s\S]*?\*\//g, ''); // Remove multi-line comments
                 // Replace unquoted property names with quoted ones
                 jsonParams = jsonParams.replace(/(\w+):/g, '"$1":');
                 // Replace single quotes with double quotes
                 jsonParams = jsonParams.replace(/'/g, '"');
+                // Remove trailing commas before closing braces/brackets
+                jsonParams = jsonParams.replace(/,(\s*[}\]])/g, '$1');
                 
                 console.log('Converted to JSON:', jsonParams);
                 const params = JSON.parse(jsonParams);
@@ -886,14 +901,14 @@ class DAChat {
                 // Execute the tool
                 const result = await this.executeMcpTool(serverId, toolName, params);
                 
-                // Replace the function call with the result
-                const resultStr = JSON.stringify(result, null, 2);
-                processedResponse = processedResponse.replace(fullMatch, `\n\n**Tool Execution Result:**\n\`\`\`json\n${resultStr}\n\`\`\`\n`);
+                // Replace the function call with the formatted result
+                const formattedResult = this.formatToolResult(result);
+                processedResponse = processedResponse.replace(fullMatch, formattedResult);
                 
             } catch (error) {
                 console.error(`Failed to execute tool ${toolName}:`, error);
-                const errorStr = `Error executing ${toolName}: ${error.message}`;
-                processedResponse = processedResponse.replace(fullMatch, `\n\n**Tool Execution Error:**\n\`\`\`\n${errorStr}\n\`\`\`\n`);
+                const errorStr = `**❌ Tool Execution Error:** ${error.message}`;
+                processedResponse = processedResponse.replace(fullMatch, errorStr);
             }
         }
         
@@ -908,10 +923,15 @@ class DAChat {
                 
                 // Convert JavaScript object syntax to valid JSON
                 let jsonParams = paramsStr;
+                // Remove JavaScript comments (both // and /* */)
+                jsonParams = jsonParams.replace(/\/\/.*$/gm, ''); // Remove single-line comments
+                jsonParams = jsonParams.replace(/\/\*[\s\S]*?\*\//g, ''); // Remove multi-line comments
                 // Replace unquoted property names with quoted ones
                 jsonParams = jsonParams.replace(/(\w+):/g, '"$1":');
                 // Replace single quotes with double quotes
                 jsonParams = jsonParams.replace(/'/g, '"');
+                // Remove trailing commas before closing braces/brackets
+                jsonParams = jsonParams.replace(/,(\s*[}\]])/g, '$1');
                 
                 console.log('Converted to JSON:', jsonParams);
                 const params = JSON.parse(jsonParams);
@@ -921,14 +941,14 @@ class DAChat {
                 // Execute the tool
                 const result = await this.executeMcpTool(serverId, toolName, params);
                 
-                // Replace the function call with the result
-                const resultStr = JSON.stringify(result, null, 2);
-                processedResponse = processedResponse.replace(fullMatch, `\n\n**Tool Execution Result:**\n\`\`\`json\n${resultStr}\n\`\`\`\n`);
+                // Replace the function call with the formatted result
+                const formattedResult = this.formatToolResult(result);
+                processedResponse = processedResponse.replace(fullMatch, formattedResult);
                 
             } catch (error) {
                 console.error(`Failed to execute tool ${toolName}:`, error);
-                const errorStr = `Error executing ${toolName}: ${error.message}`;
-                processedResponse = processedResponse.replace(fullMatch, `\n\n**Tool Execution Error:**\n\`\`\`\n${errorStr}\n\`\`\`\n`);
+                const errorStr = `**❌ Tool Execution Error:** ${error.message}`;
+                processedResponse = processedResponse.replace(fullMatch, errorStr);
             }
         }
         
@@ -957,7 +977,7 @@ class DAChat {
         const isAzure = model.apiEndpoint.includes('azure.com') || model.apiEndpoint.includes('openai.azure.com');
         
         // Add critical instruction to force tool execution
-        const criticalInstruction = "\n\nCRITICAL INSTRUCTION: When users ask for specific actions, you MUST include the tool execution code in your response. Do NOT just say 'I will check' - actually include the code like: window.executeMcpTool('mdev1df57ar85i4luoi', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/'})\n";
+        const criticalInstruction = "\n\nCRITICAL INSTRUCTION: When users ask for specific actions, you MUST include the tool execution code in your response. Do NOT just say 'I will check' - actually include the code like: window.executeMcpTool('mdev1df57ar85i4luoi', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/'})\n\nIMPORTANT: For rum-data tool, use lowercase parameter names: domainkey, url, aggregation, startdate, enddate. Valid aggregation values: 'pageviews', 'visits', 'bounces', 'organic', 'earned', 'lcp', 'cls', 'inp', 'ttfb', 'engagement', 'errors'\n";
         
         let endpoint, headers;
         
@@ -1306,6 +1326,136 @@ class DAChat {
             }
             return match;
         });
+    }
+
+    formatToolResult(result) {
+        try {
+            // If result is a string that contains JSON, parse it
+            let data = result;
+            if (typeof result === 'string') {
+                try {
+                    data = JSON.parse(result);
+                } catch (e) {
+                    // If it's not JSON, return as is
+                    return result;
+                }
+            }
+
+            // Handle different result structures
+            if (data && typeof data === 'object') {
+                // If it has a content array with text (like the page-status result)
+                if (data.content && Array.isArray(data.content)) {
+                    const textContent = data.content.find(item => item.type === 'text');
+                    if (textContent && textContent.text) {
+                        try {
+                            const parsedContent = JSON.parse(textContent.text);
+                            return this.formatPageStatusResult(parsedContent);
+                        } catch (e) {
+                            return textContent.text;
+                        }
+                    }
+                }
+                
+                // If it's a simple object, format it nicely
+                return this.formatObjectResult(data);
+            }
+            
+            return JSON.stringify(data, null, 2);
+        } catch (error) {
+            return JSON.stringify(result, null, 2);
+        }
+    }
+
+    formatPageStatusResult(data) {
+        let formatted = '\n\n**📄 Page Status Results**\n\n';
+        
+        // Basic info
+        if (data.webPath) {
+            formatted += `**Path:** \`${data.webPath}\`\n`;
+        }
+        if (data.resourcePath) {
+            formatted += `**Resource:** \`${data.resourcePath}\`\n`;
+        }
+        formatted += '\n';
+        
+        // Live status
+        if (data.live) {
+            formatted += '**🌐 Live Environment**\n';
+            formatted += `- **URL:** [${data.live.url}](${data.live.url})\n`;
+            formatted += `- **Status:** ${this.getStatusBadge(data.live.status)}\n`;
+            if (data.live.contentBusId) {
+                formatted += `- **Content Bus ID:** \`${data.live.contentBusId}\`\n`;
+            }
+            if (data.live.permissions) {
+                formatted += `- **Permissions:** ${data.live.permissions.join(', ')}\n`;
+            }
+            formatted += '\n';
+        }
+        
+        // Preview status
+        if (data.preview) {
+            formatted += '**👁️ Preview Environment**\n';
+            formatted += `- **URL:** [${data.preview.url}](${data.preview.url})\n`;
+            formatted += `- **Status:** ${this.getStatusBadge(data.preview.status)}\n`;
+            if (data.preview.contentBusId) {
+                formatted += `- **Content Bus ID:** \`${data.preview.contentBusId}\`\n`;
+            }
+            if (data.preview.permissions) {
+                formatted += `- **Permissions:** ${data.preview.permissions.join(', ')}\n`;
+            }
+            formatted += '\n';
+        }
+        
+        // Code status
+        if (data.code) {
+            formatted += '**💻 Code Environment**\n';
+            formatted += `- **Status:** ${this.getStatusBadge(data.code.status)}\n`;
+            if (data.code.codeBusId) {
+                formatted += `- **Code Bus ID:** \`${data.code.codeBusId}\`\n`;
+            }
+            if (data.code.permissions) {
+                formatted += `- **Permissions:** ${data.code.permissions.join(', ')}\n`;
+            }
+            formatted += '\n';
+        }
+        
+        // Links
+        if (data.links) {
+            formatted += '**🔗 Admin Links**\n';
+            Object.entries(data.links).forEach(([key, url]) => {
+                formatted += `- **${key.charAt(0).toUpperCase() + key.slice(1)}:** [${url}](${url})\n`;
+            });
+        }
+        
+        return formatted;
+    }
+
+    formatObjectResult(data) {
+        let formatted = '\n\n**📊 Tool Results**\n\n';
+        
+        Object.entries(data).forEach(([key, value]) => {
+            if (typeof value === 'object' && value !== null) {
+                formatted += `**${key}:**\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\`\n\n`;
+            } else {
+                formatted += `**${key}:** \`${value}\`\n\n`;
+            }
+        });
+        
+        return formatted;
+    }
+
+    getStatusBadge(status) {
+        if (status === 200) {
+            return '🟢 **200 OK**';
+        } else if (status === 404) {
+            return '🔴 **404 Not Found**';
+        } else if (status >= 500) {
+            return '🔴 **Server Error**';
+        } else if (status >= 400) {
+            return '🟡 **Client Error**';
+        } else {
+            return `⚪ **${status}**`;
+        }
     }
 
     updateSendButton() {
