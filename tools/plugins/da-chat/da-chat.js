@@ -715,7 +715,7 @@ class DAChat {
 
   async processToolExecutions(response, context) {
     // Look for tool execution patterns in the AI response
-    const toolExecutionRegex = /window\.executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\);?/g;
+    const toolExecutionRegex = /^window\.executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\);?$/gm;
 
     // Also look for tool execution patterns inside code blocks
     const codeBlockRegex = /```(?:javascript|js)?\s*\n?window\.executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\);?\s*\n?```/g;
@@ -734,10 +734,24 @@ class DAChat {
     processedResponse = processedResponse.replace(/```javascript\s*\n?/g, '');
     processedResponse = processedResponse.replace(/```\s*\n?/g, '');
     processedResponse = processedResponse.replace(/javascript\s*$/gm, '');
+    
+    // Auto-correct any remaining double window references in the response
+    processedResponse = processedResponse.replace(/window\.window\.executeMcpTool/g, 'window.executeMcpTool');
 
     // First try the strict pattern
     while ((match = toolExecutionRegex.exec(response)) !== null) {
       const [fullMatch, serverId, toolName, paramsStr] = match;
+      
+      // Auto-correct double window calls
+      if (fullMatch.includes('window.window')) {
+        console.log('Auto-correcting double window call:', fullMatch);
+        const correctedCall = fullMatch.replace('window.window.executeMcpTool', 'window.executeMcpTool');
+        processedResponse = processedResponse.replace(fullMatch, correctedCall);
+        // Update the match for processing
+        match[0] = correctedCall;
+        // Also correct the fullMatch for display
+        fullMatch = correctedCall;
+      }
 
       try {
         // Parse the parameters
@@ -766,7 +780,7 @@ class DAChat {
         // Get AI analysis of the tool results
         console.log('Calling AI for analysis...');
         const resultData = this.extractResultData(result);
-        const analysisPrompt = `Analyze this data and provide insights based on the user's original question. Do NOT show the raw data. Instead, answer the user's question, identify key patterns, highlight important findings, and provide actionable insights. IMPORTANT: Provide your analysis as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks. Here's the data: ${JSON.stringify(resultData, null, 2)}`;
+        const analysisPrompt = `Analyze this data and provide insights based on the user's original question. Do NOT show the raw data. Instead, answer the user's question only. IMPORTANT: Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks. Here's the data: ${JSON.stringify(resultData, null, 2)}`;
         const analysisResponse = await this.callModel(analysisPrompt, context);
         console.log('Analysis response:', analysisResponse);
         processedResponse = processedResponse.replace(fullMatch, analysisResponse);
@@ -926,7 +940,7 @@ class DAChat {
     const dateInfo = this.getCurrentDateInfo();
     const availableServerIds = this.mcpServers.map((s) => s.id).join(', ');
     const firstServerId = this.mcpServers.length > 0 ? this.mcpServers[0].id : 'your-server-id';
-    const criticalInstruction = `\n\nCRITICAL INSTRUCTION: When users ask for specific actions, you MUST include the tool execution code in your response. Do NOT just say 'I will check' - actually include the code like: window.executeMcpTool('${firstServerId}', 'start-bulk-page-status', {org: 'aemsites', site: 'da-blog-tools'})\n\nMANDATORY: You MUST execute tools by including the actual code. NEVER describe what you will do - just include the window.executeMcpTool() call directly in your response.\n\nAVAILABLE SERVER IDS: ${availableServerIds}\n\nIMPORTANT: For rum-data tool, use lowercase parameter names: domainkey, url, aggregation, startdate, enddate. Valid aggregation values: 'pageviews', 'visits', 'bounces', 'organic', 'earned', 'lcp', 'cls', 'inp', 'ttfb', 'engagement', 'errors'.\n\nTOOL USAGE GUIDELINES:\n- For single page status: use 'page-status' with {org, site, path} parameters\n- For multiple pages/site status: use 'start-bulk-page-status' with {org, site} (optional path)\n- For checking bulk job results: use 'check-bulk-page-status' with {jobId}\n- For audit logs: use 'audit-log' with {org, site} and optional time filters (since, from, to)\n- For RUM data: use 'rum-data' with {url, domainkey, aggregation} and optional dates\n\nCURRENT DATE INFO: Today is ${dateInfo.today}, 7 days ago was ${dateInfo.sevenDaysAgo}, 30 days ago was ${dateInfo.thirtyDaysAgo}. Use these dates for date ranges.\n\nRESPONSE STYLE: Be direct and concise. Do NOT say things like "I will use the tool" or "Here's the execution" - just include the tool execution code directly. When tool results are provided, present the data clearly without unsolicited analysis.\n\nANALYSIS INSTRUCTION: When tool results are provided, present ONLY the raw data or direct answer. DO NOT create sections like "Key Insights", "Actionable Recommendations", "Analysis", or "Recommendations". DO NOT provide any interpretation, patterns, or suggestions unless explicitly requested. Present data in simple lists or tables only.\n\nCRITICAL: Do NOT explain your logic or reasoning. Do NOT say "I'll query" or "I'll check" or "Here's the execution". Just execute the tool directly with the code.\n\nEXAMPLES:\n- For audit logs: window.executeMcpTool('${firstServerId}', 'audit-log', {org: 'aemsites', site: 'da-blog-tools', since: '7d'})\n- For page status: window.executeMcpTool('${firstServerId}', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/blog/example'})\n- For bulk status: window.executeMcpTool('${firstServerId}', 'start-bulk-page-status', {org: 'aemsites', site: 'da-blog-tools'})\n\nSTRICT RULE: NEVER create "Key Insights", "Actionable Recommendations", "Analysis", "Key Findings", "Actionable Insights", or similar sections unless the user explicitly asks for analysis or insights. NEVER provide unsolicited analysis, patterns, or recommendations.`;
+    const criticalInstruction = `\n\nDIRECT EXECUTION: When users ask for actions, respond with ONLY the tool call: window.executeMcpTool(serverId, toolName, params)\n\nAVAILABLE SERVER IDS: ${availableServerIds}\n\nTOOL USAGE:\n- audit-log: {org, site, since/from/to}\n- page-status: {org, site, path}\n- start-bulk-page-status: {org, site}\n- check-bulk-page-status: {jobId}\n- rum-data: {url, domainkey, aggregation, startdate, enddate}\n\nCURRENT DATE INFO: Today is ${dateInfo.today}, 7 days ago was ${dateInfo.sevenDaysAgo}, 30 days ago was ${dateInfo.thirtyDaysAgo}.\n\nCRITICAL RULES:\n- NO explanatory text like "I will execute" or "Let me check"\n- NO descriptions of what you will do\n- Execute tools immediately with window.executeMcpTool()\n- Present data only, no analysis unless requested\n- No "Key Insights" or "Recommendations" sections`;
 
     let endpoint; let
       headers;
