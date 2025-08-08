@@ -154,25 +154,8 @@
                         <input type="text" id="mcpName" required>
                     </div>
                     <div class="form-group">
-                        <label for="mcpTransport">Transport Type:</label>
-                        <select id="mcpTransport" required>
-                            <option value="http">HTTP</option>
-                            <option value="stdio">Stdio (WebSocket)</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="httpFields">
                         <label for="mcpUrl">Server URL:</label>
-                        <input type="url" id="mcpUrl" placeholder="http://localhost:3001">
-                    </div>
-                    <div class="form-group" id="stdioFields" style="display: none;">
-                        <label for="mcpCommand">Command/URL:</label>
-                        <input type="text" id="mcpCommand" placeholder="https://github.com/cloudadoption/helix-mcp">
-                        <small class="form-help">For stdio servers, use the npx command or GitHub URL</small>
-                    </div>
-                    <div class="form-group" id="envFields" style="display: none;">
-                        <label for="mcpEnv">Environment Variables (JSON):</label>
-                        <textarea id="mcpEnv" rows="4" placeholder='{"DA_ADMIN_API_TOKEN": "your_token", "HELIX_ADMIN_API_TOKEN": "your_token"}'></textarea>
-                        <small class="form-help">Enter environment variables as JSON. These will be passed to the MCP server process.</small>
+                        <input type="url" id="mcpUrl" placeholder="http://localhost:3001" required>
                     </div>
                     <div class="form-group">
                         <label for="mcpAuth">Authentication (optional):</label>

@@ -10,8 +10,12 @@ class DAChat {
         this.isLoading = false;
         this.editingModelId = null;
         this.editingServerId = null;
-        this.stdioConnections = new Map(); // Store stdio MCP connections
+
         this.daToken = null; // Store DA SDK token
+        
+        // Pre-configured Helix MCP server URL - change this in one place
+        // this.HELIX_MCP_URL = 'http://localhost:3003';
+        this.HELIX_MCP_URL = 'https://helix-mcp-staging.adobeaem.workers.dev';
         
         this.init();
     }
@@ -47,6 +51,24 @@ class DAChat {
             const config = JSON.parse(savedConfig);
             this.models = config.models || [];
             this.mcpServers = config.mcpServers || [];
+            
+            // Ensure Helix MCP server is always present and up-to-date
+            const helixServerIndex = this.mcpServers.findIndex(s => s.id === 'helix-mcp');
+            if (helixServerIndex === -1) {
+                // Add Helix MCP server if not present
+                this.mcpServers.unshift({
+                    id: 'helix-mcp',
+                    name: 'Helix MCP',
+                    transport: 'http',
+                    url: this.HELIX_MCP_URL,
+                    auth: '',
+                    description: 'Pre-configured Helix MCP server for AEM operations',
+                    readonly: true
+                });
+            } else {
+                // Update existing Helix MCP server URL to current value
+                this.mcpServers[helixServerIndex].url = this.HELIX_MCP_URL;
+            }
         } else {
             // Default configuration
             this.models = [
@@ -83,23 +105,21 @@ class DAChat {
             ];
             this.mcpServers = [
                 {
+                    id: 'helix-mcp',
+                    name: 'Helix MCP',
+                    transport: 'http',
+                    url: this.HELIX_MCP_URL,
+                    auth: '',
+                    description: 'Pre-configured Helix MCP server for AEM operations',
+                    readonly: true // Mark as read-only
+                },
+                {
                     id: 'filesystem',
                     name: 'File System',
                     transport: 'http',
                     url: 'http://localhost:3001',
                     auth: '',
                     description: 'Access to local file system'
-                },
-                {
-                    id: 'helix-mcp',
-                    name: 'Helix MCP',
-                    transport: 'stdio',
-                    command: 'https://github.com/cloudadoption/helix-mcp',
-                    auth: '',
-                    env: {
-                        HELIX_ADMIN_API_TOKEN: ''
-                    },
-                    description: 'Helix and Document Authoring Admin API access (DA_ADMIN_API_TOKEN and HELIX_ADMIN_API_TOKEN will be auto-set from SDK)'
                 }
             ];
         }
@@ -155,20 +175,20 @@ class DAChat {
             const item = document.createElement('div');
             item.className = 'mcp-server-item';
             
-            const transport = server.transport || 'http';
-            const endpoint = transport === 'http' ? server.url : server.command;
+            const isReadonly = server.readonly || server.id === 'helix-mcp';
+            const readonlyClass = isReadonly ? ' readonly' : '';
             
             item.innerHTML = `
                 <div class="mcp-server-info">
-                    <div class="mcp-server-name">${server.name}</div>
+                    <div class="mcp-server-name">${server.name}${isReadonly ? ' <span class="readonly-badge">Pre-configured</span>' : ''}</div>
                     <div class="mcp-server-url">
-                        <span class="transport-badge ${transport}">${transport.toUpperCase()}</span>
-                        ${endpoint}
+                        <span class="transport-badge http">HTTP</span>
+                        ${server.url}
                     </div>
                 </div>
                 <div class="mcp-server-actions">
-                    <button class="edit-btn" data-server-id="${server.id}">Edit</button>
-                    <button class="delete-btn" data-server-id="${server.id}">Delete</button>
+                    ${isReadonly ? '' : `<button class="edit-btn" data-server-id="${server.id}">Edit</button>`}
+                    ${isReadonly ? '' : `<button class="delete-btn" data-server-id="${server.id}">Delete</button>`}
                 </div>
             `;
             list.appendChild(item);
@@ -254,29 +274,7 @@ class DAChat {
             this.hideMcpForm();
         });
 
-        // Transport type switching
-        document.getElementById('mcpTransport').addEventListener('change', (e) => {
-            const transport = e.target.value;
-            const httpFields = document.getElementById('httpFields');
-            const stdioFields = document.getElementById('stdioFields');
-            const envFields = document.getElementById('envFields');
-            
-            if (transport === 'http') {
-                httpFields.style.display = 'block';
-                stdioFields.style.display = 'none';
-                envFields.style.display = 'none';
-                document.getElementById('mcpUrl').required = true;
-                document.getElementById('mcpCommand').required = false;
-                document.getElementById('mcpEnv').required = false;
-            } else {
-                httpFields.style.display = 'none';
-                stdioFields.style.display = 'block';
-                envFields.style.display = 'block';
-                document.getElementById('mcpUrl').required = false;
-                document.getElementById('mcpCommand').required = true;
-                document.getElementById('mcpEnv').required = false; // Optional but recommended
-            }
-        });
+
 
         // Temperature range
         document.getElementById('temperature').addEventListener('input', (e) => {
@@ -369,6 +367,12 @@ class DAChat {
     }
 
     deleteMcpServer(serverId) {
+        const server = this.mcpServers.find(s => s.id === serverId);
+        if (server && (server.readonly || server.id === 'helix-mcp')) {
+            console.warn('Cannot delete pre-configured server:', server.name);
+            return;
+        }
+        
         this.mcpServers = this.mcpServers.filter(s => s.id !== serverId);
         this.updateMcpServersList();
         this.saveConfiguration();
@@ -386,6 +390,11 @@ class DAChat {
     editMcpServer(serverId) {
         const server = this.mcpServers.find(s => s.id === serverId);
         if (!server) return;
+        
+        if (server.readonly || server.id === 'helix-mcp') {
+            console.warn('Cannot edit pre-configured server:', server.name);
+            return;
+        }
         
         this.editingServerId = serverId;
         this.populateMcpForm(server);
@@ -405,22 +414,9 @@ class DAChat {
 
     populateMcpForm(server) {
         document.getElementById('mcpName').value = server.name;
-        document.getElementById('mcpTransport').value = server.transport || 'http';
+        document.getElementById('mcpUrl').value = server.url || '';
         document.getElementById('mcpAuth').value = server.auth || '';
         document.getElementById('mcpDescription').value = server.description || '';
-        
-        // Trigger transport change to show/hide fields
-        const transportEvent = new Event('change');
-        document.getElementById('mcpTransport').dispatchEvent(transportEvent);
-        
-        if (server.transport === 'http') {
-            document.getElementById('mcpUrl').value = server.url || '';
-        } else {
-            document.getElementById('mcpCommand').value = server.command || server.url || '';
-            if (server.env) {
-                document.getElementById('mcpEnv').value = JSON.stringify(server.env, null, 2);
-            }
-        }
     }
 
     // Chat Functionality
@@ -493,40 +489,129 @@ class DAChat {
         
         for (const server of this.mcpServers) {
             try {
-                console.log(`Processing server: ${server.name} (${server.transport})`);
-                if (server.transport === 'stdio') {
-                    // Handle stdio transport
-                    const stdioContext = await this.getStdioMcpContext(server);
-                    if (stdioContext) {
-                        context[server.id] = stdioContext;
-                        console.log(`Added stdio context for ${server.name}:`, stdioContext);
-                    }
-                } else {
-                    // Handle HTTP transport
-                    const contextResponse = await fetch(server.url + '/context', {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            ...(server.auth && { 'Authorization': server.auth })
+                console.log(`Processing server: ${server.name} (Streamable HTTP)`);
+                
+                // Handle Streamable HTTP transport
+                const contextResponse = await fetch(server.url + '/context', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json, text/event-stream',
+                        'MCP-Protocol-Version': '2025-06-18',
+                        ...(server.auth && { 'Authorization': server.auth })
+                    },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        method: 'initialize',
+                        params: {
+                            protocolVersion: '2025-06-18',
+                            capabilities: {
+                                tools: {},
+                                resources: {}
+                            },
+                            clientInfo: {
+                                name: 'da-chat',
+                                version: '1.0.0'
+                            }
+                        },
+                        id: 1
+                    })
+                });
+                
+                if (contextResponse.ok) {
+                    // Handle SSE response
+                    if (contextResponse.headers.get('content-type')?.includes('text/event-stream')) {
+                        const reader = contextResponse.body.getReader();
+                        const decoder = new TextDecoder();
+                        let buffer = '';
+                        
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop() || '';
+                            
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    const data = line.slice(6);
+                                    if (data.trim()) {
+                                        try {
+                                            const parsed = JSON.parse(data);
+                                            if (parsed.result) {
+                                                context[server.id] = parsed.result;
+                                            }
+                                        } catch (e) {
+                                            console.warn('Failed to parse SSE data:', e);
+                                        }
+                                    }
+                                }
+                            }
                         }
-                    });
-                    
-                    if (contextResponse.ok) {
-                        context[server.id] = await contextResponse.json();
+                    } else {
+                        // Handle regular JSON response
+                        const data = await contextResponse.json();
+                        if (data.result) {
+                            context[server.id] = data.result;
+                        }
                     }
+                }
 
-                    // Get available tools
-                    const toolsResponse = await fetch(server.url + '/tools', {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            ...(server.auth && { 'Authorization': server.auth })
+                // Get available tools
+                const toolsResponse = await fetch(server.url + '/context', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json, text/event-stream',
+                        'MCP-Protocol-Version': '2025-06-18',
+                        ...(server.auth && { 'Authorization': server.auth })
+                    },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        method: 'tools/list',
+                        params: {},
+                        id: 2
+                    })
+                });
+                
+                if (toolsResponse.ok) {
+                    // Handle SSE response
+                    if (toolsResponse.headers.get('content-type')?.includes('text/event-stream')) {
+                        const reader = toolsResponse.body.getReader();
+                        const decoder = new TextDecoder();
+                        let buffer = '';
+                        
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop() || '';
+                            
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    const data = line.slice(6);
+                                    if (data.trim()) {
+                                        try {
+                                            const parsed = JSON.parse(data);
+                                            if (parsed.result) {
+                                                context[`${server.id}_tools`] = parsed.result;
+                                            }
+                                        } catch (e) {
+                                            console.warn('Failed to parse SSE data:', e);
+                                        }
+                                    }
+                                }
+                            }
                         }
-                    });
-                    
-                    if (toolsResponse.ok) {
-                        const toolsData = await toolsResponse.json();
-                        context[`${server.id}_tools`] = toolsData;
+                    } else {
+                        // Handle regular JSON response
+                        const data = await toolsResponse.json();
+                        if (data.result) {
+                            context[`${server.id}_tools`] = data.result;
+                        }
                     }
                 }
             } catch (error) {
@@ -538,288 +623,91 @@ class DAChat {
         return context;
     }
 
-    async getStdioMcpContext(server) {
-        try {
-            console.log(`Getting stdio context for ${server.name}...`);
-            const connection = await this.getStdioConnection(server);
-            if (!connection) {
-                console.warn(`No stdio connection available for ${server.name}. Skipping stdio context.`);
-                return {
-                    server: server.name,
-                    transport: 'stdio',
-                    status: 'unavailable',
-                    error: 'Stdio MCP server not running'
-                };
-            }
 
-            console.log(`Calling tools/list for ${server.name}...`);
-            // Get server info and tools
-            const tools = await this.callStdioMethod(connection, 'tools/list', {});
-            console.log(`Tools response for ${server.name}:`, tools);
-            
-            const result = {
-                server: server.name,
-                transport: 'stdio',
-                tools: tools?.tools || tools?.result || [],
-                resources: [], // Helix MCP doesn't support resources/list
-                status: 'connected'
-            };
-            
-            console.log(`Final context for ${server.name}:`, result);
-            return result;
-        } catch (error) {
-            console.error(`Failed to get stdio context from ${server.name}:`, error);
-            return {
-                server: server.name,
-                transport: 'stdio',
-                status: 'error',
-                error: error.message
-            };
-        }
-    }
-
-    async getStdioConnection(server) {
-        if (this.stdioConnections.has(server.id)) {
-            const connection = this.stdioConnections.get(server.id);
-            if (connection.isConnected && connection.isReady) {
-                return connection;
-            } else {
-                // Remove stale connection
-                this.stdioConnections.delete(server.id);
-                if (connection.ws) {
-                    connection.ws.close();
-                }
-            }
-        }
-
-        try {
-            // Check if stdio server is running
-            const healthCheck = await fetch('http://localhost:3003/health').catch(() => null);
-            if (!healthCheck || !healthCheck.ok) {
-                console.warn('Stdio MCP server not running. Please start it with: node stdio-mcp-server.js');
-                return null;
-            }
-            
-            // Create a new stdio connection
-            const connection = await this.createStdioConnection(server);
-            this.stdioConnections.set(server.id, connection);
-            return connection;
-        } catch (error) {
-            console.error(`Failed to create stdio connection for ${server.name}:`, error);
-            return null;
-        }
-    }
-
-    async createStdioConnection(server) {
-        return new Promise((resolve, reject) => {
-            console.log(`Attempting to connect to stdio MCP server for ${server.name}...`);
-            
-            const ws = new WebSocket('ws://localhost:3003');
-            
-            const connection = {
-                ws: ws,
-                serverId: server.id,
-                pendingCalls: new Map(),
-                isConnected: false,
-                isReady: false
-            };
-            
-            ws.onopen = () => {
-                console.log(`WebSocket connected to stdio MCP server for ${server.name}`);
-                connection.isConnected = true;
-                
-                // Connect to the MCP server
-                ws.send(JSON.stringify({
-                    type: 'connect',
-                    serverId: server.id,
-                    params: {
-                        command: server.command || server.url,
-                        env: server.env || {}
-                    }
-                }));
-            };
-            
-            ws.onmessage = (event) => {
-                try {
-                    const message = JSON.parse(event.data);
-                    this.handleStdioMessage(connection, message, resolve);
-                } catch (error) {
-                    console.error(`Failed to parse WebSocket message:`, error);
-                }
-            };
-            
-            ws.onerror = (error) => {
-                console.error(`WebSocket error for ${server.name}:`, error);
-                reject(new Error(`WebSocket connection failed: ${error.message || 'Unknown error'}`));
-            };
-            
-            ws.onclose = (event) => {
-                console.log(`WebSocket closed for ${server.name}:`, event.code, event.reason);
-                connection.isConnected = false;
-                connection.isReady = false;
-            };
-            
-            // Set a timeout for connection
-            setTimeout(() => {
-                if (!connection.isReady) {
-                    ws.close();
-                    reject(new Error('Connection timeout - stdio MCP server not ready'));
-                }
-            }, 15000);
-            
-            // Don't resolve immediately - wait for the server to be ready
-        });
-    }
-
-    handleStdioMessage(connection, message, resolveConnection) {
-        console.log(`Received message from ${connection.serverId}:`, message.type);
-        
-        switch (message.type) {
-            case 'connected':
-                if (message.status === 'ready') {
-                    console.log(`MCP server ${connection.serverId} ready`);
-                    connection.isReady = true;
-                    if (resolveConnection) {
-                        resolveConnection(connection);
-                    }
-                } else if (message.status === 'already_connected') {
-                    console.log(`MCP server ${connection.serverId} already connected`);
-                    connection.isReady = true;
-                    if (resolveConnection) {
-                        resolveConnection(connection);
-                    }
-                }
-                break;
-            case 'response':
-                console.log(`Received response:`, message);
-                console.log(`Pending calls:`, Array.from(connection.pendingCalls.entries()));
-                
-                // Try to find the pending call by callId first, then by method
-                let foundCall = null;
-                
-                if (message.callId && connection.pendingCalls.has(message.callId)) {
-                    foundCall = { callId: message.callId, call: connection.pendingCalls.get(message.callId) };
-                    console.log(`Found call by callId: ${message.callId}`);
-                } else {
-                    // Fallback: find by method name
-                    for (const [callId, call] of connection.pendingCalls.entries()) {
-                        if (message.method === call.method) {
-                            foundCall = { callId, call };
-                            console.log(`Found call by method: ${message.method} -> ${callId}`);
-                            break;
-                        }
-                    }
-                }
-                
-                if (foundCall) {
-                    connection.pendingCalls.delete(foundCall.callId);
-                    console.log(`Resolving call with result:`, message.result);
-                    if (message.error) {
-                        // Handle error object properly
-                        const errorMessage = typeof message.error === 'object' 
-                            ? message.error.message || JSON.stringify(message.error)
-                            : message.error;
-                        foundCall.call.reject(new Error(errorMessage));
-                    } else {
-                        foundCall.call.resolve(message.result);
-                    }
-                } else {
-                    console.warn(`No pending call found for response:`, message);
-                    console.warn(`Available pending calls:`, Array.from(connection.pendingCalls.keys()));
-                }
-                break;
-            case 'error':
-                console.error(`MCP server error:`, message.error);
-                // If there's a pending connection resolution, reject it
-                if (resolveConnection) {
-                    const errorMessage = typeof message.error === 'object' 
-                        ? message.error.message || JSON.stringify(message.error)
-                        : message.error;
-                    resolveConnection.reject(new Error(errorMessage));
-                }
-                break;
-            default:
-                console.log(`Unknown message type: ${message.type}`);
-        }
-    }
-
-    async callStdioMethod(connection, method, params) {
-        return new Promise((resolve, reject) => {
-            if (!connection.isConnected) {
-                reject(new Error('WebSocket connection not established'));
-                return;
-            }
-            
-            if (!connection.isReady) {
-                reject(new Error('MCP server not ready'));
-                return;
-            }
-            
-            // Generate a unique call ID
-            const callId = Date.now().toString();
-            
-            // Store the promise callbacks with the call ID
-            connection.pendingCalls.set(callId, { resolve, reject, method });
-            
-            // Send the method call
-            const message = {
-                type: 'call',
-                serverId: connection.serverId,
-                method: method,
-                params: params,
-                callId: callId
-            };
-            
-            console.log(`Sending method call:`, message);
-            connection.ws.send(JSON.stringify(message));
-            
-            console.log(`Sent method call to ${connection.serverId}: ${method} (ID: ${callId})`);
-            
-            // Set a timeout
-            setTimeout(() => {
-                if (connection.pendingCalls.has(callId)) {
-                    connection.pendingCalls.delete(callId);
-                    reject(new Error(`Method call timeout: ${method}`));
-                }
-            }, 30000);
-        });
-    }
 
     async executeMcpTool(serverId, tool, params) {
         const server = this.mcpServers.find(s => s.id === serverId);
         if (!server) {
-            throw new Error(`MCP server ${serverId} not found`);
+            const availableServers = this.mcpServers.map(s => s.id).join(', ');
+            throw new Error(`MCP server '${serverId}' not found. Available servers: ${availableServers}`);
         }
 
-        if (server.transport === 'stdio') {
-            // Execute stdio MCP tool
-            const connection = await this.getStdioConnection(server);
-            if (!connection) {
-                throw new Error(`No stdio connection available for ${server.name}`);
-            }
-            
-            console.log(`Executing stdio tool: ${tool} with params:`, params);
-            const result = await this.callStdioMethod(connection, tool, params);
-            console.log(`Tool execution result:`, result);
-            return result;
-        } else {
-            // Execute HTTP MCP tool
-            const response = await fetch(server.url + '/tools', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(server.auth && { 'Authorization': server.auth })
+        // Refresh DA token before making request
+        await this.refreshDaToken();
+
+        // Add DA token as helixAdminApiToken if available
+        const paramsWithToken = { ...params };
+        if (this.daToken) {
+            paramsWithToken.helixAdminApiToken = this.daToken;
+        }
+
+        // Execute Streamable HTTP MCP tool
+        const response = await fetch(server.url + '/context', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream',
+                'MCP-Protocol-Version': '2025-06-18',
+                ...(server.auth && { 'Authorization': server.auth })
+            },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'tools/call',
+                params: {
+                    name: tool,
+                    arguments: paramsWithToken
                 },
-                body: JSON.stringify({ tool, params })
-            });
+                id: Date.now()
+            })
+        });
 
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || `HTTP ${response.status}`);
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || error.error || `HTTP ${response.status}`);
+        }
+
+        // Handle SSE response
+        if (response.headers.get('content-type')?.includes('text/event-stream')) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data.trim()) {
+                            try {
+                                const parsed = JSON.parse(data);
+                                if (parsed.result) {
+                                    return parsed.result;
+                                } else if (parsed.error) {
+                                    throw new Error(parsed.error.message || parsed.error);
+                                }
+                            } catch (e) {
+                                console.warn('Failed to parse SSE data:', e);
+                            }
+                        }
+                    }
+                }
             }
-
+            throw new Error('No valid response received from SSE stream');
+        } else {
+            // Handle regular JSON response
             const data = await response.json();
-            return data.result;
+            if (data.result) {
+                return data.result;
+            } else if (data.error) {
+                throw new Error(data.error.message || data.error);
+            }
+            throw new Error('Invalid response format');
         }
     }
 
@@ -829,6 +717,11 @@ class DAChat {
         
         // Also look for tool execution patterns inside code blocks
         const codeBlockRegex = /```(?:javascript|js)?\s*\n?window\.executeMcpTool\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*(\{[^}]*\})\);?\s*\n?```/g;
+        
+        // Look for environment variable function calls
+        const setEnvVarRegex = /window\.setMcpEnvVar\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"],\s*['"]([^'"]+)['"]\);?/g;
+        const getEnvVarsRegex = /window\.getMcpEnvVars\(['"]([^'"]+)['"]\);?/g;
+        
         let match;
         let processedResponse = response;
         
@@ -969,6 +862,35 @@ class DAChat {
             }
         }
         
+        // Process setMcpEnvVar calls
+        while ((match = setEnvVarRegex.exec(processedResponse)) !== null) {
+            const [fullMatch, serverId, varName, varValue] = match;
+            
+            try {
+                console.log(`Setting environment variable: ${varName} = ${varValue} for server ${serverId}`);
+                const result = this.setMcpEnvVar(serverId, varName, varValue);
+                processedResponse = processedResponse.replace(fullMatch, `✅ Environment variable ${varName} set to ${varValue} for server ${serverId}`);
+            } catch (error) {
+                console.error(`Failed to set environment variable ${varName}:`, error);
+                processedResponse = processedResponse.replace(fullMatch, `❌ Failed to set environment variable: ${error.message}`);
+            }
+        }
+        
+        // Process getMcpEnvVars calls
+        while ((match = getEnvVarsRegex.exec(processedResponse)) !== null) {
+            const [fullMatch, serverId] = match;
+            
+            try {
+                console.log(`Getting environment variables for server: ${serverId}`);
+                const envVars = this.getMcpEnvVars(serverId);
+                const envVarsStr = JSON.stringify(envVars, null, 2);
+                processedResponse = processedResponse.replace(fullMatch, `**Environment Variables for ${serverId}:**\n\`\`\`json\n${envVarsStr}\n\`\`\``);
+            } catch (error) {
+                console.error(`Failed to get environment variables for ${serverId}:`, error);
+                processedResponse = processedResponse.replace(fullMatch, `❌ Failed to get environment variables: ${error.message}`);
+            }
+        }
+        
         // Final cleanup: remove any remaining markdown artifacts
         processedResponse = processedResponse.replace(/```javascript\s*\n?/g, '');
         processedResponse = processedResponse.replace(/```\s*\n?/g, '');
@@ -1002,7 +924,9 @@ class DAChat {
         
         // Add critical instruction to force tool execution
         const dateInfo = this.getCurrentDateInfo();
-        const criticalInstruction = `\n\nCRITICAL INSTRUCTION: When users ask for specific actions, you MUST include the tool execution code in your response. Do NOT just say 'I will check' - actually include the code like: window.executeMcpTool('mdev1df57ar85i4luoi', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/'})\n\nIMPORTANT: For rum-data tool, use lowercase parameter names: domainkey, url, aggregation, startdate, enddate. Valid aggregation values: 'pageviews', 'visits', 'bounces', 'organic', 'earned', 'lcp', 'cls', 'inp', 'ttfb', 'engagement', 'errors'.\n\nCURRENT DATE INFO: Today is ${dateInfo.today}, 7 days ago was ${dateInfo.sevenDaysAgo}, 30 days ago was ${dateInfo.thirtyDaysAgo}. Use these dates for date ranges.\n\nRESPONSE STYLE: Be direct and concise. Do NOT say things like "I will use the tool" or "Here's the execution" - just include the tool execution code directly. When tool results are provided, immediately analyze the data and provide insights without repeating what you're going to do.\n\nANALYSIS INSTRUCTION: When tool results are provided, you MUST analyze the data and provide insights. Do NOT just show the data again. Instead, answer the user's original question, identify key patterns, highlight important findings, and provide actionable insights based on the data.\n\nCRITICAL: Do NOT explain your logic or reasoning. Do NOT say "I'll query" or "I'll check" or "Here's the execution". Just execute the tool directly with the code.`;
+        const availableServerIds = this.mcpServers.map(s => s.id).join(', ');
+        const firstServerId = this.mcpServers.length > 0 ? this.mcpServers[0].id : 'your-server-id';
+        const criticalInstruction = `\n\nCRITICAL INSTRUCTION: When users ask for specific actions, you MUST include the tool execution code in your response. Do NOT just say 'I will check' - actually include the code like: window.executeMcpTool('${firstServerId}', 'start-bulk-page-status', {org: 'aemsites', site: 'da-blog-tools'})\n\nAVAILABLE SERVER IDS: ${availableServerIds}\n\nIMPORTANT: For rum-data tool, use lowercase parameter names: domainkey, url, aggregation, startdate, enddate. Valid aggregation values: 'pageviews', 'visits', 'bounces', 'organic', 'earned', 'lcp', 'cls', 'inp', 'ttfb', 'engagement', 'errors'.\n\nTOOL USAGE GUIDELINES:\n- For single page status: use 'page-status' with {org, site, path} parameters\n- For multiple pages/site status: use 'start-bulk-page-status' with {org, site} (optional path)\n- For checking bulk job results: use 'check-bulk-page-status' with {jobId}\n- For audit logs: use 'audit-log' with {org, site} and optional time filters\n- For RUM data: use 'rum-data' with {url, domainkey, aggregation} and optional dates\n\nCURRENT DATE INFO: Today is ${dateInfo.today}, 7 days ago was ${dateInfo.sevenDaysAgo}, 30 days ago was ${dateInfo.thirtyDaysAgo}. Use these dates for date ranges.\n\nRESPONSE STYLE: Be direct and concise. Do NOT say things like "I will use the tool" or "Here's the execution" - just include the tool execution code directly. When tool results are provided, immediately analyze the data and provide insights without repeating what you're going to do.\n\nANALYSIS INSTRUCTION: When tool results are provided, you MUST analyze the data and provide insights. Do NOT just show the data again. Instead, answer the user's original question, identify key patterns, highlight important findings, and provide actionable insights based on the data.\n\nCRITICAL: Do NOT explain your logic or reasoning. Do NOT say "I'll query" or "I'll check" or "Here's the execution". Just execute the tool directly with the code.`;
         
         let endpoint, headers;
         
@@ -1071,9 +995,14 @@ class DAChat {
                 systemMessage += "you can leverage these tools to provide accurate and helpful responses.\n\n";
                 systemMessage += "TO EXECUTE TOOLS: You can execute tools by calling the global function:\n";
                 systemMessage += "window.executeMcpTool(serverId, toolName, parameters)\n\n";
+                systemMessage += "AVAILABLE SERVER IDS: " + this.mcpServers.map(s => s.id).join(', ') + "\n\n";
                 systemMessage += "For example:\n";
-                systemMessage += "- To check page status: window.executeMcpTool('mdev1df57ar85i4luoi', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/some-page'})\n";
-                systemMessage += "- To echo a message: window.executeMcpTool('mdev1df57ar85i4luoi', 'echo', {message: 'Hello world'})\n\n";
+                const exampleServerId = this.mcpServers.length > 0 ? this.mcpServers[0].id : 'your-server-id';
+                systemMessage += `- To list files: window.executeMcpTool('${exampleServerId}', 'list_files', {path: '/'})\n`;
+                systemMessage += `- To read a file: window.executeMcpTool('${exampleServerId}', 'read_file', {path: '/path/to/file'})\n\n`;
+                systemMessage += "ENVIRONMENT VARIABLES: You can manage environment variables using:\n";
+                systemMessage += "- window.setMcpEnvVar(serverId, varName, varValue) - Set an environment variable\n";
+                systemMessage += "- window.getMcpEnvVars(serverId) - Get current environment variables\n\n";
                 systemMessage += "When users request specific actions, actually execute the appropriate tools and show the results.\n";
             }
         }
@@ -1163,9 +1092,14 @@ class DAChat {
                 systemMessage += "you can leverage these tools to provide accurate and helpful responses.\n\n";
                 systemMessage += "TO EXECUTE TOOLS: You can execute tools by calling the global function:\n";
                 systemMessage += "window.executeMcpTool(serverId, toolName, parameters)\n\n";
+                systemMessage += "AVAILABLE SERVER IDS: " + this.mcpServers.map(s => s.id).join(', ') + "\n\n";
                 systemMessage += "For example:\n";
-                systemMessage += "- To check page status: window.executeMcpTool('mdev1df57ar85i4luoi', 'page-status', {org: 'aemsites', site: 'da-blog-tools', path: '/some-page'})\n";
-                systemMessage += "- To echo a message: window.executeMcpTool('mdev1df57ar85i4luoi', 'echo', {message: 'Hello world'})\n\n";
+                const exampleServerId = this.mcpServers.length > 0 ? this.mcpServers[0].id : 'your-server-id';
+                systemMessage += `- To list files: window.executeMcpTool('${exampleServerId}', 'list_files', {path: '/'})\n`;
+                systemMessage += `- To read a file: window.executeMcpTool('${exampleServerId}', 'read_file', {path: '/path/to/file'})\n\n`;
+                systemMessage += "ENVIRONMENT VARIABLES: You can manage environment variables using:\n";
+                systemMessage += "- window.setMcpEnvVar(serverId, varName, varValue) - Set an environment variable\n";
+                systemMessage += "- window.getMcpEnvVars(serverId) - Get current environment variables\n\n";
                 systemMessage += "When users request specific actions, actually execute the appropriate tools and show the results.\n";
             }
         }
@@ -1793,38 +1727,23 @@ class DAChat {
         const form = document.getElementById('mcpForm');
         const formData = new FormData(form);
         
-        const transport = formData.get('mcpTransport') || document.getElementById('mcpTransport').value;
-        
         const serverData = {
             name: formData.get('mcpName') || document.getElementById('mcpName').value,
-            transport: transport,
+            transport: 'http',
+            url: formData.get('mcpUrl') || document.getElementById('mcpUrl').value,
             auth: formData.get('mcpAuth') || document.getElementById('mcpAuth').value,
             description: formData.get('mcpDescription') || document.getElementById('mcpDescription').value
         };
         
-        if (transport === 'http') {
-            serverData.url = formData.get('mcpUrl') || document.getElementById('mcpUrl').value;
-            if (!serverData.name || !serverData.url) {
-                alert('Please fill in all required fields');
-                return;
-            }
-        } else {
-            serverData.command = formData.get('mcpCommand') || document.getElementById('mcpCommand').value;
-            if (!serverData.name || !serverData.command) {
-                alert('Please fill in all required fields');
-                return;
-            }
-            
-            // Parse environment variables
-            const envText = formData.get('mcpEnv') || document.getElementById('mcpEnv').value;
-            if (envText.trim()) {
-                try {
-                    serverData.env = JSON.parse(envText);
-                } catch (error) {
-                    alert('Invalid JSON in environment variables field');
-                    return;
-                }
-            }
+        if (!serverData.name || !serverData.url) {
+            alert('Please fill in all required fields');
+            return;
+        }
+        
+        // Check if URL conflicts with Helix MCP server
+        if (serverData.url === this.HELIX_MCP_URL) {
+            alert('Cannot add a server with the same URL as the pre-configured Helix MCP server');
+            return;
         }
         
         if (this.editingServerId) {
@@ -1856,35 +1775,7 @@ class DAChat {
 
         // Store the token for later use
         this.daToken = token;
-
-        // Update existing MCP servers that need the DA token
-        let updated = false;
-        this.mcpServers.forEach(server => {
-            if (server.transport === 'stdio' && server.command && server.command.includes('helix-mcp')) {
-                if (!server.env) {
-                    server.env = {};
-                }
-                
-                // Set DA_ADMIN_API_TOKEN
-                if (server.env.DA_ADMIN_API_TOKEN !== token) {
-                    server.env.DA_ADMIN_API_TOKEN = token;
-                    updated = true;
-                    console.log(`Updated DA_ADMIN_API_TOKEN for ${server.name}`);
-                }
-                
-                // Set HELIX_ADMIN_API_TOKEN if not present (use DA token as fallback)
-                if (!server.env.HELIX_ADMIN_API_TOKEN) {
-                    server.env.HELIX_ADMIN_API_TOKEN = token;
-                    updated = true;
-                    console.log(`Set HELIX_ADMIN_API_TOKEN for ${server.name} (using DA token as fallback)`);
-                }
-            }
-        });
-
-        if (updated) {
-            this.saveConfiguration();
-            this.updateMcpServersList();
-        }
+        console.log('DA token stored for potential future use');
     }
 
     getDaToken() {
@@ -1904,6 +1795,34 @@ class DAChat {
             return null;
         }
     }
+
+    // Environment variable management for AI
+    setMcpEnvVar(serverId, varName, varValue) {
+        const server = this.mcpServers.find(s => s.id === serverId);
+        if (!server) {
+            throw new Error(`MCP server ${serverId} not found`);
+        }
+
+        if (!server.env) {
+            server.env = {};
+        }
+
+        server.env[varName] = varValue;
+        this.saveConfiguration();
+        this.updateMcpServersList();
+
+        console.log(`Set environment variable ${varName} for server ${server.name}`);
+        return { success: true, message: `Set ${varName} for ${server.name}` };
+    }
+
+    getMcpEnvVars(serverId) {
+        const server = this.mcpServers.find(s => s.id === serverId);
+        if (!server) {
+            throw new Error(`MCP server ${serverId} not found`);
+        }
+
+        return server.env || {};
+    }
 }
 
 // Global function for AI to execute MCP tools
@@ -1911,6 +1830,34 @@ window.executeMcpTool = async function(serverId, tool, params) {
     if (window.daChatInstance) {
         try {
             const result = await window.daChatInstance.executeMcpTool(serverId, tool, params);
+            return { success: true, result };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    } else {
+        return { success: false, error: 'DA Chat not initialized' };
+    }
+};
+
+// Global function for AI to set environment variables
+window.setMcpEnvVar = function(serverId, varName, varValue) {
+    if (window.daChatInstance) {
+        try {
+            const result = window.daChatInstance.setMcpEnvVar(serverId, varName, varValue);
+            return { success: true, result };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    } else {
+        return { success: false, error: 'DA Chat not initialized' };
+    }
+};
+
+// Global function for AI to get current environment variables
+window.getMcpEnvVars = function(serverId) {
+    if (window.daChatInstance) {
+        try {
+            const result = window.daChatInstance.getMcpEnvVars(serverId);
             return { success: true, result };
         } catch (error) {
             return { success: false, error: error.message };
