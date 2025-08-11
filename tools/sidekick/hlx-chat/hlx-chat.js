@@ -8,6 +8,7 @@ class HLXChat {
         
         this.initializeEventListeners();
         this.loadSidekickInfo();
+        this.adjustToParentContainer();
     }
     
     initializeEventListeners() {
@@ -17,6 +18,18 @@ class HLXChat {
                 this.sendMessage();
             }
         });
+        
+        // Handle window resize for responsive behavior
+        window.addEventListener('resize', () => this.adjustToParentContainer());
+    }
+    
+    adjustToParentContainer() {
+        // Ensure the chat container fills the available space
+        const container = document.querySelector('.chat-container');
+        if (container) {
+            container.style.width = '100%';
+            container.style.height = '100vh';
+        }
     }
     
     async loadSidekickInfo() {
@@ -34,6 +47,10 @@ class HLXChat {
                 console.log('Referrer URL:', referrer);
                 this.addMessage('bot', `Connected from: ${referrer}`);
             }
+            
+            // Add a welcome message about the integrated mode
+            this.addMessage('bot', 'Chat interface is now integrated into the parent container. You can use the full available space for better interaction.');
+            
         } catch (error) {
             console.error('Error loading sidekick info:', error);
         }
@@ -78,7 +95,9 @@ class HLXChat {
             "I understand what you're asking. Here's what I can tell you...",
             "Great question! Based on the AEM documentation, here's what I found...",
             "I'm here to help with your AEM questions. Let me break this down...",
-            "Thanks for asking! This is a common question about AEM development."
+            "Thanks for asking! This is a common question about AEM development.",
+            "Since we're now integrated into the parent container, I have more space to provide detailed responses.",
+            "The integrated chat interface gives us better visibility and interaction capabilities."
         ];
         
         const randomResponse = responses[Math.floor(Math.random() * responses.length)];
@@ -111,7 +130,8 @@ if (window.parent && window.parent !== window) {
     try {
         window.parent.postMessage({
             type: 'hlx-chat-ready',
-            source: 'hlx-chat-plugin'
+            source: 'hlx-chat-plugin',
+            mode: 'integrated'
         }, '*');
     } catch (error) {
         console.log('Could not send message to parent window');
