@@ -282,6 +282,15 @@ h1 {
     background-color: white;
 }
 
+.test-details-table .location-cell {
+    max-width: 300px;
+    word-wrap: break-word;
+}
+
+.test-details-table .location-cell strong {
+    display: inline;
+}
+
 /* Parent and sub-test row styles */
 .parent-test-row {
     background-color: #f8f9fa;
