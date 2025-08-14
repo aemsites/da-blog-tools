@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 330 50" width="330" height="50">
+  <defs>
+    <linearGradient id="blueGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#007acc;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#005a9e;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Airplane silhouette -->
+  <path d="M15 25 L35 20 L45 15 L50 15 L52 20 L50 25 L52 30 L50 35 L45 35 L35 30 Z" 
+        fill="#333333" opacity="0.9"/>
+  
+  <!-- Wing details -->
+  <path d="M25 22 L40 18 L42 20 L30 23 Z" fill="#666666" opacity="0.7"/>
+  <path d="M25 28 L40 32 L42 30 L30 27 Z" fill="#666666" opacity="0.7"/>
+  
+  <!-- Checkmark in circle -->
+  <circle cx="70" cy="25" r="12" fill="url(#blueGradient)" opacity="0.9"/>
+  <path d="M65 25 L69 29 L77 21" stroke="white" stroke-width="2.5" fill="none" 
+        stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Text "PREFLIGHT" -->
+  <text x="95" y="25" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" 
+        font-size="26" font-weight="600" fill="url(#blueGradient)" letter-spacing="0.5px" 
+        dominant-baseline="central">
+    PREFLIGHT
+  </text>
+  
+  <!-- X mark in circle (right side) -->
+  <circle cx="260" cy="25" r="12" fill="#dc3545" opacity="0.9"/>
+  <path d="M254 19 L266 31 M266 19 L254 31" stroke="white" stroke-width="2.5" fill="none" 
+        stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Airplane silhouette (right side, facing left) -->
+  <path d="M315 25 L295 20 L285 15 L280 15 L278 20 L280 25 L278 30 L280 35 L285 35 L295 30 Z" 
+        fill="#333333" opacity="0.9"/>
+  
+  <!-- Wing details (right side airplane) -->
+  <path d="M305 22 L290 18 L288 20 L300 23 Z" fill="#666666" opacity="0.7"/>
+  <path d="M305 28 L290 32 L288 30 L300 27 Z" fill="#666666" opacity="0.7"/>
+
+
+</svg>

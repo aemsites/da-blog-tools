@@ -14,6 +14,18 @@ body {
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
+.logo-container {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.preflight-logo {
+    height: 50px;
+    width: auto;
+    max-width: 100%;
+}
+
+/* Keep h1 styles for backwards compatibility */
 h1 {
     color: #333;
     margin-bottom: 30px;
