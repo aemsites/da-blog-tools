@@ -2,7 +2,7 @@
 
 ## Example UI
 
-![Preflight Logo](preflight-logo.svg)
+![Example UI: Preflight Test Results](screenshot-1.jpg)
 *Example: The Preflight plugin provides automated testing for AEM Sites pages, displaying test results with detailed pass/fail status and remediation guidance.*
 
 ## Overview
