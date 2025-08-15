@@ -8,15 +8,15 @@
   /* removed unused typography variables */
 
 
-  /* Colors (DA-aligned) */
-  --color-primary: #007acc;
-  --color-primary-dark: #005a9e;
-  --color-primary-light: #e6f2fb;
-  --color-secondary: #007acc;
-  --color-secondary-dark: #005a9e;
-  --color-danger: #ff3b30;
-  --color-warning: #ff9500;
-  --color-success: #34c759;
+  /* Monochrome Colors */
+  --color-primary: var(--color-text-muted);
+  --color-primary-dark: var(--color-text-primary);
+  --color-primary-light: var(--color-gray-100);
+  --color-secondary: var(--color-text-muted);
+  --color-secondary-dark: var(--color-text-primary);
+  --color-danger: var(--color-text-muted);
+  --color-warning: var(--color-text-muted);
+  --color-success: var(--color-text-muted);
   
   /* Neutrals (DA-ish) */
   --color-gray-50: #fafafa;
@@ -150,9 +150,9 @@ input, textarea, select {
   }
 }
 
-/* Specific action icons (lower specificity first) */
+/* Specific action icons - all use monochrome theme */
 .help-btn .icon {
-  filter: var(--icon-filter-orange);
+  filter: var(--icon-filter-light); /* Use standard dark icon */
   width: 20px;
   height: 20px;
 }
@@ -161,22 +161,10 @@ input, textarea, select {
 .modal-close .icon,
 .toast-close .icon,
 .tag-remove .icon {
-  filter: var(--icon-filter-red);
+  filter: var(--icon-filter-light); /* Use standard dark icon */
 }
 
-/* Red/Danger Icons */
-.icon-red,
-.error .icon,
-.btn-danger .icon {
-  filter: var(--icon-filter-red) !important;
-}
-
-/* Warning/Orange Icons */
-.icon-warning,
-.warning .icon,
-.btn-warning .icon {
-  filter: var(--icon-filter-orange) !important;
-}
+/* All icons use monochrome theme - no special colors */
 
 /* Button and header icon sizing (before highest specificity selectors) */
 .btn .icon {
@@ -372,7 +360,7 @@ input, textarea, select {
 .app-container {
   max-width: 1200px;
   margin: 0 auto;
-  background: #fff;
+  background: var(--color-background);
   box-shadow: 0 0 8px 0 rgb(0 0 0 / 10%);
 }
 
@@ -399,7 +387,7 @@ input, textarea, select {
 .app-icon {
   width: 48px;
   height: 48px;
-  background: #e6f2fb;
+  background: var(--color-gray-100);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -409,6 +397,10 @@ input, textarea, select {
 .app-icon svg {
   width: 24px;
   height: 24px;
+}
+
+.app-icon .icon {
+  filter: var(--icon-filter-light); /* Black icon on light gray background */
 }
 
 .header-text h1 {
@@ -427,8 +419,8 @@ input, textarea, select {
   width: 40px;
   height: 40px;
   border: 1px solid var(--color-border);
-  background: #fff;
-  color: #333;
+  background: var(--color-background);
+  color: var(--color-text-primary);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -880,39 +872,43 @@ input, textarea, select {
   transform: none !important;
 }
 
+/* Primary buttons: Dark with white text */
 .btn-primary {
-  background: var(--color-primary);
+  background: var(--color-text-muted);
   color: white;
 }
 
 .btn-primary:not(:disabled):hover {
-  background: var(--color-primary-dark);
+  background: var(--color-text-primary);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
 
+/* Secondary buttons: Same as primary */
 .btn-secondary {
-  background: var(--color-secondary);
+  background: var(--color-text-muted);
   color: white;
 }
 
 .btn-secondary:not(:disabled):hover {
-  background: var(--color-secondary-dark);
+  background: var(--color-text-primary);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
 
+/* Success buttons: Same monochrome treatment */
 .btn-success {
-  background: var(--color-success);
+  background: var(--color-text-muted);
   color: white;
 }
 
 .btn-success:not(:disabled):hover {
-  background: var(--color-secondary-dark);
+  background: var(--color-text-primary);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
 
+/* Outline buttons: Light with dark text */
 .btn-outline {
   background: var(--color-background);
   color: var(--color-text-primary);
@@ -925,24 +921,26 @@ input, textarea, select {
   transform: translateY(-1px);
 }
 
+/* Warning buttons: Same monochrome treatment */
 .btn-warning {
-  background: var(--color-warning);
+  background: var(--color-text-muted);
   color: white;
 }
 
 .btn-warning:not(:disabled):hover {
-  background: #e08600;
+  background: var(--color-text-primary);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
 
+/* Danger buttons: Same monochrome treatment */
 .btn-danger {
-  background: var(--color-danger);
+  background: var(--color-text-muted);
   color: white;
 }
 
 .btn-danger:not(:disabled):hover {
-  background: #dc2626;
+  background: var(--color-text-primary);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
