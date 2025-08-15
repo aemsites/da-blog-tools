@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Jump Links</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <link rel="icon" href="data:,">
+    <script src="https://da.live/nx/utils/sdk.js" type="module"></script>
+    <script src="/tools/plugins/jump-links/jump-links.js" type="module"></script>
+    <link rel="stylesheet" href="/tools/plugins/jump-links/jump-links.css">
+  </head>
+  <body>
+    <div id="jump-links-container">
+      <div class="scan-section">
+        <div class="info-note">
+          <strong>Note:</strong> Please preview your page first to ensure jump links work correctly.
+        </div>
+        <button id="scan-headings" type="button" class="button secondary" aria-describedby="status-message">Scan Page Headings</button>
+        <div id="status-message" class="status-message"></div>
+      </div>
+      
+      <div id="main-content" class="main-content" style="display: none;">
+        <div class="two-column-layout">
+          <div class="selection-column" role="region" aria-labelledby="selection-heading">
+            <h3 id="selection-heading">Select Headings:</h3>
+            <div id="headings-list" class="headings-list" role="group" aria-label="Available headings"></div>
+          </div>
+          
+          <div class="preview-column" role="region" aria-labelledby="preview-heading">
+            <h3 id="preview-heading">Preview Links:</h3>
+            <div id="links-preview" class="links-preview" role="region" aria-live="polite" aria-label="Link preview">
+              <div class="empty-state">
+                <p>Select headings to see preview</p>
+              </div>
+            </div>
+            <div class="preview-actions">
+              <button id="create-links" type="button" class="button secondary" disabled aria-describedby="links-preview">Create Jump Links</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
