@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>FindReplace Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="description" content="Bulk find & replace tool with publishing workflow for content teams and authors">
+    <link rel="stylesheet" href="/tools/search/search.css">
+    <!-- Import DA App SDK -->
+    <script src="https://da.live/nx/utils/sdk.js" type="module"></script>
+    <!-- Project App Logic -->
+    <script src="/tools/search/search.js" type="module"></script>
+  </head>
+  <body>
+    <div class="app-container">
+      <header class="app-header">
+        <div class="header-content">
+          <div class="header-main">
+            <div class="app-icon">
+              <img src="./search/icons/search.svg" alt="Search" class="icon">
+            </div>
+            <div class="header-text">
+              <h1>FindReplace Pro</h1>
+              <p class="subtitle">Bulk find & replace with publishing workflow</p>
+            </div>
+          </div>
+          <div class="header-actions">
+            <button class="help-btn" type="button" aria-label="Help & Documentation">
+              <img src="./search/icons/help.svg" alt="Help" class="icon">
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main class="app-main">
+        <!-- Configuration Accordion -->
+        <div class="config-accordion accordion-card expanded" id="config-accordion">
+          <div class="config-accordion-header accordion-header" data-accordion-target="config-content">
+            <div class="accordion-header-content">
+              <div class="card-icon">
+                <img src="./search/icons/star.svg" alt="Config" class="icon">
+              </div>
+              <h2>Search Criteria</h2>
+            </div>
+            <div class="accordion-toggle">
+              <img src="./search/icons/chevron-down.svg" alt="Toggle" class="icon accordion-icon">
+            </div>
+          </div>
+          
+          <div class="accordion-content" id="config-content">
+            <div class="config-container">
+          <!-- Main Configuration -->
+          <div class="main-config-section">
+          <!-- Search Configuration Card -->
+          <div class="config-card">
+            <div class="card-header">
+              <div class="card-icon">
+                <img src="./search/icons/search.svg" alt="Search Criteria" class="icon">
+              </div>
+              <h2>Search Criteria</h2>
+            </div>
+            
+            <div class="card-content">
+              
+              <!-- Search Paths -->
+              <div class="input-group">
+                <label for="search-path-input" class="input-label">
+                  <span class="label-text">Search Paths</span>
+                </label>
+                <div class="multi-path-container">
+                  <input type="text" id="search-path-input" class="input-field path-input" placeholder="Type to search folders (e.g., /drafts, /fragments)">
+                  <div class="path-tags" id="path-tags">
+                    <!-- Path tags will be added here -->
+                  </div>
+                </div>
+                <div class="checkbox-option">
+                  <label class="checkbox-item">
+                    <input type="checkbox" id="include-subfolders">
+                    <span class="checkbox-label">Include Subfolders</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Search & Replace Row -->
+              <div class="input-row search-replace-row">
+                <div class="input-group">
+                  <label for="search-term" class="input-label">
+                    <span class="label-text">Search For</span>
+                    <span class="label-hint">Text or pattern to find</span>
+                  </label>
+                  <textarea id="search-term" class="textarea-field" placeholder="Enter search term or regex pattern" rows="3"></textarea>
+                  <div class="input-row">
+                    <div class="input-group">
+                      <select id="search-type" class="select-field">
+                        <option value="contains">Contains (default)</option>
+                        <option value="exact">Exact Match</option>
+                        <option value="regex">Regular Expression</option>
+                      </select>
+                    </div>
+                    
+                    <div class="checkbox-group">
+                      <div class="checkbox-option">
+                        <label class="checkbox-item">
+                          <input type="checkbox" id="case-sensitive">
+                          <span class="checkbox-label">Case Sensitive</span>
+                        </label>
+                      </div>
+                      
+                      <div class="checkbox-option">
+                        <label class="checkbox-item">
+                          <input type="checkbox" id="html-mode">
+                          <span class="checkbox-label">HTML Mode</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                  <div id="search-term-help" class="input-help" style="display: none;">
+                    <strong>Optional:</strong> Enter text to find within elements, or leave empty to find all pages containing the selected elements
+                  </div>
+                  <div id="html-mode-help" class="input-help" style="display: none;">
+                    <strong>HTML Mode:</strong> Search and replace entire HTML blocks with normalized formatting.
+                    <br><strong>Examples:</strong>
+                    <br>• Find: <code>&lt;div class="hero"&gt;&lt;/div&gt;</code>
+                    <br>• Replace: <code>&lt;div class="banner"&gt;&lt;/div&gt;</code>
+                    <br>• Remove blocks by leaving replacement empty
+                  </div>
+                </div>
+
+                <div class="input-group">
+                  <label for="replace-term" class="input-label">
+                    <span class="label-text">Replace With</span>
+                    <span class="label-hint">Replacement text (optional for search-only)</span>
+                  </label>
+                  <textarea id="replace-term" class="textarea-field" placeholder="Enter replacement text or regex pattern" rows="3"></textarea>
+                  <div class="checkbox-option">
+                    <label class="checkbox-item">
+                      <input type="checkbox" id="replace-empty">
+                      <span class="checkbox-label">Replace with empty (remove text)</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          </div>
+
+          <!-- Sidebar -->
+          <div class="filters-sidebar">
+          
+          <!-- Configuration Card -->
+          <div class="config-card">
+            <div class="card-header">
+              <div class="card-icon">
+                <img src="./search/icons/star.svg" alt="Configuration" class="icon">
+              </div>
+              <h2>Configuration</h2>
+            </div>
+            
+            <div class="card-content">
+              <div class="input-group">
+                <label for="org-site-path" class="input-label">
+                  <span class="label-text">Organization/Site</span>
+                </label>
+                <input type="text" id="org-site-path" class="input-field" placeholder="/org/mysite" value="">
+              </div>
+            </div>
+          </div>
+          
+          <!-- Advanced Filters Accordion -->
+          <div class="config-card accordion-card">
+            <div class="card-header accordion-header" data-accordion-target="file-filters">
+              <div class="card-icon">
+                <img src="./search/icons/filter.svg" alt="Advanced Filters" class="icon">
+              </div>
+              <div class="header-text">
+                <h2>Advanced Filters</h2>
+              </div>
+              <div class="accordion-toggle">
+                <img src="./search/icons/chevron-down.svg" alt="Toggle" class="icon accordion-icon">
+              </div>
+            </div>
+            
+            <div class="card-content accordion-content" id="file-filters" style="display: none;">
+              <div class="input-group">
+                <label for="target-type" class="input-label">
+                  <span class="label-text">Target Content</span>
+                </label>
+                <select id="target-type" class="select-field">
+                  <option value="all">All Content</option>
+                  <option value="page-metadata">Page Metadata Only</option>
+                  <option value="section-metadata">Section Metadata Only</option>
+                  <option value="blocks">Block Content Only</option>
+                  <option value="main-content">Main Content Only</option>
+                  <option value="custom">Custom Selector</option>
+                </select>
+              </div>
+
+              <div class="input-group custom-selector" style="display: none;">
+                <label for="custom-selector" class="input-label">
+                  <span class="label-text">CSS Selector</span>
+                  <span class="label-hint">Target specific elements</span>
+                </label>
+                <input type="text" id="custom-selector" class="input-field" placeholder=".hero, .cards h3">
+                <div class="input-help">
+                  <strong>Examples:</strong> 
+                  <code>.hero</code> (hero blocks), 
+                  <code>.cards h3</code> (card titles), 
+                  <code>main p</code> (paragraphs)
+                </div>
+              </div>
+
+              <div class="input-group">
+                <label for="exclude-paths" class="input-label">
+                  <span class="label-text">Exclude Paths</span>
+                </label>
+                <input type="text" id="exclude-paths" class="input-field" placeholder="/drafts, /archive">
+              </div>
+
+              <div class="input-group">
+                <div class="checkbox-option">
+                  <label class="checkbox-item">
+                    <input type="checkbox" id="exclude-urls">
+                    <span class="checkbox-label">Exclude URLs from search</span>
+                  </label>
+                </div>
+              </div>
+              <div class="input-group">
+                <label for="modified-since" class="input-label">
+                  <span class="label-text">Modified Since</span>
+                </label>
+                <input type="date" id="modified-since" class="input-field">
+              </div>
+            </div>
+          </div>
+          </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Bar -->
+        <div class="action-bar">
+          <div class="primary-actions">
+            <button id="scan-btn" class="btn btn-primary">
+              <img src="./search/icons/search.svg" alt="Scan" class="icon">
+              <span>Scan & Preview</span>
+            </button>
+          </div>
+          
+          <div class="secondary-actions">
+            <button id="execute-btn" class="btn btn-secondary" disabled>
+              <img src="./search/icons/check-circle.svg" alt="Execute" class="icon">
+              <span>Execute Replace</span>
+            </button>
+            
+            <button id="export-btn" class="btn btn-outline" disabled>
+              <img src="./search/icons/download.svg" alt="Export" class="icon">
+              <span id="export-btn-text">Export Files</span>
+            </button>
+            
+            <button id="revert-btn" class="btn btn-warning" disabled>
+              <img src="./search/icons/undo.svg" alt="Revert" class="icon">
+              <span id="revert-btn-text">Revert Selected</span>
+            </button>
+            
+            <div class="bulk-operations">
+              <select id="bulk-operation-type" class="operation-select">
+                <option value="preview">Preview</option>
+                <option value="publish">Publish</option>
+                <option value="unpublish">Unpublish</option>
+              </select>
+              <button id="bulk-publish-btn" class="btn btn-success" disabled>
+                <img src="./search/icons/check-circle.svg" alt="Bulk Operation" class="icon">
+                <span id="bulk-btn-text">Preview Selected</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Progress Indicator -->
+        <div class="progress-container" style="display: none;">
+          <div class="progress-card">
+            <div class="progress-content">
+              <div class="progress-icon">
+                <img src="./search/icons/loading.svg" alt="Progress" class="icon">
+              </div>
+              <div class="progress-info">
+                <div class="progress-text">Scanning files...</div>
+                <div class="progress-bar">
+                  <div class="progress-fill"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-container accordion-card" style="display: none;">
+          <div class="card-header accordion-header" data-accordion-target="search-results">
+            <div class="card-icon">
+              <img src="./search/icons/check.svg" alt="Search Results" class="icon">
+            </div>
+            <div class="header-text">
+              <h2>Search Results</h2>
+              <div class="results-summary">
+                <div class="summary-item">
+                  <span class="summary-number" id="files-scanned">0</span>
+                  <span class="summary-label">Files Scanned</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-number" id="matches-found">0</span>
+                  <span class="summary-label">Matches Found</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-number" id="files-affected">0</span>
+                  <span class="summary-label">Files Affected</span>
+                </div>
+              </div>
+            </div>
+            <div class="accordion-toggle">
+              <img src="./search/icons/chevron-down.svg" alt="Toggle Results" class="icon accordion-icon">
+            </div>
+          </div>
+          
+          <div class="card-content accordion-content" id="search-results" style="display: none;">
+            <div class="results-controls">
+              <div class="selection-controls">
+                <button id="toggle-all" class="btn btn-sm btn-outline">Select All</button>
+                <button id="clear-selection" class="btn btn-sm btn-outline">Clear Selection</button>
+                <button id="expand-all" class="btn btn-sm btn-outline">Expand All</button>
+                <button id="collapse-all" class="btn btn-sm btn-outline">Collapse All</button>
+              </div>
+              <div class="filter-controls">
+                <div class="search-input">
+                  <img src="./search/icons/search.svg" alt="Search" class="icon search-icon">
+                  <input type="text" id="filter-results" placeholder="Filter by file path or content..." class="filter-input">
+                </div>
+              </div>
+            </div>
+            
+            <div class="results-content">
+              <div class="results-list" id="results-list">
+                <!-- Results will be populated here -->
+              </div>
+              
+              <!-- Pagination Controls -->
+              <div class="pagination-container" id="pagination-container" style="display: none;">
+                <div class="pagination-info">
+                  <span id="pagination-info-text">Showing 1-10 of 25 results</span>
+                </div>
+                <div class="pagination-controls">
+                  <button id="prev-page" class="pagination-btn" disabled>
+                    <img src="./search/icons/chevron-left.svg" alt="Previous" class="icon icon-sm">
+                    Previous
+                  </button>
+                  
+                  <div class="page-numbers" id="page-numbers">
+                    <!-- Page numbers will be populated here -->
+                  </div>
+                  
+                  <button id="next-page" class="pagination-btn">
+                    Next
+                    <img src="./search/icons/chevron-right.svg" alt="Next" class="icon icon-sm">
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Help Modal -->
+        <div id="help-modal" class="modal-overlay hidden">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h2>FindReplace Pro Help</h2>
+              <button class="modal-close" aria-label="Close help">
+                <img src="./search/icons/close.svg" alt="Close" class="icon">
+              </button>
+            </div>
+            
+            <div class="modal-body">
+              <div class="help-section">
+                <h3>What is FindReplace Pro?</h3>
+                <p>Bulk find & replace tool with publishing workflow. Search your site content and publish changes.</p>
+              </div>
+
+              <div class="help-section">
+                <h3>Key Features</h3>
+                <ul class="help-list">
+                  <li><strong>Advanced Search</strong> - Text, regex, and HTML mode with case sensitivity</li>
+                  <li><strong>Multi-Path Support</strong> - Tag-based directory selection with autocomplete</li>
+                  <li><strong>Element Discovery</strong> - Find pages containing specific CSS selectors</li>
+                  <li><strong>Granular Selection</strong> - Select individual matches within files</li>
+                  <li><strong>HTML Mode</strong> - Search and replace entire HTML blocks</li>
+                  <li><strong>Automatic Versioning</strong> - Creates backup versions before any content changes</li>
+                  <li><strong>Version Revert</strong> - Restore files to their most recent saved versions</li>
+                  <li><strong>Bulk Operations</strong> - Replace content and publish with progress tracking</li>
+                  <li><strong>Smart Filtering</strong> - Filter results by path, exclude URLs and paths</li>
+                  <li><strong>Export & Publishing</strong> - Download files or preview/publish/unpublish</li>
+                </ul>
+              </div>
+
+              <div class="help-section">
+                <h3>How to Use</h3>
+                <div class="help-steps">
+                  <div class="help-step">
+                    <span class="step-number">1</span>
+                    <div class="step-content">
+                      <strong>Configure</strong>
+                      <p>Set org/site, select search paths, and configure advanced filters as needed.</p>
+                    </div>
+                  </div>
+                  <div class="help-step">
+                    <span class="step-number">2</span>
+                    <div class="step-content">
+                      <strong>Search</strong>
+                      <p>Enter search term, choose search type (text/regex/HTML mode), and click "Scan & Preview" to find matches.</p>
+                    </div>
+                  </div>
+                  <div class="help-step">
+                    <span class="step-number">3</span>
+                    <div class="step-content">
+                      <strong>Select & Execute</strong>
+                      <p>Select files/matches, enter replacement text, and use "Execute Replace", publishing operations, or "Revert Selected" to restore files. Backup versions are automatically created before any changes.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Toast Messages -->
+        <div class="toast-container">
+          <div class="toast hidden" id="toast">
+            <div class="toast-content">
+              <div class="toast-icon">
+                <img src="./search/icons/check.svg" alt="Success" class="icon">
+              </div>
+              <div class="toast-message"></div>
+              <button class="toast-close" aria-label="Close notification">
+                <img src="./search/icons/close.svg" alt="Close" class="icon icon-sm">
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
