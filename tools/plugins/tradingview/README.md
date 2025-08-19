@@ -25,6 +25,8 @@ This plugin demonstrates a powerful pattern for handling third-party embed codes
 6. Click "Insert TradingView Widget Block"
 7. The plugin automatically creates a properly structured block in your document
 
+![Demo](demo.gif)
+
 ### Developer Implementation
 The plugin intelligently:
 - **Parses** the HTML embed code using DOM parsing
