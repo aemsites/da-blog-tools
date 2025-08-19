@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TradingView Widget</title>
+  <link rel="stylesheet" href="tradingview.css">
+  <script type="module" src="tradingview.js"></script>
+</head>
+<body>
+  <div class="tradingview-container">
+    <div class="tradingview-path" id="current-path">Loading path...</div>
+
+    <div class="tradingview-code">
+      <label for="widgetHTMLCode">TradingView Widget HTML Code <span class="required">*</span></label>
+      <textarea id="widgetHTMLCode" aria-label="Embed HTML Code" rows="18" required></textarea>
+    </div>
+
+    <div class="tradingview-controls">
+      <button class="tradingview-button primary" id="apply-button">Insert TradingView Widget Block</button>
+    </div>
+
+    <div class="tradingview-msg" id="tradingview-msg">
+    </div>
+  </div>
+</body>
+</html>
