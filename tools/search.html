@@ -68,6 +68,15 @@
                 </label>
                 <div class="multi-path-container">
                   <input type="text" id="search-path-input" class="input-field path-input" placeholder="Type to search folders (e.g., /drafts, /fragments)">
+                  <div id="search-paths-loader" class="search-paths-loader" style="display: none;">
+                    <div class="loader-content">
+                      <img src="./search/icons/loading.svg" alt="Loading" class="icon icon-sm loader-icon">
+                      <span class="loader-text">Loading folder structure...</span>
+                    </div>
+                  </div>
+                  <div id="search-paths-message" class="search-paths-message" style="display: none;">
+                    <span class="message-text">Enter org and site first to browse folders</span>
+                  </div>
                   <div class="path-tags" id="path-tags">
                     <!-- Path tags will be added here -->
                   </div>
@@ -263,6 +272,7 @@
             
             <div class="bulk-operations">
               <select id="bulk-operation-type" class="operation-select">
+                <option value="copy-urls">Copy URLs</option>
                 <option value="preview">Preview</option>
                 <option value="publish">Publish</option>
                 <option value="unpublish">Unpublish</option>
