@@ -1,0 +1,82 @@
+/**
+ * FindReplace Pro - Access Control Styles
+ * Styling for access denied UI and security notifications
+ */
+
+.access-denied-container {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.access-denied-card {
+  background: white;
+  border-radius: 16px;
+  padding: 40px;
+  max-width: 500px;
+  text-align: center;
+  box-shadow: 0 20px 40px rgb(0 0 0 / 10%);
+  animation: slide-in 0.3s ease-out;
+}
+
+@keyframes slide-in {
+  from { 
+    transform: translateY(-20px); 
+    opacity: 0; 
+  }
+
+  to { 
+    transform: translateY(0); 
+    opacity: 1; 
+  }
+}
+
+.access-denied-icon {
+  color: #ef4444;
+  margin-bottom: 24px;
+}
+
+.access-denied-card h1 {
+  color: #1f2937;
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.access-denied-message {
+  color: #6b7280;
+  font-size: 16px;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.access-denied-details {
+  background: #f9fafb;
+  padding: 16px;
+  border-radius: 8px;
+  margin-bottom: 24px;
+  text-align: left;
+}
+
+.access-denied-details p {
+  margin: 8px 0;
+  font-size: 14px;
+  color: #374151;
+}
+
+.access-denied-help {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 20px;
+  color: #6b7280;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.access-denied-help p {
+  margin: 8px 0;
+}

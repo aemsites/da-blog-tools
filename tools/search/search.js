@@ -7,6 +7,7 @@
 
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { crawl } from 'https://da.live/nx/public/utils/tree.js';
+import addAppAccessControl from '../access-control/access-control.js';
 
 // CONFIGURATION - Easily configurable settings
 const CONFIG = {
@@ -3190,8 +3191,15 @@ async function init() {
   }
 }
 
+async function startApp() {
+  const hasAccess = await addAppAccessControl();
+  if (hasAccess) {
+    init();
+  }
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', startApp);
 } else {
-  init();
+  startApp();
 }
