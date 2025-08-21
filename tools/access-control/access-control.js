@@ -29,7 +29,7 @@ class ProtectApp {
       const { token } = await DA_SDK;
       if (!token) return null;
 
-      const response = await fetch(API_ENDPOINTS.IMS_USERINFO, {
+      const response = await daFetch(API_ENDPOINTS.IMS_USERINFO, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
