@@ -1,6 +1,6 @@
-# Access Control for DA Applications
+# Access Control for Custom DA Applications
 
-Restrict app access using Adobe IMS and DA sheets.
+Restrict app access for your Custom DA apps using Adobe IMS and DA sheets.
 
 ## Setup
 
