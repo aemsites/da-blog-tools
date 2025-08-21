@@ -2,6 +2,10 @@
 
 Restrict app access for your Custom DA apps using Adobe IMS and DA sheets.
 
+
+## Demo
+![Example UI: Jump Links Plugin](demo.gif)
+
 ## Setup
 
 1. Add to your app:
