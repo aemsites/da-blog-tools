@@ -20,6 +20,4 @@ function createElement(tagName, attributes, ...children) {
   return el;
 }
 
-export {
-  createElement,
-};
+export default createElement;

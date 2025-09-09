@@ -15,6 +15,7 @@ This specific repo has been _slightly_ modified to be compatible with DA's live 
 - **Scheduler** plugin. [README](tools/scheduler/README.md)
 - **Tagger** plugin. [README](tools/tags/README.md)
 - **DA Library** plugin. [README](tools/plugins/da-library/README.md)
+- **Preflight** plugin. [README](tools/plugins/preflight/README.md)
 
 ### Enabling plugins:
 
@@ -27,6 +28,7 @@ This specific repo has been _slightly_ modified to be compatible with DA's live 
 | Scheduler   | `/tools/scheduler/scheduler.html`                                            | `https://da.live/blocks/edit/img/S2_icon_Calendar_20_N.svg` |     |        | dialog     |
 | Tags        | `/tools/tags/tags.html`                                                      |
 | DA Library  | `/tools/plugins/da-library/da-library.html?content=/docs/library/alist.json` |
+| Preflight   | `/tools/plugins/preflight/preflight.html`                                    | `/tools/plugins/preflight/preflight-icon.svg` | | | fullsize-dialog|
 
 > NOTE: you can also run these plugins without copying any code to your repo by making the path: `https://main--da-blog-tools--aemsites.aem.live/{path-to-plugin}`
 

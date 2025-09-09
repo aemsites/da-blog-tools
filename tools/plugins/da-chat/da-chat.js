@@ -1,4 +1,4 @@
-/* eslint-disable no-console, class-methods-use-this, no-await-in-loop, no-restricted-syntax, no-cond-assign, no-return-await, max-len, no-alert, func-names */
+/* eslint-disable no-console, class-methods-use-this, no-await-in-loop, no-restricted-syntax, no-cond-assign, no-return-await, max-len, no-alert, func-names, import/no-unresolved */
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
 // DA Chat - Configurable AI Chatbot with MCP Support
@@ -530,6 +530,7 @@ class DAChat {
             const decoder = new TextDecoder();
             let buffer = '';
 
+            // eslint-disable-next-line no-constant-condition
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
@@ -587,6 +588,7 @@ class DAChat {
             const decoder = new TextDecoder();
             let buffer = '';
 
+            // eslint-disable-next-line no-constant-condition
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
@@ -676,6 +678,7 @@ class DAChat {
       const decoder = new TextDecoder();
       let buffer = '';
 
+      // eslint-disable-next-line no-constant-condition
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -742,7 +745,8 @@ class DAChat {
 
     // First try the strict pattern
     while ((match = toolExecutionRegex.exec(response)) !== null) {
-      const [fullMatch, serverId, toolName, paramsStr] = match;
+      let [fullMatch] = match;
+      const [, serverId, toolName, paramsStr] = match;
 
       // Auto-correct double window calls
       if (fullMatch.includes('window.window')) {
@@ -1007,7 +1011,6 @@ Analyze this data and answer the user's question. Provide your response as clean
     // Add critical instruction to force tool execution
     const dateInfo = this.getCurrentDateInfo();
     const availableServerIds = this.mcpServers.map((s) => s.id).join(', ');
-    const firstServerId = this.mcpServers.length > 0 ? this.mcpServers[0].id : 'your-server-id';
     const criticalInstruction = `\n\nDIRECT EXECUTION: When users ask for actions, respond with ONLY the tool call: window.executeMcpTool(serverId, toolName, params)\n\nAVAILABLE SERVER IDS: ${availableServerIds}\n\nTOOL USAGE:\n- audit-log: {org, site, since/from/to}\n- page-status: {org, site, path}\n- start-bulk-page-status: {org, site}\n- check-bulk-page-status: {jobId}\n- rum-data: {url, domainkey, aggregation, startdate, enddate}\n\nCURRENT DATE INFO: Today is ${dateInfo.today}, 7 days ago was ${dateInfo.sevenDaysAgo}, 30 days ago was ${dateInfo.thirtyDaysAgo}.\n\nCRITICAL RULES:\n- NO explanatory text like "I will execute" or "Let me check"\n- NO descriptions of what you will do\n- Execute tools immediately with window.executeMcpTool()\n- Present data only, no analysis unless requested\n- No "Key Insights" or "Recommendations" sections`;
 
     let endpoint; let

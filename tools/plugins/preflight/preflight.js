@@ -1,3 +1,4 @@
+/* eslint-disable import/no-unresolved */
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { DA_ORIGIN } from 'https://da.live/nx/public/utils/constants.js';
 
