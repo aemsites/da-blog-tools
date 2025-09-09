@@ -736,14 +736,14 @@ class DAChat {
     processedResponse = processedResponse.replace(/```javascript\s*\n?/g, '');
     processedResponse = processedResponse.replace(/```\s*\n?/g, '');
     processedResponse = processedResponse.replace(/javascript\s*$/gm, '');
-    
+
     // Auto-correct any remaining double window references in the response
     processedResponse = processedResponse.replace(/window\.window\.executeMcpTool/g, 'window.executeMcpTool');
 
     // First try the strict pattern
     while ((match = toolExecutionRegex.exec(response)) !== null) {
       const [fullMatch, serverId, toolName, paramsStr] = match;
-      
+
       // Auto-correct double window calls
       if (fullMatch.includes('window.window')) {
         console.log('Auto-correcting double window call:', fullMatch);
@@ -782,10 +782,10 @@ class DAChat {
         // Check if this is a stub response and try alternatives
         const resultData = this.extractResultData(result);
         const resultStr = JSON.stringify(resultData);
-        
+
         if (resultStr.includes('Tool \'') && resultStr.includes('called with arguments')) {
           console.log('Detected stub response, trying alternative approach');
-          let finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
+          const finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
                              <p>This suggests the MCP server may be in development mode or the requested data is not available.</p>
                              <p>To get the last 3 previewed pages, you might need to check:</p>
                              <ul>
@@ -803,7 +803,7 @@ Tool executed: ${toolName}
 Result: ${JSON.stringify(resultData, null, 2)}
 
 Analyze this data and answer the user's question. Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks.`;
-          
+
           const analysisResponse = await this.callModel(analysisPrompt, context);
           console.log('Analysis response:', analysisResponse);
           processedResponse = processedResponse.replace(fullMatch, analysisResponse);
@@ -846,10 +846,10 @@ Analyze this data and answer the user's question. Provide your response as clean
         // Check if this is a stub response and try alternatives
         const resultData = this.extractResultData(result);
         const resultStr = JSON.stringify(resultData);
-        
+
         if (resultStr.includes('Tool \'') && resultStr.includes('called with arguments')) {
           console.log('Detected stub response (code block), trying alternative approach');
-          let finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
+          const finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
                              <p>This suggests the MCP server may be in development mode or the requested data is not available.</p>
                              <p>To get the last 3 previewed pages, you might need to check:</p>
                              <ul>
@@ -867,7 +867,7 @@ Tool executed: ${toolName}
 Result: ${JSON.stringify(resultData, null, 2)}
 
 Analyze this data and answer the user's question. Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks.`;
-          
+
           const analysisResponse = await this.callModel(analysisPrompt, context);
           console.log('Analysis response:', analysisResponse);
           processedResponse = processedResponse.replace(fullMatch, analysisResponse);
@@ -911,10 +911,10 @@ Analyze this data and answer the user's question. Provide your response as clean
         // Check if this is a stub response and try alternatives
         const resultData = this.extractResultData(result);
         const resultStr = JSON.stringify(resultData);
-        
+
         if (resultStr.includes('Tool \'') && resultStr.includes('called with arguments')) {
           console.log('Detected stub response (simple pattern), trying alternative approach');
-          let finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
+          const finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
                              <p>This suggests the MCP server may be in development mode or the requested data is not available.</p>
                              <p>To get the last 3 previewed pages, you might need to check:</p>
                              <ul>
@@ -932,7 +932,7 @@ Tool executed: ${toolName}
 Result: ${JSON.stringify(resultData, null, 2)}
 
 Analyze this data and answer the user's question. Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks.`;
-          
+
           const analysisResponse = await this.callModel(analysisPrompt, context);
           console.log('Analysis response:', analysisResponse);
           processedResponse = processedResponse.replace(fullMatch, analysisResponse);

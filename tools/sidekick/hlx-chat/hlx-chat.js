@@ -21,7 +21,7 @@ class HLXChat {
   // Wait for sidekick to be ready before proceeding
   async waitForSidekick() {
     console.log('Waiting for sidekick to be ready...');
-    
+
     // Check if sidekick is already loaded
     const sk = document.querySelector('aem-sidekick');
     if (sk) {
@@ -31,16 +31,16 @@ class HLXChat {
       this.setupSidekickLoginListeners();
       return;
     }
-    
+
     // Wait for sidekick-ready event with timeout
     console.log('⏳ aem-sidekick not found, waiting for sidekick-ready event...');
-    
+
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         console.log('⏰ Sidekick wait timeout - continuing without sidekick');
         reject(new Error('Sidekick not available - running in standalone mode'));
       }, 3000); // 3 second timeout
-      
+
       document.addEventListener('sidekick-ready', () => {
         clearTimeout(timeout);
         console.log('🎉 sidekick-ready event received!');
@@ -51,22 +51,20 @@ class HLXChat {
         this.setupSidekickLoginListeners();
         resolve();
       }, { once: true });
-      
+
       console.log('sidekick-ready event listener added successfully');
     });
   }
 
-
-
   async init() {
     this.loadConfiguration();
-    
+
     // Set up UI components first (these don't need sidekick)
     this.setupEventListeners();
     this.updateModelDropdown();
     this.updateModelsList();
     this.updateMcpServersList();
-    
+
     // Wait for sidekick to be ready for advanced features
     try {
       await this.waitForSidekick();
@@ -83,7 +81,7 @@ class HLXChat {
       console.log(`Auto-selecting first model: ${this.models[0].name} (${this.models[0].id})`);
       this.selectModel(this.models[0].id);
     }
-    
+
     // Add helpful initial message
     if (this.models.length === 0) {
       this.addMessage('assistant', 'Welcome to HLX Chat! Please add an AI model in the configuration to get started.');
@@ -110,7 +108,7 @@ class HLXChat {
         this.isLoggedIn = config.isLoggedIn || false;
 
         // Log model configuration for debugging
-        this.models.forEach(model => {
+        this.models.forEach((model) => {
           console.log('Loaded model:', model);
         });
 
@@ -135,7 +133,7 @@ class HLXChat {
     } else {
       this.useDefaultConfiguration();
     }
-    
+
     // Save the updated configuration
     this.saveConfiguration();
   }
@@ -152,7 +150,7 @@ class HLXChat {
         modelIdentifier: 'gpt-4',
         maxTokens: 4096,
         temperature: 0.7,
-      }
+      },
     ];
     this.mcpServers = [
       {
@@ -163,7 +161,7 @@ class HLXChat {
         auth: '',
         description: 'Pre-configured Helix MCP server for AEM operations',
         readonly: true,
-      }
+      },
     ];
   }
 
@@ -171,22 +169,22 @@ class HLXChat {
     // Clear current configuration
     this.currentModel = null;
     this.chatHistory = [];
-    
+
     // Reset to defaults
     this.useDefaultConfiguration();
-    
+
     // Update UI
     this.updateModelDropdown();
     this.updateModelsList();
     this.updateMcpServersList();
     this.updateSendButton();
-    
+
     // Save the reset configuration
     this.saveConfiguration();
-    
+
     // Add confirmation message
     this.addMessage('assistant', 'Configuration has been reset to defaults. Please add your API key to get started.');
-    
+
     console.log('Configuration reset to defaults');
   }
 
@@ -199,7 +197,7 @@ class HLXChat {
       isLoggedIn: this.isLoggedIn,
     };
     localStorage.setItem('hlx-chat-config', JSON.stringify(config));
-    
+
     // Also save user profile separately for easier access
     if (this.userProfile) {
       localStorage.setItem('hlx-user-profile', JSON.stringify(this.userProfile));
@@ -272,7 +270,7 @@ class HLXChat {
   // Event Listeners
   setupEventListeners() {
     console.log('Setting up event listeners...');
-    
+
     // Model selection
     document.getElementById('modelSelect').addEventListener('change', (e) => {
       this.selectModel(e.target.value);
@@ -354,8 +352,6 @@ class HLXChat {
       document.getElementById('hlxToken').value = '';
     });
 
-
-
     document.getElementById('debugParentBtn').addEventListener('click', () => {
       this.debugParentWindow();
     });
@@ -430,13 +426,13 @@ class HLXChat {
   // Model Management
   selectModel(modelId) {
     this.currentModel = this.models.find((m) => m.id === modelId);
-    
+
     // Update the dropdown to reflect the selection
     const select = document.getElementById('modelSelect');
     if (select) {
       select.value = modelId || '';
     }
-    
+
     this.updateSendButton();
 
     if (this.currentModel) {
@@ -546,16 +542,16 @@ class HLXChat {
       this.addMessage('assistant', 'Please enter a message to send.');
       return;
     }
-    
+
     if (!this.currentModel) {
       this.addMessage('assistant', 'Please select an AI model from the dropdown above to start chatting.');
       return;
     }
-    
+
     if (this.isLoading) {
       return;
     }
-    
+
     // Check if the selected model has required configuration
     if (!this.currentModel.apiKey || !this.currentModel.apiKey.trim()) {
       this.addMessage('assistant', 'Please configure your API key in the settings. Click the gear icon ⚙️ to open configuration.');
@@ -584,24 +580,23 @@ class HLXChat {
     try {
       // Send to model
       const response = await this.callModel(message);
-      
+
       // Process tool executions if any
       let finalResponse = await this.processToolExecutions(response, { messages: this.chatHistory });
-      
+
       // If no tool execution was found and this looks like a page status question, force execution
-      if (!finalResponse.includes('window.executeMcpTool') && 
-          !finalResponse.includes('❌') && 
-          message.toLowerCase().includes('page') && 
-          message.toLowerCase().includes('published')) {
-        
+      if (!finalResponse.includes('window.executeMcpTool')
+          && !finalResponse.includes('❌')
+          && message.toLowerCase().includes('page')
+          && message.toLowerCase().includes('published')) {
         console.log('No tool execution found for page status question, forcing execution...');
         try {
           const result = await this.executeMcpTool('helix-mcp', 'page-status', {
             org: 'aemsites',
             site: 'da-blog-tools',
-            path: '/demo'
+            path: '/demo',
           });
-          
+
           // Get AI analysis of the tool results
           const analysisPrompt = `Analyze this data and provide insights based on the user's original question. Do NOT show the raw data. Instead, answer the user's question only. IMPORTANT: Do NOT include any tool execution calls in your response. Just provide the analysis. Here's the data: ${JSON.stringify(result, null, 2)}`;
           const analysisResponse = await this.callModel(analysisPrompt, { messages: this.chatHistory });
@@ -611,7 +606,7 @@ class HLXChat {
           finalResponse = `**❌ Tool execution failed:** ${error.message}`;
         }
       }
-      
+
       // Update loading message with final response
       this.updateMessage(loadingMessage, finalResponse);
     } catch (error) {
@@ -641,18 +636,18 @@ class HLXChat {
     if (!model.apiKey || !model.apiKey.trim()) {
       throw new Error('API key is required. Please configure your API key in settings.');
     }
-    
+
     if (!model.apiEndpoint || !model.apiEndpoint.trim()) {
       throw new Error('API endpoint is required. Please configure your API endpoint in settings.');
     }
-    
+
     if (!model.modelIdentifier || !model.modelIdentifier.trim()) {
       throw new Error('Model identifier is required. Please configure your model identifier in settings.');
     }
 
     // Check if this is an Azure OpenAI endpoint
     const isAzure = model.apiEndpoint.includes('azure.com') || model.apiEndpoint.includes('openai.azure.com');
-    
+
     let endpoint;
     let headers;
 
@@ -731,7 +726,7 @@ class HLXChat {
       model: model.modelIdentifier,
       maxTokens: model.maxTokens,
       temperature: model.temperature,
-      headers: Object.keys(headers)
+      headers: Object.keys(headers),
     });
 
     const response = await fetch(endpoint, {
@@ -745,7 +740,7 @@ class HLXChat {
       try {
         const error = await response.json();
         console.error('OpenAI API Error Response:', error);
-        
+
         if (error.error?.message) {
           errorMessage = error.error.message;
         } else if (error.message) {
@@ -759,7 +754,7 @@ class HLXChat {
         console.error('Failed to parse error response:', e);
         errorMessage = response.statusText || `HTTP ${response.status}`;
       }
-      
+
       // Provide more helpful error messages
       if (response.status === 401) {
         errorMessage = 'Invalid API key. Please check your API key in settings.';
@@ -770,17 +765,17 @@ class HLXChat {
       } else if (response.status >= 500) {
         errorMessage = 'OpenAI service is experiencing issues. Please try again later.';
       }
-      
+
       throw new Error(errorMessage);
     }
 
     const data = await response.json();
     console.log('OpenAI API Success Response:', data);
-    
+
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
       throw new Error('Invalid response format from OpenAI API');
     }
-    
+
     return data.choices[0].message.content;
   }
 
@@ -882,7 +877,7 @@ class HLXChat {
     if (!content) return '';
 
     // Convert markdown to HTML
-    let formatted = content
+    const formatted = content
       // Code blocks
       .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>')
       // Inline code
@@ -924,7 +919,7 @@ class HLXChat {
         hasText,
         hasModel: hasModel ? this.currentModel.name : 'None',
         notLoading,
-        modelHasApiKey: hasModel ? !!this.currentModel.apiKey : 'N/A'
+        modelHasApiKey: hasModel ? !!this.currentModel.apiKey : 'N/A',
       });
     }
   }
@@ -932,31 +927,31 @@ class HLXChat {
   // Modal Management
   showConfigModal() {
     console.log('showConfigModal() called');
-    
+
     // Check if modal elements exist
     const configModal = document.getElementById('configModal');
     const hlxTokenInput = document.getElementById('hlxToken');
-    
+
     console.log('Modal elements check:', {
       configModal: !!configModal,
       hlxTokenInput: !!hlxTokenInput,
-      modalClasses: configModal ? configModal.className : 'N/A'
+      modalClasses: configModal ? configModal.className : 'N/A',
     });
-    
+
     if (!configModal) {
       console.error('Config modal element not found!');
       return;
     }
-    
+
     // Populate HLX token field with current value
     if (hlxTokenInput) {
       hlxTokenInput.value = this.hlxToken || '';
     }
-    
+
     // Add show class and log result
     configModal.classList.add('show');
     console.log('Added show class. Modal classes now:', configModal.className);
-    
+
     // Check if modal is visible
     const computedStyle = window.getComputedStyle(configModal);
     console.log('Modal computed display style:', computedStyle.display);
@@ -1078,7 +1073,7 @@ class HLXChat {
       throw new Error(`MCP server '${serverId}' not found. Available servers: ${availableServers}`);
     }
 
-    console.log(`MCP server details:`, server);
+    console.log('MCP server details:', server);
     console.log(`Making request to: ${server.url}/context`);
     console.log(`Executing MCP tool: ${tool} on server ${serverId} with params:`, params);
 
@@ -1150,10 +1145,10 @@ class HLXChat {
                   if (parsed.result.content && Array.isArray(parsed.result.content)) {
                     // Extract text content from MCP response
                     const textContent = parsed.result.content
-                      .filter(item => item.type === 'text')
-                      .map(item => item.text)
+                      .filter((item) => item.type === 'text')
+                      .map((item) => item.text)
                       .join('\n');
-                    
+
                     if (textContent) {
                       return { message: textContent, rawResult: parsed.result };
                     }
@@ -1180,10 +1175,10 @@ class HLXChat {
         if (data.result.content && Array.isArray(data.result.content)) {
           // Extract text content from MCP response
           const textContent = data.result.content
-            .filter(item => item.type === 'text')
-            .map(item => item.text)
+            .filter((item) => item.type === 'text')
+            .map((item) => item.text)
             .join('\n');
-          
+
           if (textContent) {
             return { message: textContent, rawResult: data.result };
           }
@@ -1217,21 +1212,21 @@ class HLXChat {
       const lowerResponse = response.toLowerCase();
       if (lowerResponse.includes('i will') || lowerResponse.includes('please hold') || lowerResponse.includes('executing') || lowerResponse.includes('check')) {
         console.log('Detected conversational response that should have executed a tool, attempting to auto-execute...');
-        
+
         // Try to auto-execute based on the user's question context
         const lastUserMessage = this.chatHistory[this.chatHistory.length - 1];
         if (lastUserMessage && lastUserMessage.role === 'user') {
           const userQuestion = lastUserMessage.content.toLowerCase();
-          
+
           if (userQuestion.includes('page') && userQuestion.includes('published') && userQuestion.includes('demo')) {
             console.log('Auto-executing page-status tool for /demo page');
             try {
               const result = await this.executeMcpTool('helix-mcp', 'page-status', {
                 org: 'aemsites',
                 site: 'da-blog-tools',
-                path: '/demo'
+                path: '/demo',
               });
-              
+
               // Get AI analysis of the tool results
               const analysisPrompt = `Analyze this data and provide insights based on the user's original question. Do NOT show the raw data. Instead, answer the user's question only. Here's the data: ${JSON.stringify(result, null, 2)}`;
               const analysisResponse = await this.callModel(analysisPrompt, context);
@@ -1274,21 +1269,21 @@ class HLXChat {
 
         // Increment execution depth to prevent loops
         this.executionDepth++;
-        
+
         // Execute the tool
         const result = await this.executeMcpTool(serverId, toolName, params);
-        
+
         // Decrement execution depth
         this.executionDepth--;
 
         // Get AI analysis of the tool results
         console.log('Calling AI for analysis...');
-        
+
         // Get AI analysis of the tool results
         const analysisPrompt = `Analyze this data and provide insights based on the user's original question. Do NOT show the raw data. Instead, answer the user's question only. IMPORTANT: Do NOT include any tool execution calls in your response. Just provide the analysis. Here's the data: ${JSON.stringify(result, null, 2)}`;
         const analysisResponse = await this.callModel(analysisPrompt, context);
         console.log('Analysis response:', analysisResponse);
-        
+
         // Don't process tool calls in analysis responses to prevent infinite loops
         processedResponse = processedResponse.replace(fullMatch, analysisResponse);
       } catch (error) {
@@ -1341,7 +1336,7 @@ class HLXChat {
         console.log('Using DA token from sidekick config');
         return this.sidekick.config.authToken;
       }
-      
+
       // Try to get from parent window's DA SDK if available
       if (window.parent && window.parent.DA_SDK) {
         const { token } = await window.parent.DA_SDK;
@@ -1350,7 +1345,7 @@ class HLXChat {
           return token;
         }
       }
-      
+
       console.log('No DA token available');
       return null;
     } catch (error) {
@@ -1364,7 +1359,7 @@ class HLXChat {
     this.hlxToken = token;
     this.saveConfiguration();
     console.log('HLX token set for MCP server authentication');
-    
+
     // Add confirmation message
     if (token) {
       this.addMessage('assistant', '🔑 **HLX Token Set:** Authentication token configured for MCP server access.');
@@ -1373,17 +1368,14 @@ class HLXChat {
     }
   }
 
-
-
   // Set up login state listener
   setupLoginListener() {
     try {
       console.log('Setting up login state listener for sidekick events...');
-      
+
       // The findSidekickElement method handles setting up listeners on the sidekick element
       // We just need to check existing login state from localStorage
       this.checkExistingLoginState();
-      
     } catch (error) {
       console.error('Error setting up login listener:', error);
     }
@@ -1395,36 +1387,35 @@ class HLXChat {
       console.log('Login listeners already set up, skipping');
       return;
     }
-    
+
     if (!this.sidekick) {
       console.log('No sidekick element available for login listeners');
       return;
     }
-    
+
     try {
       console.log('Setting up login listeners on sidekick element:', this.sidekick);
-      
+
       // Listen for the sidekick's logged-in event
       this.sidekick.addEventListener('logged-in', (event) => {
         console.log('Sidekick logged-in event received:', event);
         this.handleLogin(event.detail);
       });
-      
+
       // Listen for logout events
       this.sidekick.addEventListener('logged-out', (event) => {
         console.log('Sidekick logged-out event received:', event);
         this.handleLogout();
       });
-      
+
       // Listen for profile update events
       this.sidekick.addEventListener('profile-updated', (event) => {
         console.log('Sidekick profile-updated event received:', event);
         this.handleProfileUpdate(event.detail);
       });
-      
+
       this.loginListenersSetup = true;
       console.log('Login listeners set up successfully on sidekick element');
-      
     } catch (error) {
       console.error('Error setting up sidekick login listeners:', error);
     }
@@ -1438,15 +1429,15 @@ class HLXChat {
       console.log('Profile type:', typeof profile);
       console.log('Profile keys:', profile ? Object.keys(profile) : 'No profile');
       console.log('============================');
-      
+
       if (!profile) {
         console.warn('Login event received but no profile provided');
         return;
       }
-      
+
       this.userProfile = profile;
       this.isLoggedIn = true;
-      
+
       // Log profile information to console
       console.log('=== USER LOGGED IN ===');
       console.log('Full Profile Object:', JSON.stringify(profile, null, 2));
@@ -1457,16 +1448,15 @@ class HLXChat {
       console.log('Organization:', profile.org || profile.organization || profile.company || 'Not specified');
       console.log('Login Time:', new Date().toISOString());
       console.log('======================');
-      
+
       // Update UI to show logged-in state
       this.updateLoginState();
-      
+
       // Add success message
       this.addMessage('assistant', `🔐 **Logged In:** Welcome ${profile.name || profile.email || 'User'}! You can now use MCP tools.`);
-      
+
       // Save profile to configuration
       this.saveConfiguration();
-      
     } catch (error) {
       console.error('Error handling login:', error);
     }
@@ -1476,23 +1466,22 @@ class HLXChat {
   handleLogout() {
     try {
       console.log('Handling logout');
-      
+
       this.userProfile = null;
       this.isLoggedIn = false;
-      
+
       console.log('=== USER LOGGED OUT ===');
       console.log('Logout Time:', new Date().toISOString());
       console.log('=======================');
-      
+
       // Update UI to show logged-out state
       this.updateLoginState();
-      
+
       // Add logout message
       this.addMessage('assistant', '🔓 **Logged Out:** You have been logged out. MCP tools are no longer available.');
-      
+
       // Save configuration
       this.saveConfiguration();
-      
     } catch (error) {
       console.error('Error handling logout:', error);
     }
@@ -1502,18 +1491,17 @@ class HLXChat {
   handleProfileUpdate(profile) {
     try {
       console.log('Handling profile update:', profile);
-      
+
       if (profile && this.isLoggedIn) {
         this.userProfile = { ...this.userProfile, ...profile };
         console.log('Profile updated:', this.userProfile);
-        
+
         // Save updated profile
         this.saveConfiguration();
-        
+
         // Add update message
         this.addMessage('assistant', '📝 **Profile Updated:** Your profile information has been refreshed.');
       }
-      
     } catch (error) {
       console.error('Error handling profile update:', error);
     }
@@ -1523,14 +1511,14 @@ class HLXChat {
   checkExistingLoginState() {
     try {
       console.log('Checking for existing login state...');
-      
+
       // Check localStorage for saved profile
       const savedProfile = localStorage.getItem('hlx-user-profile');
       if (savedProfile) {
         try {
           const profile = JSON.parse(savedProfile);
           console.log('Found saved profile in localStorage:', profile);
-          
+
           // Validate the profile before using it
           if (this.isValidProfile(profile)) {
             console.log('Saved profile is valid, restoring login state');
@@ -1546,9 +1534,6 @@ class HLXChat {
       } else {
         console.log('No saved profile found in localStorage');
       }
-      
-
-      
     } catch (error) {
       console.error('Error checking existing login state:', error);
     }
@@ -1559,33 +1544,33 @@ class HLXChat {
     if (!profile || typeof profile !== 'object') {
       return false;
     }
-    
+
     // Check for essential fields
     const hasId = profile.id || profile.userId || profile.email;
     const hasName = profile.name || profile.displayName || profile.fullName;
-    
+
     // Profile must have at least an ID or email, and a name
     if (!hasId || !hasName) {
       console.log('Profile validation failed - missing essential fields:', {
         hasId: !!hasId,
         hasName: !!hasName,
-        profileKeys: Object.keys(profile)
+        profileKeys: Object.keys(profile),
       });
       return false;
     }
-    
+
     // Check if this looks like test data
-    if (profile.email && profile.email.includes('test@') || 
-        profile.email && profile.email.includes('example.com') ||
-        profile.name && profile.name.includes('Test') ||
-        profile.name && profile.name.includes('Example')) {
+    if (profile.email && profile.email.includes('test@')
+        || profile.email && profile.email.includes('example.com')
+        || profile.name && profile.name.includes('Test')
+        || profile.name && profile.name.includes('Example')) {
       console.log('Profile validation failed - appears to be test data:', profile);
       return false;
     }
-    
+
     console.log('Profile validation passed:', {
       id: profile.id || profile.userId || profile.email,
-      name: profile.name || profile.displayName || profile.fullName
+      name: profile.name || profile.displayName || profile.fullName,
     });
     return true;
   }
@@ -1596,21 +1581,19 @@ class HLXChat {
       console.log('Clearing cached profile data...');
       localStorage.removeItem('hlx-user-profile');
       localStorage.removeItem('hlx-chat-config');
-      
+
       // Reset instance variables
       this.userProfile = null;
       this.isLoggedIn = false;
-      
+
       // Update UI
       this.updateLoginState();
-      
+
       console.log('Cached profile data cleared');
     } catch (error) {
       console.error('Error clearing cached profile:', error);
     }
   }
-
-
 
   // Update UI to reflect login state
   updateLoginState() {
@@ -1626,7 +1609,7 @@ class HLXChat {
           statusIndicator.style.color = '#dc3545';
         }
       }
-      
+
       // Update login status in configuration modal
       const loginStatusText = document.getElementById('loginStatusText');
       if (loginStatusText) {
@@ -1639,16 +1622,13 @@ class HLXChat {
           loginStatusText.style.color = '#dc3545';
         }
       }
-      
+
       // Update send button state
       this.updateSendButton();
-      
     } catch (error) {
       console.error('Error updating login state:', error);
     }
   }
-
-
 
   // Debug method to inspect parent window contents
   debugParentWindow() {
@@ -1666,7 +1646,7 @@ class HLXChat {
       }
 
       const keys = Object.keys(parentWindow);
-      const safeKeys = keys.filter(key => {
+      const safeKeys = keys.filter((key) => {
         try {
           const value = parentWindow[key];
           return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -1675,7 +1655,7 @@ class HLXChat {
         }
       });
 
-      let debugInfo = `🔍 **Parent Window Debug Info:**\n\n`;
+      let debugInfo = '🔍 **Parent Window Debug Info:**\n\n';
       debugInfo += `**Total keys:** ${keys.length}\n`;
       debugInfo += `**Object keys:** ${safeKeys.length}\n\n`;
       debugInfo += `**All keys (first 30):**\n\`\`\`\n${keys.slice(0, 30).join(', ')}\n\`\`\`\n\n`;
@@ -1683,8 +1663,8 @@ class HLXChat {
 
       // Try to access some common paths
       const commonPaths = ['session', 'hlx', 'sidekick', 'extension', 'projects', 'auth'];
-      debugInfo += `**Common path inspection:**\n`;
-      
+      debugInfo += '**Common path inspection:**\n';
+
       for (const path of commonPaths) {
         try {
           const value = parentWindow[path];
@@ -1707,42 +1687,38 @@ class HLXChat {
   // Debug function to test modal functionality
   debugModal() {
     console.log('=== MODAL DEBUG ===');
-    
+
     const configBtn = document.getElementById('configBtn');
     const configModal = document.getElementById('configModal');
-    
+
     console.log('Elements check:', {
       configBtn: !!configBtn,
       configModal: !!configModal,
       configBtnDisplay: configBtn ? window.getComputedStyle(configBtn).display : 'N/A',
       modalDisplay: configModal ? window.getComputedStyle(configModal).display : 'N/A',
-      modalClasses: configModal ? configModal.className : 'N/A'
+      modalClasses: configModal ? configModal.className : 'N/A',
     });
-    
+
     if (configBtn) {
       console.log('Config button element:', configBtn);
       console.log('Config button click handlers:', configBtn.onclick);
     }
-    
+
     if (configModal) {
       console.log('Config modal element:', configModal);
       console.log('Modal innerHTML length:', configModal.innerHTML.length);
     }
-    
+
     // Try to manually show the modal
     this.showConfigModal();
-    
+
     console.log('=== END MODAL DEBUG ===');
   }
-
-
-
-
 
   // Test MCP server connection
   async testMcpServerConnection() {
     try {
-      const helixServer = this.mcpServers.find(s => s.id === 'helix-mcp');
+      const helixServer = this.mcpServers.find((s) => s.id === 'helix-mcp');
       if (!helixServer) {
         console.warn('Helix MCP server not found for testing');
         return;
@@ -1753,7 +1729,7 @@ class HLXChat {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          Accept: 'application/json',
           'MCP-Protocol-Version': '2025-06-18',
         },
         body: JSON.stringify({
@@ -1761,16 +1737,16 @@ class HLXChat {
           method: 'tools/list',
           params: {},
           id: Date.now(),
-        })
+        }),
       });
 
       if (response.ok) {
         const data = await response.json();
         if (data.result && data.result.tools) {
-          console.log('MCP server connection successful, available tools:', data.result.tools.map(t => t.name));
-          
+          console.log('MCP server connection successful, available tools:', data.result.tools.map((t) => t.name));
+
           // Check if page-status tool is available
-          const pageStatusTool = data.result.tools.find(t => t.name === 'page-status');
+          const pageStatusTool = data.result.tools.find((t) => t.name === 'page-status');
           if (pageStatusTool) {
             console.log('Page-status tool is available');
             this.addMessage('assistant', '✅ **MCP Server Connected:** The Helix MCP server is available with page-status tool and ready for use.');
@@ -1834,8 +1810,8 @@ window.setApiKey = function (apiKey, modelType = 'openai', modelName = 'GPT-4') 
   if (window.hlxChatInstance) {
     try {
       // Find existing model or create one
-      let model = window.hlxChatInstance.models.find(m => m.name === modelName);
-      
+      const model = window.hlxChatInstance.models.find((m) => m.name === modelName);
+
       if (model) {
         // Update existing model with API key
         model.apiKey = apiKey;
@@ -1845,26 +1821,26 @@ window.setApiKey = function (apiKey, modelType = 'openai', modelName = 'GPT-4') 
         const modelData = {
           name: modelName,
           type: modelType,
-          apiKey: apiKey,
+          apiKey,
           apiEndpoint: modelType === 'openai' ? 'https://api.openai.com/v1' : 'https://api.anthropic.com',
           modelIdentifier: modelType === 'openai' ? 'gpt-4o-mini' : 'claude-3-sonnet-20240229',
           maxTokens: 4096,
-          temperature: 0.7
+          temperature: 0.7,
         };
-        
+
         window.hlxChatInstance.addModel(modelData);
         console.log(`Added new ${modelName} model with API key`);
       }
-      
+
       // Update UI and select the model
       window.hlxChatInstance.updateModelDropdown();
       window.hlxChatInstance.updateModelsList();
-      
+
       // Auto-select if this is the only model or if no model is selected
       if (window.hlxChatInstance.models.length === 1 || !window.hlxChatInstance.currentModel) {
         window.hlxChatInstance.selectModel(model ? model.id : window.hlxChatInstance.models[window.hlxChatInstance.models.length - 1].id);
       }
-      
+
       return { success: true, message: 'API key set successfully. You can now chat!' };
     } catch (error) {
       return { success: false, error: error.message };
