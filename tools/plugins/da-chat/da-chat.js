@@ -16,7 +16,7 @@ class DAChat {
 
     // Pre-configured Helix MCP server URL - change this in one place
     // this.HELIX_MCP_URL = 'http://localhost:3003';
-    this.HELIX_MCP_URL = 'https://helix-mcp-staging.adobeaem.workers.dev';
+    this.HELIX_MCP_URL = 'https://helix-mcp-server.aem-poc-lab.workers.dev';
 
     this.init();
   }
@@ -441,6 +441,8 @@ class DAChat {
     try {
       // Prepare context with MCP servers
       const context = await this.prepareContext();
+      // Add current user message to context for tool analysis
+      context.userMessage = message;
 
       // Send to model
       const response = await this.callModel(message, context);
@@ -777,13 +779,35 @@ class DAChat {
         // Execute the tool
         const result = await this.executeMcpTool(serverId, toolName, params);
 
-        // Get AI analysis of the tool results
-        console.log('Calling AI for analysis...');
+        // Check if this is a stub response and try alternatives
         const resultData = this.extractResultData(result);
-        const analysisPrompt = `Analyze this data and provide insights based on the user's original question. Do NOT show the raw data. Instead, answer the user's question only. IMPORTANT: Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks. Here's the data: ${JSON.stringify(resultData, null, 2)}`;
-        const analysisResponse = await this.callModel(analysisPrompt, context);
-        console.log('Analysis response:', analysisResponse);
-        processedResponse = processedResponse.replace(fullMatch, analysisResponse);
+        const resultStr = JSON.stringify(resultData);
+        
+        if (resultStr.includes('Tool \'') && resultStr.includes('called with arguments')) {
+          console.log('Detected stub response, trying alternative approach');
+          let finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
+                             <p>This suggests the MCP server may be in development mode or the requested data is not available.</p>
+                             <p>To get the last 3 previewed pages, you might need to check:</p>
+                             <ul>
+                               <li>Helix admin interface directly</li>
+                               <li>Browser developer tools for recent requests</li>
+                               <li>Local storage or session data</li>
+                             </ul>`;
+          processedResponse = processedResponse.replace(fullMatch, finalMessage);
+        } else {
+          // Real data - analyze normally
+          console.log('Got real data, analyzing...');
+          const analysisPrompt = `The user asked: "${context.userMessage || 'for information'}"
+          
+Tool executed: ${toolName}
+Result: ${JSON.stringify(resultData, null, 2)}
+
+Analyze this data and answer the user's question. Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks.`;
+          
+          const analysisResponse = await this.callModel(analysisPrompt, context);
+          console.log('Analysis response:', analysisResponse);
+          processedResponse = processedResponse.replace(fullMatch, analysisResponse);
+        }
       } catch (error) {
         console.error(`Failed to execute tool ${toolName}:`, error);
         const errorStr = `**❌ Tool Execution Error:** ${error.message}`;
@@ -819,13 +843,35 @@ class DAChat {
         // Execute the tool
         const result = await this.executeMcpTool(serverId, toolName, params);
 
-        // Get AI analysis of the tool results
-        console.log('Calling AI for analysis...');
+        // Check if this is a stub response and try alternatives
         const resultData = this.extractResultData(result);
-        const analysisPrompt = `Analyze this data and provide insights based on the user's original question. Do NOT show the raw data. Instead, answer the user's question, identify key patterns, highlight important findings, and provide actionable insights. IMPORTANT: Provide your analysis as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks. Here's the data: ${JSON.stringify(resultData, null, 2)}`;
-        const analysisResponse = await this.callModel(analysisPrompt, context);
-        console.log('Analysis response:', analysisResponse);
-        processedResponse = processedResponse.replace(fullMatch, analysisResponse);
+        const resultStr = JSON.stringify(resultData);
+        
+        if (resultStr.includes('Tool \'') && resultStr.includes('called with arguments')) {
+          console.log('Detected stub response (code block), trying alternative approach');
+          let finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
+                             <p>This suggests the MCP server may be in development mode or the requested data is not available.</p>
+                             <p>To get the last 3 previewed pages, you might need to check:</p>
+                             <ul>
+                               <li>Helix admin interface directly</li>
+                               <li>Browser developer tools for recent requests</li>
+                               <li>Local storage or session data</li>
+                             </ul>`;
+          processedResponse = processedResponse.replace(fullMatch, finalMessage);
+        } else {
+          // Real data - analyze normally
+          console.log('Got real data (code block), analyzing...');
+          const analysisPrompt = `The user asked: "${context.userMessage || 'for information'}"
+          
+Tool executed: ${toolName}
+Result: ${JSON.stringify(resultData, null, 2)}
+
+Analyze this data and answer the user's question. Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks.`;
+          
+          const analysisResponse = await this.callModel(analysisPrompt, context);
+          console.log('Analysis response:', analysisResponse);
+          processedResponse = processedResponse.replace(fullMatch, analysisResponse);
+        }
       } catch (error) {
         console.error(`Failed to execute tool ${toolName}:`, error);
         const errorStr = `**❌ Tool Execution Error:** ${error.message}`;
@@ -862,13 +908,35 @@ class DAChat {
         // Execute the tool
         const result = await this.executeMcpTool(serverId, toolName, params);
 
-        // Get AI analysis of the tool results
-        console.log('Calling AI for analysis...');
+        // Check if this is a stub response and try alternatives
         const resultData = this.extractResultData(result);
-        const analysisPrompt = `Analyze this data and provide insights based on the user's original question. Do NOT show the raw data. Instead, answer the user's question, identify key patterns, highlight important findings, and provide actionable insights. IMPORTANT: Provide your analysis as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks. Here's the data: ${JSON.stringify(resultData, null, 2)}`;
-        const analysisResponse = await this.callModel(analysisPrompt, context);
-        console.log('Analysis response:', analysisResponse);
-        processedResponse = processedResponse.replace(fullMatch, analysisResponse);
+        const resultStr = JSON.stringify(resultData);
+        
+        if (resultStr.includes('Tool \'') && resultStr.includes('called with arguments')) {
+          console.log('Detected stub response (simple pattern), trying alternative approach');
+          let finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
+                             <p>This suggests the MCP server may be in development mode or the requested data is not available.</p>
+                             <p>To get the last 3 previewed pages, you might need to check:</p>
+                             <ul>
+                               <li>Helix admin interface directly</li>
+                               <li>Browser developer tools for recent requests</li>
+                               <li>Local storage or session data</li>
+                             </ul>`;
+          processedResponse = processedResponse.replace(fullMatch, finalMessage);
+        } else {
+          // Real data - analyze normally
+          console.log('Got real data (simple pattern), analyzing...');
+          const analysisPrompt = `The user asked: "${context.userMessage || 'for information'}"
+          
+Tool executed: ${toolName}
+Result: ${JSON.stringify(resultData, null, 2)}
+
+Analyze this data and answer the user's question. Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks.`;
+          
+          const analysisResponse = await this.callModel(analysisPrompt, context);
+          console.log('Analysis response:', analysisResponse);
+          processedResponse = processedResponse.replace(fullMatch, analysisResponse);
+        }
       } catch (error) {
         console.error(`Failed to execute tool ${toolName}:`, error);
         const errorStr = `**❌ Tool Execution Error:** ${error.message}`;
