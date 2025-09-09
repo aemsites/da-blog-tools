@@ -4,19 +4,21 @@ body {
     padding: 0;
     background: white;
     color: #333;
-    height: 100%;
+    height: 100vh;
+    min-height: 100vh;
     overflow: hidden;
 }
 
 .chat-container {
     width: 100%;
-    height: 100%;
+    height: 100vh;
+    min-height: 100vh;
     margin: 0;
     background: white;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    border-radius: 8px;
+    border-radius: 12px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.15);
 }
 
@@ -26,6 +28,7 @@ body {
     padding: 20px;
     text-align: center;
     flex-shrink: 0;
+    position: relative;
 }
 
 .chat-header h1 {
@@ -40,39 +43,116 @@ body {
     font-size: 16px;
 }
 
+.config-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    font-size: 18px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.config-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.chat-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.model-selector {
+    padding: 15px 20px;
+    border-bottom: 1px solid #eee;
+    background: #f8f9fa;
+}
+
+.model-select {
+    width: 100%;
+    padding: 10px 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.model-select:focus {
+    border-color: #667eea;
+}
+
 .chat-messages {
     padding: 20px;
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     background: #f8f9fa;
 }
 
 .message {
-    margin-bottom: 16px;
+    margin-bottom: 20px;
     display: flex;
     align-items: flex-start;
+    gap: 12px;
 }
 
 .message.user {
-    justify-content: flex-end;
+    flex-direction: row-reverse;
+}
+
+.message-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #667eea;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.message.user .message-avatar {
+    background: #28a745;
 }
 
 .message-content {
+    flex: 1;
     max-width: 70%;
     padding: 12px 16px;
     border-radius: 18px;
     font-size: 14px;
     line-height: 1.4;
-}
-
-.message.bot .message-content {
-    background: #f0f0f0;
-    color: #333;
+    background: white;
+    border: 1px solid #e0e0e0;
+    word-wrap: break-word;
 }
 
 .message.user .message-content {
     background: #667eea;
     color: white;
+    border-color: #667eea;
+}
+
+.message-time {
+    font-size: 11px;
+    color: #999;
+    margin-top: 4px;
+    text-align: right;
+}
+
+.message.user .message-time {
+    text-align: left;
 }
 
 .chat-input {
@@ -85,38 +165,47 @@ body {
 .input-group {
     display: flex;
     gap: 12px;
-    max-width: 800px;
-    margin: 0 auto;
+    align-items: flex-end;
 }
 
-.chat-input input {
+.chat-input textarea {
     flex: 1;
-    padding: 16px 20px;
+    padding: 12px 16px;
     border: 2px solid #e0e0e0;
-    border-radius: 24px;
-    font-size: 16px;
+    border-radius: 8px;
+    font-size: 14px;
     outline: none;
     transition: border-color 0.2s;
+    resize: none;
+    min-height: 20px;
+    max-height: 120px;
+    font-family: inherit;
 }
 
-.chat-input input:focus {
+.chat-input textarea:focus {
     border-color: #667eea;
 }
 
 .chat-input button {
-    padding: 16px 24px;
+    padding: 12px 24px;
     background: #667eea;
     color: white;
     border: none;
-    border-radius: 24px;
-    font-size: 16px;
+    border-radius: 8px;
+    font-size: 14px;
     cursor: pointer;
     transition: background 0.2s;
     white-space: nowrap;
+    height: 48px;
 }
 
-.chat-input button:hover {
+.chat-input button:hover:not(:disabled) {
     background: #5a6fd8;
+}
+
+.chat-input button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
 }
 
 .status-indicator {
@@ -129,22 +218,352 @@ body {
     flex-shrink: 0;
 }
 
-.typing-indicator {
+/* Modal Styles */
+.modal {
     display: none;
-    padding: 12px 16px;
-    background: #f0f0f0;
-    border-radius: 18px;
-    color: #666;
-    font-size: 14px;
-    font-style: italic;
-    margin: 0 20px 16px 20px;
+    position: fixed;
+    z-index: 9999; /* Increased z-index to ensure it's above everything */
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
 }
 
-.typing-indicator.show {
+.modal.show {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background-color: white;
+    margin: 20px;
+    padding: 0;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.2s;
+}
+
+.close-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.modal-body {
+    padding: 20px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.modal-footer {
+    padding: 20px;
+    border-top: 1px solid #eee;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+/* Form Styles */
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
     display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #333;
 }
 
-/* Responsive adjustments for smaller screens */
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+    font-family: inherit;
+    box-sizing: border-box;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    border-color: #667eea;
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.form-help {
+    display: block;
+    margin-top: 5px;
+    font-size: 12px;
+    color: #666;
+    font-style: italic;
+}
+
+/* Button Styles */
+.save-btn {
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.save-btn:hover {
+    background: #218838;
+}
+
+.cancel-btn {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.cancel-btn:hover {
+    background: #5a6268;
+}
+
+.reset-btn {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.reset-btn:hover {
+    background: #c82333;
+}
+
+.add-btn {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 10px;
+}
+
+.add-btn:hover {
+    background: #5a6fd8;
+}
+
+.add-btn.secondary {
+    background: #6c757d;
+    margin-left: 10px;
+}
+
+.add-btn.secondary:hover {
+    background: #5a6268;
+}
+
+.token-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.login-section {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.login-section h4 {
+    margin: 0 0 15px 0;
+    color: #333;
+    font-size: 16px;
+}
+
+.login-status {
+    margin-bottom: 15px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
+}
+
+.login-status span {
+    font-weight: 500;
+}
+
+/* Configuration Lists */
+.config-section {
+    margin-bottom: 30px;
+}
+
+.config-section h3 {
+    margin: 0 0 15px 0;
+    color: #333;
+    font-size: 18px;
+}
+
+.config-list {
+    margin-bottom: 15px;
+}
+
+.config-list .model-item,
+.config-list .mcp-server-item {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.model-item-info,
+.mcp-server-info {
+    flex: 1;
+}
+
+.model-item-name,
+.mcp-server-name {
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.model-item-type,
+.mcp-server-url {
+    font-size: 12px;
+    color: #666;
+}
+
+.transport-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    background: #28a745;
+    color: white;
+    border-radius: 4px;
+    font-size: 10px;
+    margin-right: 8px;
+}
+
+.readonly-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    background: #ffc107;
+    color: #333;
+    border-radius: 4px;
+    font-size: 10px;
+    margin-left: 8px;
+}
+
+.model-item-actions,
+.mcp-server-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.edit-btn,
+.delete-btn {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.edit-btn {
+    background: #17a2b8;
+    color: white;
+}
+
+.edit-btn:hover {
+    background: #138496;
+}
+
+.delete-btn {
+    background: #dc3545;
+    color: white;
+}
+
+.delete-btn:hover {
+    background: #c82333;
+}
+
+/* Loading States */
+.loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #666;
+}
+
+.loading-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive adjustments */
 @media (max-width: 768px) {
     .chat-header h1 {
         font-size: 20px;
@@ -154,7 +573,7 @@ body {
         font-size: 14px;
     }
     
-    .chat-input input,
+    .chat-input textarea,
     .chat-input button {
         padding: 14px 18px;
         font-size: 14px;
@@ -162,5 +581,16 @@ body {
     
     .message-content {
         max-width: 85%;
+    }
+    
+    .modal-content {
+        width: 95%;
+        margin: 10px;
+    }
+    
+    .modal-header,
+    .modal-body,
+    .modal-footer {
+        padding: 15px;
     }
 }

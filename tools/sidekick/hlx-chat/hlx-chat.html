@@ -11,29 +11,166 @@
         <div class="chat-header">
             <h1>HLX Chat</h1>
             <p>Your AI assistant for AEM</p>
+            <button id="configBtn" class="config-btn">⚙️</button>
         </div>
         
-        <div class="chat-messages" id="chatMessages">
-            <div class="message bot">
-                <div class="message-content">
-                    Hello! I'm your HLX Chat assistant. How can I help you today?
-                </div>
+        <div class="chat-main">
+            <div class="model-selector">
+                <select id="modelSelect" class="model-select">
+                    <option value="">Select Model...</option>
+                </select>
             </div>
-        </div>
-        
-        <div class="typing-indicator" id="typingIndicator">
-            Assistant is typing...
-        </div>
-        
-        <div class="chat-input">
-            <div class="input-group">
-                <input type="text" id="messageInput" placeholder="Type your message..." maxlength="500">
-                <button id="sendButton">Send</button>
+            
+            <div class="chat-messages" id="chatMessages">
+                <!-- Messages will be added dynamically -->
+            </div>
+            
+            <div class="chat-input">
+                <div class="input-group">
+                    <textarea id="messageInput" placeholder="Type your message..." maxlength="500" rows="1"></textarea>
+                    <button id="sendBtn" disabled>Send</button>
+                </div>
             </div>
         </div>
         
         <div class="status-indicator">
             Connected to AEM Sidekick
+        </div>
+    </div>
+
+    <!-- Configuration Modal -->
+    <div id="configModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Configuration</h2>
+                <button id="closeModal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="config-section">
+                    <h3>AI Models</h3>
+                    <div id="modelsList" class="config-list"></div>
+                    <button id="addModelBtn" class="add-btn">Add Model</button>
+                </div>
+                
+                <div class="config-section">
+                    <h3>HLX Authentication</h3>
+                    <div class="form-group">
+                        <label for="hlxToken">HLX Token:</label>
+                        <input type="password" id="hlxToken" name="hlxToken" placeholder="Enter your HLX authentication token">
+                        <small class="form-help">This token is used for MCP server authentication. The plugin will attempt to auto-retrieve it from the parent extension.</small>
+                    </div>
+                    <div class="token-actions">
+                        <button id="setHlxTokenBtn" class="add-btn">Set Token</button>
+
+                        <button id="debugParentBtn" class="add-btn secondary">🔍 Debug Parent</button>
+                    </div>
+                    
+                    <div class="login-section">
+                        <h4>Login Status</h4>
+                        <div id="loginStatus" class="login-status">
+                            <span id="loginStatusText">🔓 Not logged in</span>
+                        </div>
+                        <button id="clearCacheBtn" class="add-btn secondary">🗑️ Clear Cache</button>
+                    </div>
+                </div>
+                
+                <div class="config-section">
+                    <h3>MCP Servers</h3>
+                    <div id="mcpServersList" class="config-list"></div>
+                    <button id="addMcpServerBtn" class="add-btn">Add MCP Server</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="resetConfig" class="reset-btn">Reset to Defaults</button>
+                <button id="saveConfig" class="save-btn">Save Configuration</button>
+                <button id="cancelConfig" class="cancel-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Model Form Modal -->
+    <div id="modelFormModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modelFormTitle">Add Model</h2>
+                <button id="closeModelForm" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="modelForm">
+                    <div class="form-group">
+                        <label for="modelName">Name:</label>
+                        <input type="text" id="modelName" name="modelName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="modelType">Type:</label>
+                        <select id="modelType" name="modelType" required>
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="local">Local</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="apiKey">API Key:</label>
+                        <input type="password" id="apiKey" name="apiKey" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="apiEndpoint">API Endpoint:</label>
+                        <input type="url" id="apiEndpoint" name="apiEndpoint" placeholder="https://api.openai.com/v1 or https://your-resource.openai.azure.com">
+                        <small class="form-help">For Azure OpenAI, use your resource URL (e.g., https://your-resource.openai.azure.com)</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="modelIdentifier">Model Identifier:</label>
+                        <input type="text" id="modelIdentifier" name="modelIdentifier">
+                    </div>
+                    <div class="form-group">
+                        <label for="maxTokens">Max Tokens:</label>
+                        <input type="number" id="maxTokens" name="maxTokens" value="4096" min="1" max="32000">
+                    </div>
+                    <div class="form-group">
+                        <label for="temperature">Temperature: <span id="temperatureValue">0.7</span></label>
+                        <input type="range" id="temperature" name="temperature" min="0" max="2" step="0.1" value="0.7">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button id="saveModel" class="save-btn">Save Model</button>
+                <button id="cancelModel" class="cancel-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MCP Server Form Modal -->
+    <div id="mcpFormModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="mcpFormTitle">Add MCP Server</h2>
+                <button id="closeMcpForm" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="mcpForm">
+                    <div class="form-group">
+                        <label for="mcpName">Name:</label>
+                        <input type="text" id="mcpName" name="mcpName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mcpUrl">URL:</label>
+                        <input type="url" id="mcpUrl" name="mcpUrl" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mcpAuth">Auth Token:</label>
+                        <input type="password" id="mcpAuth" name="mcpAuth">
+                    </div>
+                    <div class="form-group">
+                        <label for="mcpDescription">Description:</label>
+                        <textarea id="mcpDescription" name="mcpDescription" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button id="saveMcp" class="save-btn">Save Server</button>
+                <button id="cancelMcp" class="cancel-btn">Cancel</button>
+            </div>
         </div>
     </div>
 
