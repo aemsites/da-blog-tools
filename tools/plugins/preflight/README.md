@@ -30,7 +30,7 @@
 - **Spelling Test** (`spellingTest.js`): Validates content against dictionary
 - **Metadata Test** (`metadataTest.js`): Checks required metadata fields
 - **Special Characters Test** (`special-charactersTest.js`): Identifies problematic characters
-- **Absolutes Test** (`absolutesTest.js`): Checks for absolute URLs and references
+- **Terms Test** (`termsTest.js`): Scans for absolute language and problematic terminology
 
 ## Usage
 
@@ -45,7 +45,7 @@ Configure which tests to run by adding test entries to your site configuration:
 | `test` | `spelling` | `Spelling Check` |
 | `test` | `metadata` | `Metadata Validation` |
 | `test` | `special-characters` | `Special Characters` |
-| `test` | `absolutes` | `Absolute References` |
+| `test` | `terms` | `Terms Check` |
 
 ### Basic Usage
 
@@ -106,10 +106,12 @@ To add custom tests:
 - Checks for invisible or non-standard Unicode characters
 - Reports characters that may not render properly across all platforms
 
-### Absolutes Test
-- Scans for absolute language and terminology that may be inaccurate or unprofessional
-- Identifies terms like "always", "never", "100%", "guaranteed", "perfect", "impossible"
-- Helps maintain qualified, defensible content that avoids overstated claims
+### Terms Test
+- Scans for problematic language patterns in content including:
+  - **Absolute language**: Terms like "always", "never", "100%", "guaranteed", "perfect", "impossible"
+  - **Biased language**: Terms like "mankind", "blacklist", "guys", "crazy", "master/slave"
+- Tests both absolute claims that may be inaccurate and biased language that should use inclusive alternatives
+- Provides separate sub-tests for "Absolutes" and "Biased Language" with specific remediation guidance
 
 ## Limitations
 
