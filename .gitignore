@@ -10,3 +10,4 @@ helix-importer-ui
 .idea
 tools/node_modules/*
 tools/plugins/da-chat/node_modules/*
+run-publisher-local.sh
