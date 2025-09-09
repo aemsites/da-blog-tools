@@ -1,4 +1,4 @@
-/* eslint-disable no-console, class-methods-use-this, no-await-in-loop, no-restricted-syntax, no-cond-assign, no-return-await, max-len, no-alert, func-names */
+/* eslint-disable no-console, class-methods-use-this, no-await-in-loop, no-restricted-syntax, no-cond-assign, no-return-await, max-len, no-alert, func-names, import/no-unresolved */
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
 // DA Chat - Configurable AI Chatbot with MCP Support
@@ -530,6 +530,7 @@ class DAChat {
             const decoder = new TextDecoder();
             let buffer = '';
 
+            // eslint-disable-next-line no-constant-condition
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
@@ -587,6 +588,7 @@ class DAChat {
             const decoder = new TextDecoder();
             let buffer = '';
 
+            // eslint-disable-next-line no-constant-condition
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
@@ -676,6 +678,7 @@ class DAChat {
       const decoder = new TextDecoder();
       let buffer = '';
 
+      // eslint-disable-next-line no-constant-condition
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -736,14 +739,15 @@ class DAChat {
     processedResponse = processedResponse.replace(/```javascript\s*\n?/g, '');
     processedResponse = processedResponse.replace(/```\s*\n?/g, '');
     processedResponse = processedResponse.replace(/javascript\s*$/gm, '');
-    
+
     // Auto-correct any remaining double window references in the response
     processedResponse = processedResponse.replace(/window\.window\.executeMcpTool/g, 'window.executeMcpTool');
 
     // First try the strict pattern
     while ((match = toolExecutionRegex.exec(response)) !== null) {
-      const [fullMatch, serverId, toolName, paramsStr] = match;
-      
+      let [fullMatch] = match;
+      const [, serverId, toolName, paramsStr] = match;
+
       // Auto-correct double window calls
       if (fullMatch.includes('window.window')) {
         console.log('Auto-correcting double window call:', fullMatch);
@@ -782,10 +786,10 @@ class DAChat {
         // Check if this is a stub response and try alternatives
         const resultData = this.extractResultData(result);
         const resultStr = JSON.stringify(resultData);
-        
+
         if (resultStr.includes('Tool \'') && resultStr.includes('called with arguments')) {
           console.log('Detected stub response, trying alternative approach');
-          let finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
+          const finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
                              <p>This suggests the MCP server may be in development mode or the requested data is not available.</p>
                              <p>To get the last 3 previewed pages, you might need to check:</p>
                              <ul>
@@ -803,7 +807,7 @@ Tool executed: ${toolName}
 Result: ${JSON.stringify(resultData, null, 2)}
 
 Analyze this data and answer the user's question. Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks.`;
-          
+
           const analysisResponse = await this.callModel(analysisPrompt, context);
           console.log('Analysis response:', analysisResponse);
           processedResponse = processedResponse.replace(fullMatch, analysisResponse);
@@ -846,10 +850,10 @@ Analyze this data and answer the user's question. Provide your response as clean
         // Check if this is a stub response and try alternatives
         const resultData = this.extractResultData(result);
         const resultStr = JSON.stringify(resultData);
-        
+
         if (resultStr.includes('Tool \'') && resultStr.includes('called with arguments')) {
           console.log('Detected stub response (code block), trying alternative approach');
-          let finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
+          const finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
                              <p>This suggests the MCP server may be in development mode or the requested data is not available.</p>
                              <p>To get the last 3 previewed pages, you might need to check:</p>
                              <ul>
@@ -867,7 +871,7 @@ Tool executed: ${toolName}
 Result: ${JSON.stringify(resultData, null, 2)}
 
 Analyze this data and answer the user's question. Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks.`;
-          
+
           const analysisResponse = await this.callModel(analysisPrompt, context);
           console.log('Analysis response:', analysisResponse);
           processedResponse = processedResponse.replace(fullMatch, analysisResponse);
@@ -911,10 +915,10 @@ Analyze this data and answer the user's question. Provide your response as clean
         // Check if this is a stub response and try alternatives
         const resultData = this.extractResultData(result);
         const resultStr = JSON.stringify(resultData);
-        
+
         if (resultStr.includes('Tool \'') && resultStr.includes('called with arguments')) {
           console.log('Detected stub response (simple pattern), trying alternative approach');
-          let finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
+          const finalMessage = `<p><strong>🔍 Data Source Issue:</strong> The ${toolName} tool returned a placeholder response instead of actual data.</p>
                              <p>This suggests the MCP server may be in development mode or the requested data is not available.</p>
                              <p>To get the last 3 previewed pages, you might need to check:</p>
                              <ul>
@@ -932,7 +936,7 @@ Tool executed: ${toolName}
 Result: ${JSON.stringify(resultData, null, 2)}
 
 Analyze this data and answer the user's question. Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks.`;
-          
+
           const analysisResponse = await this.callModel(analysisPrompt, context);
           console.log('Analysis response:', analysisResponse);
           processedResponse = processedResponse.replace(fullMatch, analysisResponse);
@@ -1007,7 +1011,6 @@ Analyze this data and answer the user's question. Provide your response as clean
     // Add critical instruction to force tool execution
     const dateInfo = this.getCurrentDateInfo();
     const availableServerIds = this.mcpServers.map((s) => s.id).join(', ');
-    const firstServerId = this.mcpServers.length > 0 ? this.mcpServers[0].id : 'your-server-id';
     const criticalInstruction = `\n\nDIRECT EXECUTION: When users ask for actions, respond with ONLY the tool call: window.executeMcpTool(serverId, toolName, params)\n\nAVAILABLE SERVER IDS: ${availableServerIds}\n\nTOOL USAGE:\n- audit-log: {org, site, since/from/to}\n- page-status: {org, site, path}\n- start-bulk-page-status: {org, site}\n- check-bulk-page-status: {jobId}\n- rum-data: {url, domainkey, aggregation, startdate, enddate}\n\nCURRENT DATE INFO: Today is ${dateInfo.today}, 7 days ago was ${dateInfo.sevenDaysAgo}, 30 days ago was ${dateInfo.thirtyDaysAgo}.\n\nCRITICAL RULES:\n- NO explanatory text like "I will execute" or "Let me check"\n- NO descriptions of what you will do\n- Execute tools immediately with window.executeMcpTool()\n- Present data only, no analysis unless requested\n- No "Key Insights" or "Recommendations" sections`;
 
     let endpoint; let

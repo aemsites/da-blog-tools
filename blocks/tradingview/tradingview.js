@@ -1,5 +1,5 @@
 import { readBlockConfig } from '../../scripts/aem.js';
-import { createElement } from '../../scripts/utils.js';
+import createElement from '../../scripts/utils.js';
 
 export default function decorate(block) {
   const blockConfig = readBlockConfig(block);

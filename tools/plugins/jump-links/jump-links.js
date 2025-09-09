@@ -10,6 +10,46 @@ async function getCurrentPageUrl() {
   }
 }
 
+async function updatePreview() {
+  const checkedBoxes = document.querySelectorAll('input[name="selected-headings"]:checked');
+  const previewContainer = document.getElementById('links-preview');
+  const createButton = document.getElementById('create-links');
+
+  const selectedLinks = [];
+
+  // Get selected headings with their custom titles
+  checkedBoxes.forEach((checkbox) => {
+    const index = checkbox.id.split('-')[1];
+    const titleInput = document.getElementById(`title-${index}`);
+    const headingId = checkbox.value;
+    const linkTitle = titleInput ? titleInput.value.trim() : checkbox.dataset.headingText;
+
+    if (linkTitle) {
+      selectedLinks.push({
+        id: headingId,
+        title: linkTitle,
+      });
+    }
+  });
+
+  // Update preview
+  if (selectedLinks.length === 0) {
+    previewContainer.innerHTML = `
+      <div class="empty-state">
+        <p>Select headings to see preview</p>
+      </div>
+    `;
+    createButton.disabled = true;
+  } else {
+    const baseUrl = await getCurrentPageUrl();
+
+    const previewHtml = selectedLinks.map((link) => `<a href="${baseUrl}#${link.id}" class="preview-link-item" target="_blank" title="${link.title}">${link.title}</a>`).join('');
+
+    previewContainer.innerHTML = previewHtml;
+    createButton.disabled = false;
+  }
+}
+
 async function scanPageHeadings() {
   const statusMessage = document.getElementById('status-message');
   const mainContent = document.getElementById('main-content');
@@ -105,46 +145,6 @@ async function scanPageHeadings() {
   } catch (error) {
     statusMessage.textContent = 'Could not scan page. Please preview your page first, then try again.';
     statusMessage.className = 'status-message error';
-  }
-}
-
-async function updatePreview() {
-  const checkedBoxes = document.querySelectorAll('input[name="selected-headings"]:checked');
-  const previewContainer = document.getElementById('links-preview');
-  const createButton = document.getElementById('create-links');
-
-  const selectedLinks = [];
-
-  // Get selected headings with their custom titles
-  checkedBoxes.forEach((checkbox) => {
-    const index = checkbox.id.split('-')[1];
-    const titleInput = document.getElementById(`title-${index}`);
-    const headingId = checkbox.value;
-    const linkTitle = titleInput ? titleInput.value.trim() : checkbox.dataset.headingText;
-
-    if (linkTitle) {
-      selectedLinks.push({
-        id: headingId,
-        title: linkTitle,
-      });
-    }
-  });
-
-  // Update preview
-  if (selectedLinks.length === 0) {
-    previewContainer.innerHTML = `
-      <div class="empty-state">
-        <p>Select headings to see preview</p>
-      </div>
-    `;
-    createButton.disabled = true;
-  } else {
-    const baseUrl = await getCurrentPageUrl();
-
-    const previewHtml = selectedLinks.map((link) => `<a href="${baseUrl}#${link.id}" class="preview-link-item" target="_blank" title="${link.title}">${link.title}</a>`).join('');
-
-    previewContainer.innerHTML = previewHtml;
-    createButton.disabled = false;
   }
 }
 
