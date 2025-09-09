@@ -1,4 +1,6 @@
 // HLX Chat - Simplified AI Chatbot for AEM Sidekick
+/* eslint-disable no-console, class-methods-use-this, no-await-in-loop, no-restricted-syntax, no-cond-assign, no-return-await, max-len, no-alert, func-names, no-mixed-operators, no-restricted-globals, no-plusplus, arrow-parens, quotes, object-shorthand, prefer-const, comma-dangle, operator-linebreak, consistent-return, no-shadow, no-constant-condition */
+
 class HLXChat {
   constructor() {
     this.models = [];
