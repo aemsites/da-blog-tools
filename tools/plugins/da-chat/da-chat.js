@@ -16,7 +16,7 @@ class DAChat {
 
     // Pre-configured Helix MCP server URL - change this in one place
     // this.HELIX_MCP_URL = 'http://localhost:3003';
-    this.HELIX_MCP_URL = 'https://helix-mcp-staging.aem-poc-lab.workers.dev';
+    this.HELIX_MCP_URL = 'https://helix-mcp.aem-poc-lab.workers.dev';
 
     this.init();
   }
