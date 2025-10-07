@@ -1982,3 +1982,40 @@ input, textarea, select {
 .filters-sidebar .input-field {
   margin-bottom: 0;
 }
+
+/* Blank Page Mode Styling */
+.blank-page-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transition: opacity 0.2s ease;
+}
+
+.blank-page-mode {
+  position: relative;
+}
+
+.blank-page-mode::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(245, 245, 245, 0.8);
+  pointer-events: none;
+  border-radius: var(--border-radius);
+  z-index: 1;
+  transition: opacity 0.2s ease;
+}
+
+.blank-page-mode .blank-page-disabled {
+  position: relative;
+  z-index: 0;
+}
+
+/* Ensure checkboxes and labels remain clickable */
+.blank-page-mode input[type="checkbox"]:not(.blank-page-disabled),
+.blank-page-mode label:not(.blank-page-disabled) {
+  position: relative;
+  z-index: 2;
+}
