@@ -695,10 +695,10 @@ class DAChat {
             // Analyze scopes for Admin API compatibility
             if (payload.scope) {
               const scopes = payload.scope.split(',');
+              // eslint-disable-next-line no-unused-vars
               const hasAdminScopes = scopes.some((scope) => scope.includes('read_pc.dma_aem_ams')
                 || scope.includes('admin')
                 || scope.includes('helix'));
-
             }
           }
         } catch (e) {
