@@ -13,6 +13,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   let totalFails = 0;
   let totalUnknown = 0;
 
+  // Track if results heading listener has been added
+  let resultsHeadingListenerAdded = false;
+
   // Function definitions
   async function loadConfiguration() {
     try {
@@ -81,40 +84,46 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function addSummaryRow() {
-    const resultsTbody = document.getElementById('results-tbody');
+    const resultsContent = document.getElementById('results-content');
 
-    // Create summary row
-    const summaryRow = document.createElement('tr');
-    summaryRow.id = 'summary-row';
-    summaryRow.className = 'summary-row';
+    // Remove existing summary box if it exists
+    const existingSummaryBox = document.getElementById('summary-box');
+    if (existingSummaryBox) {
+      existingSummaryBox.remove();
+    }
 
-    summaryRow.innerHTML = `
-      <td colspan="4">
-        <div class="summary-container">
-          <div class="summary-title">📊 Test Results Summary</div>
-          <div class="summary-stats">
-            <span class="summary-stat">
-              <span class="summary-label">Total Tests:</span>
-              <span class="summary-value" id="summary-total">0</span>
-            </span>
-            <span class="summary-stat">
-              <span class="summary-label">Passed:</span>
-              <span class="summary-value summary-pass" id="summary-passes">0</span>
-            </span>
-            <span class="summary-stat">
-              <span class="summary-label">Failed:</span>
-              <span class="summary-value summary-fail" id="summary-fails">0</span>
-            </span>
-            <span class="summary-stat">
-              <span class="summary-label">Unknown:</span>
-              <span class="summary-value summary-unknown" id="summary-unknown">0</span>
-            </span>
-          </div>
+    // Create summary box (not a table row)
+    const summaryBox = document.createElement('div');
+    summaryBox.id = 'summary-box';
+    summaryBox.className = 'summary-box';
+
+    summaryBox.innerHTML = `
+      <div class="summary-container">
+        <div class="summary-title">📊 Test Results Summary</div>
+        <div class="summary-stats">
+          <span class="summary-stat">
+            <span class="summary-label">Total Tests:</span>
+            <span class="summary-value" id="summary-total">0</span>
+          </span>
+          <span class="summary-stat">
+            <span class="summary-label">Passed:</span>
+            <span class="summary-value summary-pass" id="summary-passes">0</span>
+          </span>
+          <span class="summary-stat">
+            <span class="summary-label">Failed:</span>
+            <span class="summary-value summary-fail" id="summary-fails">0</span>
+          </span>
+          <span class="summary-stat">
+            <span class="summary-label">Unknown:</span>
+            <span class="summary-value summary-unknown" id="summary-unknown">0</span>
+          </span>
         </div>
-      </td>
+      </div>
     `;
 
-    resultsTbody.appendChild(summaryRow);
+    // Insert summary box before the results table
+    const resultsTable = resultsContent.querySelector('.results-table');
+    resultsContent.insertBefore(summaryBox, resultsTable);
   }
 
   function updateSummaryRow() {
@@ -254,11 +263,34 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function executeTest(testName, pageSource) {
-    // This is where you would implement the actual test logic
-    // For now, we'll just simulate some test execution
-    // Dynamically import the test module
     try {
-      const module = await import(`./tests/${testName}Test.js`);
+      let module;
+
+      // Check if testName is a URL (remote test)
+      if (testName.startsWith('http://') || testName.startsWith('https://')) {
+        // Fetch remote test file
+        const response = await fetch(testName);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch remote test: ${response.status} ${response.statusText}`);
+        }
+
+        const code = await response.text();
+
+        // Create a blob URL and import it
+        const blob = new Blob([code], { type: 'application/javascript' });
+        const blobUrl = URL.createObjectURL(blob);
+
+        try {
+          module = await import(blobUrl);
+        } finally {
+          // Clean up the blob URL
+          URL.revokeObjectURL(blobUrl);
+        }
+      } else {
+        // Local test - use existing logic
+        module = await import(`./tests/${testName}Test.js`);
+      }
+
       return await module.default(pageSource);
     } catch (error) {
       return {
@@ -296,8 +328,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     let pageSource = null;
     try {
       const { context, actions } = await DA_SDK;
+      // Add cache-busting parameter to ensure fresh content is fetched
+      const cacheBuster = `?_=${Date.now()}`;
       const pageSourceResponse = await actions.daFetch(
-        `${DA_ORIGIN}/source/${context.org}/${context.repo}${context.path}.html`,
+        `${DA_ORIGIN}/source/${context.org}/${context.repo}${context.path}.html${cacheBuster}`,
       );
 
       if (pageSourceResponse.ok) {
@@ -316,12 +350,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const resultsContent = document.getElementById('results-content');
     resultsContent.style.display = 'block';
 
-    // Add click handler for collapse/expand
-    const resultsHeading = document.getElementById('results-heading');
-    resultsHeading.addEventListener('click', () => {
-      const isCollapsed = resultsContent.style.display === 'none';
-      resultsContent.style.display = isCollapsed ? 'block' : 'none';
-    });
+    // Add click handler for collapse/expand (only once)
+    if (!resultsHeadingListenerAdded) {
+      const resultsHeading = document.getElementById('results-heading');
+      resultsHeading.addEventListener('click', () => {
+        const isCollapsed = resultsContent.style.display === 'none';
+        resultsContent.style.display = isCollapsed ? 'block' : 'none';
+      });
+      resultsHeadingListenerAdded = true;
+    }
 
     // Execute each configured test
     await Promise.all(testItems.map(async (testItem) => {
