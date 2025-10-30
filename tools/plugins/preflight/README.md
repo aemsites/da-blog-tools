@@ -27,12 +27,25 @@
 
 ### Available Test Modules
 
-- **Spelling Test** (`spellingTest.js`): Validates content against dictionary
+- **Accessibility Test** (`accessibilityTest.js`): Validates WCAG 2.1 compliance and accessibility best practices
 - **Metadata Test** (`metadataTest.js`): Checks required metadata fields
 - **Special Characters Test** (`special-charactersTest.js`): Identifies problematic characters
 - **Terms Test** (`termsTest.js`): Scans for absolute language and problematic terminology
 
+#### Under Development
+
+- **Spelling Test** (`spellingTest.js`): Checks content for potential spelling issues.
+
+
 ## Usage
+
+### Installation
+
+> Site _CONFIG_ > _library_
+
+| title | path | icon | ref | format | experience |
+| ----- | ---- | ---- | --- | ------ | ---------- |
+| `Preflight` | `/tools/plugins/preflight/preflight.html` | `/tools/plugins/preflight/preflight-icon.svg` |  |  | `fullsize-dialog` |
 
 ### Configuration
 
@@ -42,7 +55,7 @@ Configure which tests to run by adding test entries to your site configuration:
 
 | key | value | label |
 | --- | ----- | ----- |
-| `test` | `spelling` | `Spelling Check` |
+| `test` | `accessibility` | `Accessibility Check` |
 | `test` | `metadata` | `Metadata Validation` |
 | `test` | `special-characters` | `Special Characters` |
 | `test` | `terms` | `Terms Check` |
@@ -71,7 +84,9 @@ Configure which tests to run by adding test entries to your site configuration:
 
 ### Custom Test Development
 
-To add custom tests:
+#### Local Tests
+
+To add custom tests locally:
 
 1. **Use the template**: Copy `tests/templateTest.js` as a starting point (see `TEST_DEVELOPER.md` for detailed instructions)
 2. Create a new test file in `/tests/` directory (e.g., `myCustomTest.js`)
@@ -89,9 +104,41 @@ To add custom tests:
 
 > **Note**: The `templateTest.js` file is a developer template, not an actual test. It provides a comprehensive example and starting point for creating new tests.
 
+#### Remote Tests
+
+You can load tests from remote locations (e.g., GitHub, CDN) by providing a full URL:
+
+| key | value | label |
+| --- | ----- | ----- |
+| `test` | `https://example.com/path/to/customTest.js` | `Custom Remote Test` |
+| `test` | `https://raw.githubusercontent.com/org/repo/main/tests/myTest.js` | `GitHub Test` |
+
+**Requirements for remote tests:**
+- Must be accessible via HTTP/HTTPS
+- Must export a default function: `export default async function testName(pageSource) { ... }`
+- Must return the same result object structure as local tests
+- CORS headers must allow cross-origin requests (or use raw.githubusercontent.com for GitHub)
+
+**Example remote test URL:**
+```
+https://raw.githubusercontent.com/your-org/your-repo/main/preflight-tests/brandTest.js
+```
+
 ## Test Module Details
 
-### Spelling Test
+### Accessibility Test
+- Validates WCAG 2.1 compliance and accessibility best practices including:
+  - **Images with Alt Text**: Ensures all images have descriptive alt attributes
+  - **Descriptive Link Text**: Checks links have meaningful text (not "click here")
+  - **Heading Hierarchy**: Validates proper heading structure (h1-h6 in order)
+  - **Form Labels**: Ensures all form inputs have associated labels
+  - **Language Attribute**: Checks html element has lang attribute
+  - **Button Accessibility**: Verifies buttons have accessible names
+  - **Redundant Titles**: Identifies unnecessary title attribute duplication
+  - **ARIA Usage**: Validates proper use of ARIA attributes and roles
+- Reports specific issues with locations and provides remediation guidance aligned with WCAG guidelines
+
+### Spelling Test _(ALPHA)_
 - Validates content against a configurable dictionary
 - Builds dictionary from various sources including site-specific terms
 - Reports misspelled words with their locations in the content
