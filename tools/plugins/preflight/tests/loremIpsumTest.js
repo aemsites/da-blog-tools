@@ -222,172 +222,112 @@ function runTest(pageSource) {
       || metaMatches.length > 0
       || bodyMatches.length > 0;
 
-    // Create sub-tests
-    const titleSubTestStatus = (() => {
-      if (!hasMetadataDiv) return 'fail';
-      return metadataTitleMatches.length > 0 ? 'fail' : 'pass';
-    })();
+    // Build sub-tests array conditionally
+    const subTests = [];
 
-    const titleSubTestMessage = (() => {
-      if (!hasMetadataDiv) return 'No metadata present';
-      if (metadataTitleMatches.length > 0) {
-        return `Found ${metadataTitleMatches.length} lorem ipsum term(s) in title`;
-      }
-      return 'No lorem ipsum text found in title';
-    })();
+    // Body content test - always included
+    subTests.push({
+      name: 'Body Content',
+      status: bodyMatches.length > 0 ? 'fail' : 'pass',
+      message: bodyMatches.length > 0
+        ? `Found ${bodyMatches.length} lorem ipsum term(s) in body content`
+        : 'No lorem ipsum text found in body content',
+      location: (() => {
+        if (bodyMatches.length === 0) return 'Body content';
 
-    const titleSubTestLocation = (() => {
-      if (!hasMetadataDiv) return 'Metadata div missing';
-      if (metadataTitleMatches.length === 0) return 'Page title';
+        const bodyPart = bodyMatches.map((m) => {
+          const context = m.context.trim();
+          const termIndex = context.toLowerCase().indexOf(m.term.toLowerCase());
 
-      const titlePart = `Title: "${metadataTitleText}"\n• Found: ${metadataTitleMatches.map((term) => `<strong style="background-color: #ffeb3b; padding: 2px 4px; border-radius: 3px;">${term}</strong>`).join(', ')}`;
-      return titlePart;
-    })();
+          if (termIndex !== -1) {
+            const beforeTerm = context.substring(0, termIndex).trim();
+            const afterTerm = context.substring(termIndex + m.term.length).trim();
 
-    const titleSubTestRemediation = (() => {
-      if (!hasMetadataDiv) return 'Add metadata div to page';
-      if (metadataTitleMatches.length > 0) {
-        return 'Replace placeholder text with actual content in title';
-      }
-      return 'No action needed';
-    })();
+            let readableContext = '';
+            if (beforeTerm) {
+              readableContext += `...${beforeTerm} `;
+            }
+            const strongStyle = 'background-color: #ffeb3b; padding: 2px 4px; border-radius: 3px;';
+            readableContext += `<strong style="${strongStyle}">${m.term}</strong>`;
+            if (afterTerm) {
+              readableContext += ` ${afterTerm}...`;
+            }
 
-    // Metadata sub-test
-    const metadataSubTestStatus = (() => {
-      if (!hasMetadataDiv) return 'fail';
-      return metaMatches.length > 0 ? 'fail' : 'pass';
-    })();
-
-    const metadataSubTestMessage = (() => {
-      if (!hasMetadataDiv) return 'No metadata present';
-      if (metaMatches.length > 0) {
-        return `Found ${metaMatches.length} lorem ipsum term(s) in metadata`;
-      }
-      return 'No lorem ipsum text found in metadata';
-    })();
-
-    const metadataSubTestLocation = (() => {
-      if (!hasMetadataDiv) return 'Metadata div missing';
-      if (metaMatches.length === 0) return 'Metadata fields';
-
-      const metaPart = metaMatches.map((m) => {
-        const context = m.context.length > 80
-          ? `${m.context.substring(0, 80)}...`
-          : m.context;
-        const termIndex = context.toLowerCase().indexOf(m.term.toLowerCase());
-
-        if (termIndex !== -1) {
-          const beforeTerm = context.substring(0, termIndex).trim();
-          const afterTerm = context.substring(termIndex + m.term.length).trim();
-
-          let readableContext = '';
-          if (beforeTerm) {
-            readableContext += `...${beforeTerm} `;
+            return readableContext;
           }
-          const strongStyle = 'background-color: #ffeb3b; padding: 2px 4px; border-radius: 3px;';
-          readableContext += `<strong style="${strongStyle}">${m.term}</strong>`;
-          if (afterTerm) {
-            readableContext += ` ${afterTerm}...`;
-          }
+          return context;
+        }).join('\n• ');
 
-          return `${m.key}: "${readableContext}"`;
-        }
-        return `${m.key}: "${context}"`;
-      }).join('\n• ');
+        return `Body Content:\n• ${bodyPart}`;
+      })(),
+      remediation: bodyMatches.length > 0
+        ? 'Replace placeholder text with actual content in body'
+        : 'No action needed',
+    });
 
-      return `Metadata:\n• ${metaPart}`;
-    })();
-
-    const metadataSubTestRemediation = (() => {
-      if (!hasMetadataDiv) return 'Add metadata div to page';
-      if (metaMatches.length > 0) {
-        return 'Replace placeholder text with actual content in metadata';
-      }
-      return 'No action needed';
-    })();
-
-    // Body content sub-test
-    const bodySubTestStatus = (() => {
-      if (!hasMetadataDiv) return 'fail';
-      return bodyMatches.length > 0 ? 'fail' : 'pass';
-    })();
-
-    const bodySubTestMessage = (() => {
-      if (!hasMetadataDiv) return 'No metadata present';
-      if (bodyMatches.length > 0) {
-        return `Found ${bodyMatches.length} lorem ipsum term(s) in body content`;
-      }
-      return 'No lorem ipsum text found in body content';
-    })();
-
-    const bodySubTestLocation = (() => {
-      if (!hasMetadataDiv) return 'Metadata div missing';
-      if (bodyMatches.length === 0) return 'Body content';
-
-      const bodyPart = bodyMatches.map((m) => {
-        const context = m.context.trim();
-        const termIndex = context.toLowerCase().indexOf(m.term.toLowerCase());
-
-        if (termIndex !== -1) {
-          const beforeTerm = context.substring(0, termIndex).trim();
-          const afterTerm = context.substring(termIndex + m.term.length).trim();
-
-          let readableContext = '';
-          if (beforeTerm) {
-            readableContext += `...${beforeTerm} `;
-          }
-          const strongStyle = 'background-color: #ffeb3b; padding: 2px 4px; border-radius: 3px;';
-          readableContext += `<strong style="${strongStyle}">${m.term}</strong>`;
-          if (afterTerm) {
-            readableContext += ` ${afterTerm}...`;
-          }
-
-          return readableContext;
-        }
-        return context;
-      }).join('\n• ');
-
-      return `Body Content:\n• ${bodyPart}`;
-    })();
-
-    const bodySubTestRemediation = (() => {
-      if (!hasMetadataDiv) return 'Add metadata div to page';
-      if (bodyMatches.length > 0) {
-        return 'Replace placeholder text with actual content in body';
-      }
-      return 'No action needed';
-    })();
-
-    const subTests = [
-      {
+    // Title test - only if metadata div exists
+    if (hasMetadataDiv) {
+      subTests.push({
         name: 'Title',
-        status: titleSubTestStatus,
-        message: titleSubTestMessage,
-        location: titleSubTestLocation,
-        remediation: titleSubTestRemediation,
-      },
-      {
-        name: 'Metadata',
-        status: metadataSubTestStatus,
-        message: metadataSubTestMessage,
-        location: metadataSubTestLocation,
-        remediation: metadataSubTestRemediation,
-      },
-      {
-        name: 'Body Content',
-        status: bodySubTestStatus,
-        message: bodySubTestMessage,
-        location: bodySubTestLocation,
-        remediation: bodySubTestRemediation,
-      },
-    ];
+        status: metadataTitleMatches.length > 0 ? 'fail' : 'pass',
+        message: metadataTitleMatches.length > 0
+          ? `Found ${metadataTitleMatches.length} lorem ipsum term(s) in title`
+          : 'No lorem ipsum text found in title',
+        location: (() => {
+          if (metadataTitleMatches.length === 0) return 'Page title';
 
-    const overallStatus = (hasLoremIpsum || !hasMetadataDiv) ? 'fail' : 'pass';
+          const titlePart = `Title: "${metadataTitleText}"\n• Found: ${metadataTitleMatches.map((term) => `<strong style="background-color: #ffeb3b; padding: 2px 4px; border-radius: 3px;">${term}</strong>`).join(', ')}`;
+          return titlePart;
+        })(),
+        remediation: metadataTitleMatches.length > 0
+          ? 'Replace placeholder text with actual content in title'
+          : 'No action needed',
+      });
+    }
+
+    // Metadata test - only if metadata div exists AND lorem ipsum found in metadata
+    if (hasMetadataDiv && metaMatches.length > 0) {
+      subTests.push({
+        name: 'Metadata',
+        status: 'fail',
+        message: `Found ${metaMatches.length} lorem ipsum term(s) in metadata`,
+        location: (() => {
+          const metaPart = metaMatches.map((m) => {
+            const context = m.context.length > 80
+              ? `${m.context.substring(0, 80)}...`
+              : m.context;
+            const termIndex = context.toLowerCase().indexOf(m.term.toLowerCase());
+
+            if (termIndex !== -1) {
+              const beforeTerm = context.substring(0, termIndex).trim();
+              const afterTerm = context.substring(termIndex + m.term.length).trim();
+
+              let readableContext = '';
+              if (beforeTerm) {
+                readableContext += `...${beforeTerm} `;
+              }
+              const strongStyle = 'background-color: #ffeb3b; padding: 2px 4px; border-radius: 3px;';
+              readableContext += `<strong style="${strongStyle}">${m.term}</strong>`;
+              if (afterTerm) {
+                readableContext += ` ${afterTerm}...`;
+              }
+
+              return `${m.key}: "${readableContext}"`;
+            }
+            return `${m.key}: "${context}"`;
+          }).join('\n• ');
+
+          return `Metadata:\n• ${metaPart}`;
+        })(),
+        remediation: 'Replace placeholder text with actual content in metadata',
+      });
+    }
+
+    const overallStatus = hasLoremIpsum ? 'fail' : 'pass';
 
     return {
       status: overallStatus,
       message: (() => {
-        if (!hasMetadataDiv) return 'No metadata div present - test cannot complete';
         if (hasLoremIpsum) {
           const totalMatches = metadataTitleMatches.length
             + metaMatches.length
@@ -396,9 +336,8 @@ function runTest(pageSource) {
         }
         return 'No lorem ipsum placeholder text detected';
       })(),
-      location: !hasMetadataDiv ? 'Page structure' : 'Title, metadata, and body content',
+      location: 'Body content, title, and metadata',
       remediation: (() => {
-        if (!hasMetadataDiv) return 'Add metadata div to page before running lorem ipsum test';
         if (hasLoremIpsum) {
           return 'Replace all lorem ipsum placeholder text with actual content';
         }

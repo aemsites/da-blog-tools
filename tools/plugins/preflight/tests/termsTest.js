@@ -51,7 +51,6 @@ function runTest(pageSource) {
 
     // Check metadata div in body for absolute terms
     const metadataDiv = doc.querySelector('div.metadata');
-    const hasMetadataDiv = !!metadataDiv;
 
     // Extract metadata content and title separately
     let metadataTitleText = '';
@@ -292,13 +291,9 @@ function runTest(pageSource) {
     || bodyBiasedMatches.length > 0;
 
     // Create consolidated sub-test
-    const absolutesSubTestStatus = (() => {
-      if (!hasMetadataDiv) return 'fail';
-      return hasAbsolutes ? 'fail' : 'pass';
-    })();
+    const absolutesSubTestStatus = hasAbsolutes ? 'fail' : 'pass';
 
     const absolutesSubTestMessage = (() => {
-      if (!hasMetadataDiv) return 'No metadata present';
       const totalMatches = metadataTitleMatches.length + metaMatches.length + bodyMatches.length;
       if (totalMatches > 0) {
         const parts = [];
@@ -311,8 +306,6 @@ function runTest(pageSource) {
     })();
 
     const absolutesSubTestLocation = (() => {
-      if (!hasMetadataDiv) return 'Metadata div missing';
-
       const locationParts = [];
 
       // Title matches
@@ -376,11 +369,10 @@ function runTest(pageSource) {
         locationParts.push(`Body Content:\n• ${bodyPart}`);
       }
 
-      return locationParts.length > 0 ? locationParts.join('\n\n') : 'Title, metadata, and body content areas';
+      return locationParts.length > 0 ? locationParts.join('\n\n') : 'Body content, title, and metadata';
     })();
 
     const absolutesSubTestRemediation = (() => {
-      if (!hasMetadataDiv) return 'Add metadata div to page';
       if (hasAbsolutes) {
         const areas = [];
         if (metadataTitleMatches.length > 0) areas.push('title');
@@ -392,13 +384,9 @@ function runTest(pageSource) {
     })();
 
     // Create biased language sub-test
-    const biasedSubTestStatus = (() => {
-      if (!hasMetadataDiv) return 'fail';
-      return hasBiased ? 'fail' : 'pass';
-    })();
+    const biasedSubTestStatus = hasBiased ? 'fail' : 'pass';
 
     const biasedSubTestMessage = (() => {
-      if (!hasMetadataDiv) return 'No metadata present';
       const totalMatches = metadataTitleBiasedMatches.length + metaBiasedMatches.length
         + bodyBiasedMatches.length;
       if (totalMatches > 0) {
@@ -412,8 +400,6 @@ function runTest(pageSource) {
     })();
 
     const biasedSubTestLocation = (() => {
-      if (!hasMetadataDiv) return 'Metadata div missing';
-
       const locationParts = [];
 
       // Title matches
@@ -477,11 +463,10 @@ function runTest(pageSource) {
         locationParts.push(`Body Content:\n• ${bodyPart}`);
       }
 
-      return locationParts.length > 0 ? locationParts.join('\n\n') : 'Title, metadata, and body content areas';
+      return locationParts.length > 0 ? locationParts.join('\n\n') : 'Body content, title, and metadata';
     })();
 
     const biasedSubTestRemediation = (() => {
-      if (!hasMetadataDiv) return 'Add metadata div to page';
       if (hasBiased) {
         const areas = [];
         if (metadataTitleBiasedMatches.length > 0) areas.push('title');
@@ -509,13 +494,11 @@ function runTest(pageSource) {
       },
     ];
 
-    const overallStatus = (hasAbsolutes || hasBiased || !hasMetadataDiv) ? 'fail' : 'pass';
+    const overallStatus = (hasAbsolutes || hasBiased) ? 'fail' : 'pass';
 
     return {
       status: overallStatus,
       message: (() => {
-        if (!hasMetadataDiv) return 'No metadata div present - test cannot complete';
-
         const issues = [];
         if (hasAbsolutes) {
           const totalAbsolutes = metadataTitleMatches.length + metaMatches.length
@@ -533,10 +516,8 @@ function runTest(pageSource) {
         }
         return 'No problematic language detected in content areas';
       })(),
-      location: !hasMetadataDiv ? 'Page structure' : 'Title, meta tags, and body content',
+      location: 'Body content, title, and metadata',
       remediation: (() => {
-        if (!hasMetadataDiv) return 'Add metadata div to page before running terms test';
-
         const actions = [];
         if (hasAbsolutes) {
           actions.push('qualify absolute statements');

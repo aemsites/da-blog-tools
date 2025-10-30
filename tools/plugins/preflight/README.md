@@ -145,12 +145,12 @@ https://raw.githubusercontent.com/your-org/your-repo/main/preflight-tests/brandT
 - Scans for 40+ common lorem ipsum words and phrases including:
   - **Single words**: lorem, ipsum, dolor, consectetur, adipiscing, elit, tempor, magna, aliqua, eiusmod, etc.
   - **Common phrases**: "sit amet", "sed do eiusmod", "quis nostrud", "nulla pariatur", etc.
-- Checks three content areas with separate sub-tests:
-  - **Title**: Validates page title metadata
-  - **Metadata**: Checks all metadata field values
-  - **Body Content**: Scans main page content
+- Checks content areas with conditional sub-tests:
+  - **Body Content**: Always checked - scans main page content (excluding metadata)
+  - **Title**: Only appears if metadata div exists - validates page title metadata
+  - **Metadata**: Only appears if metadata exists AND lorem ipsum is found - checks metadata field values
 - Highlights found placeholder text with surrounding context for easy identification
-- Provides specific locations where placeholder text appears with visual highlighting
+- Metadata is optional - test will pass if body content is clean, even without metadata present
 
 ### Spelling Test _(ALPHA)_
 - Validates content against a configurable dictionary
