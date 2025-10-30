@@ -16,7 +16,7 @@ class DAChat {
 
     // Pre-configured Helix MCP server URL - change this in one place
     // this.HELIX_MCP_URL = 'http://localhost:3003';
-    this.HELIX_MCP_URL = 'https://helix-mcp-server.aem-poc-lab.workers.dev';
+    this.HELIX_MCP_URL = 'https://helix-mcp.aem-poc-lab.workers.dev';
 
     this.init();
   }
@@ -639,23 +639,130 @@ class DAChat {
     }
 
     // Refresh DA token before making request
-    await this.refreshDaToken();
+    const refreshedToken = await this.refreshDaToken();
+    console.log('DA token status:', {
+      hasToken: !!this.daToken,
+      tokenLength: this.daToken ? this.daToken.length : 0,
+      refreshedToken: !!refreshedToken,
+    });
 
     // Add DA token as helixAdminApiToken if available
     const paramsWithToken = { ...params };
-    if (this.daToken) {
-      paramsWithToken.helixAdminApiToken = this.daToken;
+
+    // Try to get the most recent SDK result to see all available tokens
+    try {
+      const sdkResult = await DA_SDK;
+      console.log('Available SDK tokens/fields:', {
+        allFields: Object.keys(sdkResult || {}),
+        fieldDetails: Object.fromEntries(
+          Object.keys(sdkResult || {}).map((key) => [
+            key,
+            typeof sdkResult[key] === 'string' && sdkResult[key].length > 20
+              ? `${sdkResult[key].substring(0, 20)}...`
+              : sdkResult[key],
+          ]),
+        ),
+      });
+
+      // Log each field separately for easier debugging
+      Object.keys(sdkResult || {}).forEach((key) => {
+        const value = sdkResult[key];
+        console.log(
+          `SDK Field '${key}':`,
+          typeof value === 'string' && value.length > 100
+            ? `(${value.length} chars) ${value.substring(0, 30)}...`
+            : value,
+        );
+      });
+
+      // Try to decode JWT payload to see token scope/permissions
+      if (sdkResult.token) {
+        try {
+          const tokenParts = sdkResult.token.split('.');
+          if (tokenParts.length >= 2) {
+            const payload = JSON.parse(atob(tokenParts[1]));
+            console.log('DA Token payload (scope/permissions):', {
+              audience: payload.aud,
+              scopes: payload.scope,
+              clientId: payload.client_id,
+              issuer: payload.iss,
+              expiry: payload.exp ? new Date(payload.exp * 1000).toISOString() : 'no expiry',
+              subject: payload.sub,
+              allPayloadFields: Object.keys(payload),
+              rawPayload: payload,
+            });
+
+            // Analyze scopes for Admin API compatibility
+            if (payload.scope) {
+              const scopes = payload.scope.split(',');
+              // eslint-disable-next-line no-unused-vars
+              const hasAdminScopes = scopes.some((scope) => scope.includes('read_pc.dma_aem_ams')
+                || scope.includes('admin')
+                || scope.includes('helix'));
+            }
+          }
+        } catch (e) {
+          console.warn('Could not decode JWT token:', e.message);
+          console.warn('Token parts:', sdkResult.token.split('.').length);
+        }
+      }
+
+      // Try different token fields that might work for Admin API
+      if (sdkResult.helixToken || sdkResult.adminToken || sdkResult.imsToken) {
+        const adminToken = sdkResult.helixToken || sdkResult.adminToken || sdkResult.imsToken;
+        paramsWithToken.helixAdminApiToken = adminToken;
+        console.log('Using alternative token for Admin API:', `${adminToken.substring(0, 20)}...`);
+      } else if (this.daToken) {
+        paramsWithToken.helixAdminApiToken = this.daToken;
+        console.log('Using standard DA token as fallback');
+      } else {
+        console.warn('No DA token available - this may cause authentication errors');
+      }
+    } catch (e) {
+      console.warn('Could not access SDK for alternative tokens, using stored DA token');
+      if (this.daToken) {
+        paramsWithToken.helixAdminApiToken = this.daToken;
+      } else {
+        console.warn('No DA token available - this may cause authentication errors');
+      }
     }
+
+    // Prepare headers with DA token if available
+    const headers = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      'MCP-Protocol-Version': '2025-06-18',
+      ...(server.auth && { Authorization: server.auth }),
+    };
+
+    // Also try sending DA token in Authorization header as fallback
+    if (this.daToken && !server.auth) {
+      headers.Authorization = `Bearer ${this.daToken}`;
+      console.log('Added DA token to Authorization header');
+    }
+
+    console.log('MCP request details:', {
+      url: `${server.url}/context`,
+      method: 'POST',
+      tool,
+      params: Object.keys(paramsWithToken),
+      hasAuthHeader: !!headers.Authorization,
+      hasTokenInParams: !!paramsWithToken.helixAdminApiToken,
+      tokenPrefix: this.daToken ? `${this.daToken.substring(0, 20)}...` : 'none',
+      requestBody: {
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        params: {
+          name: tool,
+          arguments: paramsWithToken,
+        },
+      },
+    });
 
     // Execute Streamable HTTP MCP tool
     const response = await fetch(`${server.url}/context`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-        'MCP-Protocol-Version': '2025-06-18',
-        ...(server.auth && { Authorization: server.auth }),
-      },
+      headers,
       body: JSON.stringify({
         jsonrpc: '2.0',
         method: 'tools/call',
@@ -668,8 +775,47 @@ class DAChat {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || error.error || `HTTP ${response.status}`);
+      let errorMessage = `HTTP ${response.status}`;
+      let rawResponse = '';
+
+      try {
+        rawResponse = await response.text();
+        console.log('Raw server response:', rawResponse);
+
+        const error = JSON.parse(rawResponse);
+        errorMessage = error.error?.message || error.error || errorMessage;
+
+        // Provide specific guidance for authentication errors
+        if (response.status === 401) {
+          console.error('Authentication failed - full details:', {
+            status: response.status,
+            statusText: response.statusText,
+            headers: Object.fromEntries(response.headers.entries()),
+            rawResponse: rawResponse.substring(0, 500),
+            error,
+            requestDetails: {
+              hasToken: !!this.daToken,
+              tokenPrefix: this.daToken ? `${this.daToken.substring(0, 10)}...` : 'none',
+              url: `${server.url}/context`,
+              tool,
+              org: params.org,
+              site: params.site,
+            },
+          });
+
+          // Check if this is a specific org/site permission issue
+          if (rawResponse.includes('not authenticated')) {
+            errorMessage = 'Tool execution error: Admin API error: 401 - [admin] not authenticated.';
+          }
+        }
+      } catch (e) {
+        // If we can't parse the error response, use the status and raw response
+        console.error('Failed to parse error response:', e);
+        console.error('Raw response was:', rawResponse);
+        errorMessage = `HTTP ${response.status}: ${rawResponse || response.statusText}`;
+      }
+
+      throw new Error(errorMessage);
     }
 
     // Handle SSE response
@@ -712,6 +858,18 @@ class DAChat {
       if (data.result) {
         return data.result;
       } if (data.error) {
+        console.error('MCP server returned error in JSON response:', {
+          error: data.error,
+          fullResponse: data,
+          tool,
+          params,
+        });
+
+        // Handle authentication errors from JSON-RPC response
+        if (data.error.message && data.error.message.includes('not authenticated')) {
+          throw new Error(`Tool execution error: ${data.error.message}`);
+        }
+
         throw new Error(data.error.message || data.error);
       }
       throw new Error('Invalid response format');
@@ -809,7 +967,6 @@ Result: ${JSON.stringify(resultData, null, 2)}
 Analyze this data and answer the user's question. Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks.`;
 
           const analysisResponse = await this.callModel(analysisPrompt, context);
-          console.log('Analysis response:', analysisResponse);
           processedResponse = processedResponse.replace(fullMatch, analysisResponse);
         }
       } catch (error) {
@@ -873,7 +1030,6 @@ Result: ${JSON.stringify(resultData, null, 2)}
 Analyze this data and answer the user's question. Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks.`;
 
           const analysisResponse = await this.callModel(analysisPrompt, context);
-          console.log('Analysis response:', analysisResponse);
           processedResponse = processedResponse.replace(fullMatch, analysisResponse);
         }
       } catch (error) {
@@ -938,7 +1094,6 @@ Result: ${JSON.stringify(resultData, null, 2)}
 Analyze this data and answer the user's question. Provide your response as clean HTML with proper semantic structure. Use <h3> for section headers, <ul> and <li> for lists, <strong> for emphasis, and <p> for paragraphs. Do NOT use markdown or code blocks.`;
 
           const analysisResponse = await this.callModel(analysisPrompt, context);
-          console.log('Analysis response:', analysisResponse);
           processedResponse = processedResponse.replace(fullMatch, analysisResponse);
         }
       } catch (error) {
@@ -1011,7 +1166,7 @@ Analyze this data and answer the user's question. Provide your response as clean
     // Add critical instruction to force tool execution
     const dateInfo = this.getCurrentDateInfo();
     const availableServerIds = this.mcpServers.map((s) => s.id).join(', ');
-    const criticalInstruction = `\n\nDIRECT EXECUTION: When users ask for actions, respond with ONLY the tool call: window.executeMcpTool(serverId, toolName, params)\n\nAVAILABLE SERVER IDS: ${availableServerIds}\n\nTOOL USAGE:\n- audit-log: {org, site, since/from/to}\n- page-status: {org, site, path}\n- start-bulk-page-status: {org, site}\n- check-bulk-page-status: {jobId}\n- rum-data: {url, domainkey, aggregation, startdate, enddate}\n\nCURRENT DATE INFO: Today is ${dateInfo.today}, 7 days ago was ${dateInfo.sevenDaysAgo}, 30 days ago was ${dateInfo.thirtyDaysAgo}.\n\nCRITICAL RULES:\n- NO explanatory text like "I will execute" or "Let me check"\n- NO descriptions of what you will do\n- Execute tools immediately with window.executeMcpTool()\n- Present data only, no analysis unless requested\n- No "Key Insights" or "Recommendations" sections`;
+    const criticalInstruction = `\n\nDIRECT EXECUTION: When users ask for actions, respond with ONLY the tool call: window.executeMcpTool(serverId, toolName, params)\n\nAVAILABLE SERVER IDS: ${availableServerIds}\n\nTOOL USAGE:\n- audit-log: {org, site, since} - since uses RELATIVE format: "7d", "24h", "1h", "30m"\n- audit-log: {org, site, from, to} - from/to use ABSOLUTE format: "2025-09-10T00:00:00Z"\n- page-status: {org, site, path}\n- start-bulk-page-status: {org, site}\n- check-bulk-page-status: {jobId}\n- rum-data: {url, domainkey, aggregation, startdate, enddate}\n\nAUDIT-LOG TIME EXAMPLES:\n- Last 7 days: {since: "7d"}\n- Last 24 hours: {since: "24h"}\n- Last hour: {since: "1h"}\n- Specific range: {from: "${dateInfo.sevenDaysAgo}T00:00:00Z", to: "${dateInfo.today}T23:59:59Z"}\n\nCRITICAL RULES:\n- NO explanatory text like "I will execute" or "Let me check"\n- NO descriptions of what you will do\n- Execute tools immediately with window.executeMcpTool()\n- Present data only, no analysis unless requested\n- No "Key Insights" or "Recommendations" sections\n- For audit-log: Use "since" with relative format (7d, 24h) OR "from/to" with absolute dates`;
 
     let endpoint; let
       headers;
@@ -1868,16 +2023,44 @@ Analyze this data and answer the user's question. Provide your response as clean
 
   async refreshDaToken() {
     try {
-      const { token } = await DA_SDK;
-      if (token && token !== this.daToken) {
-        this.setDaTokenForMcpServers(token);
-        console.log('DA token refreshed');
+      console.log('Attempting to refresh DA token...');
+      const sdkResult = await DA_SDK;
+      const { token } = sdkResult;
+
+      console.log('DA_SDK result:', {
+        hasToken: !!token,
+        tokenType: typeof token,
+        tokenLength: token ? token.length : 0,
+        tokenPrefix: token ? token.substring(0, 50) : 'none',
+        sdkKeys: Object.keys(sdkResult || {}),
+        fullSdkResult: sdkResult,
+      });
+
+      if (token) {
+        if (token !== this.daToken) {
+          this.setDaTokenForMcpServers(token);
+          console.log('DA token refreshed successfully');
+        } else {
+          console.log('DA token unchanged');
+        }
+        return token;
       }
-      return token;
+      console.warn('DA_SDK returned no token - user may not be authenticated');
+      return null;
     } catch (error) {
       console.error('Failed to refresh DA token:', error);
+      console.error('This usually means the user is not logged into DA or DA_SDK failed to initialize');
       return null;
     }
+  }
+
+  // Helper method to check authentication status
+  getAuthenticationStatus() {
+    return {
+      hasToken: !!this.daToken,
+      tokenLength: this.daToken ? this.daToken.length : 0,
+      tokenType: this.daToken ? typeof this.daToken : 'none',
+    };
   }
 
   // Environment variable management for AI

@@ -189,7 +189,7 @@ async function unpublishPage(pagePath, environment) {
     const response = await fetch(`${HELIX_URL}/${environment}/${HLX_ORG}/${HLX_SITE}/main/${pagePath}`, {
       method: 'DELETE',
       headers: {
-        'Authorization': `Bearer ${HELIX_TOKEN}`,
+        'Authorization': `token ${HELIX_TOKEN}`,
         'Accept': 'application/json',
       },
     });
@@ -219,7 +219,7 @@ async function publishPage(pagePath, environment) {
     const response = await fetch(`${HELIX_URL}/${environment}/${HLX_ORG}/${HLX_SITE}/main/${pagePath}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${HELIX_TOKEN}`,
+        'Authorization': `token ${HELIX_TOKEN}`,
         'Accept': 'application/json',
       },
     });
