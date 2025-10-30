@@ -45,7 +45,7 @@
 
 | title | path | icon | ref | format | experience |
 | ----- | ---- | ---- | --- | ------ | ---------- |
-| `Preflight` | `/tools/plugins/preflight/preflight.html` | `/tools/plugins/preflight/preflight-icon.svg` |  |  | `fullsize-dialog` |
+| `Preflight` | `https://main--da-blog-tools--aemsites.aem.live/tools/plugins/preflight/preflight.html` | `https://main--da-blog-tools--aemsites.aem.live/tools/plugins/preflight/preflight-icon.svg` |  |  | `fullsize-dialog` |
 
 ### Configuration
 
