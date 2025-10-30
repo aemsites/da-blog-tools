@@ -229,8 +229,9 @@ h1 {
 }
 
 .status-fail {
-    color: #ef4444;
+    color: #dc2626;
     font-weight: var(--weight-bold);
+    text-shadow: 0 1px 2px rgb(0 0 0 / 20%);
 }
 
 .status-unknown {
@@ -293,8 +294,9 @@ h1 {
 }
 
 .status-indicator.status-fail {
-    background-color: #ef4444;
+    background-color: #dc2626;
     color: white;
+    text-shadow: 0 1px 2px rgb(0 0 0 / 30%);
 }
 
 .status-indicator.status-unknown {
@@ -439,7 +441,7 @@ h1 {
 }
 
 .summary-fail {
-    color: #ef4444;
+    color: #dc2626;
 }
 
 .summary-unknown {
