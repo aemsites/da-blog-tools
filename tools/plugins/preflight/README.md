@@ -28,6 +28,7 @@
 ### Available Test Modules
 
 - **Accessibility Test** (`accessibilityTest.js`): Validates WCAG 2.1 compliance and accessibility best practices
+- **Lorem Ipsum Test** (`loremIpsumTest.js`): Detects placeholder text in content
 - **Metadata Test** (`metadataTest.js`): Checks required metadata fields
 - **Special Characters Test** (`special-charactersTest.js`): Identifies problematic characters
 - **Terms Test** (`termsTest.js`): Scans for absolute language and problematic terminology
@@ -56,6 +57,7 @@ Configure which tests to run by adding test entries to your site configuration:
 | key | value | label |
 | --- | ----- | ----- |
 | `test` | `accessibility` | `Accessibility Check` |
+| `test` | `loremIpsum` | `Lorem Ipsum Detection` |
 | `test` | `metadata` | `Metadata Validation` |
 | `test` | `special-characters` | `Special Characters` |
 | `test` | `terms` | `Terms Check` |
@@ -137,6 +139,18 @@ https://raw.githubusercontent.com/your-org/your-repo/main/preflight-tests/brandT
   - **Redundant Titles**: Identifies unnecessary title attribute duplication
   - **ARIA Usage**: Validates proper use of ARIA attributes and roles
 - Reports specific issues with locations and provides remediation guidance aligned with WCAG guidelines
+
+### Lorem Ipsum Test
+- Detects placeholder "lorem ipsum" text that should not appear in production content
+- Scans for 40+ common lorem ipsum words and phrases including:
+  - **Single words**: lorem, ipsum, dolor, consectetur, adipiscing, elit, tempor, magna, aliqua, eiusmod, etc.
+  - **Common phrases**: "sit amet", "sed do eiusmod", "quis nostrud", "nulla pariatur", etc.
+- Checks three content areas with separate sub-tests:
+  - **Title**: Validates page title metadata
+  - **Metadata**: Checks all metadata field values
+  - **Body Content**: Scans main page content
+- Highlights found placeholder text with surrounding context for easy identification
+- Provides specific locations where placeholder text appears with visual highlighting
 
 ### Spelling Test _(ALPHA)_
 - Validates content against a configurable dictionary
