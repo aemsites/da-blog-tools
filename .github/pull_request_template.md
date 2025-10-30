@@ -4,4 +4,4 @@ Fix #<gh-issue-id>
 
 Test URLs:
 - Before: https://main--da-blog-tools--aemsites.hlx.page
-- After: https://<branch>--ada-blog-tools--aemsites.hlx.page
+- After: https://<branch>--da-blog-tools--aemsites.hlx.page
