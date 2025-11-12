@@ -18,6 +18,8 @@ FindReplace Pro helps you search for content across your site, replace it in bul
 - **Case Sensitive Search** - Optional case-sensitive matching
 - **Multi-Path Search** - Select multiple directories with tag-based path input
 - **URL Filtering** - Exclude URLs and attributes from search content
+ - **JSON Discovery** - Find JSON files (strict parse-based detection)
+ - **JSON Search (Search-only)** - Search within JSON text using Contains/Exact/Regex with case sensitivity
 
 ### **Content Management**
 - **Bulk Replace** - Select multiple files and replace content
@@ -56,6 +58,13 @@ FindReplace Pro helps you search for content across your site, replace it in bul
 3. **Options**: Enable case-sensitive search or HTML Mode
 4. **Target Content**: Choose All Content, Page Metadata, Block Content, or Custom Selector
 5. **Advanced Filters**: Exclude URLs, set paths to exclude, or filter by modification date
+ 
+### 2a. JSON Search (Search-only)
+1. Open **Advanced Filters** and enable **Find JSON files**
+2. Enter a **Search For** term to find text inside JSON (supports Contains/Exact/Regex)
+3. Click **Scan & Preview**
+4. Review results (replace is disabled in JSON mode)
+5. Clicking a JSON result opens the DA Sheets view for the resource (e.g., `https://da.live/sheet#/org/site/path`)
 
 ### 3. Scan & Filter
 1. Click **"Scan Files"** to search your site
@@ -112,6 +121,12 @@ FindReplace Pro helps you search for content across your site, replace it in bul
 - **Replace With**: `<div class="banner"><h2>New Title</h2></div>`
 - **Result**: Complete HTML block replacement
 
+### JSON: Find a property value
+- **Advanced Filters**: Enable **Find JSON files**
+- **Search Type**: Regular Expression
+- **Search For**: `"status":\\s*"draft"`
+- **Result**: Lists JSON files containing the property; edit in DA Sheets if needed
+
 ### Filter and bulk publish
 1. Search for content
 2. Filter results: type `/blog` to show only blog pages
@@ -130,8 +145,12 @@ FindReplace Pro helps you search for content across your site, replace it in bul
 - **Publishing**: Integrates with AEM Admin API (admin.hlx.page) for preview/publish/unpublish
 - **Versioning**: Automatic backup creation via DA Version Source API (`/versionsource/`) before destructive operations
 - **Version Restore**: Uses DA Version List API (`/versionlist/`) to find most recent versions and restore content
-- **File Types**: Supports HTML files (JSON support planned)
+- **File Types**: Supports HTML files and JSON (JSON is search-only)
 - **HTML Mode**: Raw content processing - no formatting manipulation, preserves exact DA source
+- **JSON Handling**:
+  - Strict detection: attempts to parse after minimal normalization
+  - Search operates on raw JSON text; replace is disabled in JSON mode
+  - JSON results open in DA Sheets (e.g., `https://da.live/sheet#/cmegroup/www/metadata`)
 - **Content Filtering**: Optional URL filtering (href, src, srcset, data-*, etc.) with exclude checkbox
 - **Multi-Path Support**: Tag-based input system with autocomplete and path validation
 - **Branch Logic**: Uses 'main' branch for publish/unpublish, current branch for preview
