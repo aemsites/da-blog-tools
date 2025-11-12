@@ -344,6 +344,80 @@ async function fetchFiles(basePath = '') {
   }
 }
 
+// List all files (any ext) for JSON scanning, honoring filters and subfolders
+async function fetchFilesForJson(basePath = '') {
+  const { token } = app;
+  const orgSite = parseOrgSite();
+  if (!orgSite) {
+    throw new Error('Organization and site must be configured');
+  }
+  const { org, site } = orgSite;
+  const url = `${API.LIST}/${org}/${site}${basePath}`;
+
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await response.json();
+
+    const fileEntries = [];
+    const includeSubfolders = document.getElementById('include-subfolders')?.checked || false;
+
+    // Get filter options
+    const excludePathsInput = document.getElementById('exclude-paths')?.value?.trim() || '';
+    const excludePaths = excludePathsInput ? excludePathsInput.split(',').map((p) => p.trim()) : [];
+    const modifiedSinceInput = document.getElementById('modified-since')?.value;
+    const modifiedSince = modifiedSinceInput ? new Date(modifiedSinceInput) : null;
+
+    data.forEach((item) => {
+      if (item.lastModified && item.ext) {
+        const isExcluded = excludePaths.some((excludePath) => {
+          if (excludePath.startsWith('/')) {
+            return item.path.includes(excludePath);
+          }
+          return item.path.includes(`/${excludePath}`);
+        });
+        if (isExcluded) return;
+        if (modifiedSince) {
+          const fileModified = new Date(item.lastModified * 1000);
+          if (fileModified < modifiedSince) return;
+        }
+        fileEntries.push(item);
+      }
+    });
+
+    if (includeSubfolders) {
+      const subfolderPromises = data
+        .filter((item) => !item.ext && !item.lastModified && item.name !== '.DS_Store')
+        .filter((item) => {
+          const isExcluded = excludePaths.some((excludePath) => {
+            if (excludePath.startsWith('/')) {
+              return item.path.includes(excludePath);
+            }
+            return item.path.includes(`/${excludePath}`);
+          });
+          return !isExcluded;
+        })
+        .map(async (item) => {
+          try {
+            return await fetchFilesForJson(item.path.replace(`/${org}/${site}`, ''));
+          } catch (e) {
+            return [];
+          }
+        });
+      const subfolderResults = await Promise.all(subfolderPromises);
+      subfolderResults.forEach((subFiles) => fileEntries.push(...subFiles));
+    }
+
+    return fileEntries;
+  } catch (error) {
+    if (basePath === '') {
+      showMessage(`Error fetching files: ${error.message}`, 'error');
+    }
+    return [];
+  }
+}
+
 async function fetchContent(path, useCache = true) {
   // For empty page detection, always fetch fresh content
   if (useCache && app.fileCache.has(path)) {
@@ -1063,13 +1137,14 @@ async function scanFiles() {
   const targetType = document.getElementById('target-type')?.value || 'all';
   const customSelector = document.getElementById('custom-selector')?.value?.trim();
   const findBlankPages = document.getElementById('find-blank-pages')?.checked || false;
+  const findJsonFiles = document.getElementById('find-json-files')?.checked || false;
 
   // Optional: Clear cache for fresh results (uncomment if you want guaranteed fresh data)
   // app.fileCache.clear();
 
   // For custom selector, allow element-only searches (no search term required)
   // For blank page search, no search term is required
-  if (!searchTerm && targetType !== 'custom' && !findBlankPages) {
+  if (!searchTerm && targetType !== 'custom' && !findBlankPages && !findJsonFiles) {
     showMessage('Please enter a search term', 'error');
     return;
   }
@@ -1105,92 +1180,203 @@ async function scanFiles() {
       return;
     }
 
-    // Build proper paths with org/site prefix for crawl function
-    let crawlPaths;
-    if (app.searchPaths.length > 0) {
-      // Use specified search paths, ensuring they have org/site prefix
-      crawlPaths = app.searchPaths.map((path) => {
-        const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-        return `/${orgSite.org}/${orgSite.site}/${cleanPath}`.replace(/\/+/g, '/');
-      });
-    } else {
-      // Default to org/site root
-      crawlPaths = [`/${orgSite.org}/${orgSite.site}`];
-    }
+    // JSON branch: enumerate files and scan JSON content with concurrency
+    if (findJsonFiles) {
+      const basePaths = app.searchPaths.length > 0 ? app.searchPaths : [''];
+      const processedPaths = new Set();
+      const allFiles = [];
 
-    const processItem = async (item) => {
-      // Only process HTML files
-      if (!item.path.endsWith('.html')) return;
-
-      filesScanned++;
-      updateProgress(20 + Math.min((filesScanned / 100) * 70, 70), `Scanning ${item.name}...`);
-
-      // Use cache for all searches for better performance
-      const fetchResult = await fetchContent(item.path, true);
-
-      // Handle blank page search
-      if (findBlankPages) {
-        // Skip files that failed to fetch (network errors, throttling, etc.)
-        if (!fetchResult.success) {
-          return; // Don't include fetch failures as empty pages
+      const uniqueBasePaths = basePaths.filter((p, i, arr) => arr.indexOf(p) === i);
+      const filesArrays = await Promise.all(uniqueBasePaths.map((p) => {
+        if (!processedPaths.has(p)) {
+          processedPaths.add(p);
+          return fetchFilesForJson(p);
         }
+        return Promise.resolve([]);
+      }));
+      filesArrays.flat().forEach((f) => {
+        if (!allFiles.some((e) => e.path === f.path)) allFiles.push(f);
+      });
 
-        // For blank page search, check if source API returns no content
-        const isBlank = isPageEmpty(fetchResult.content);
-        if (isBlank) {
-          const result = {
-            file: item,
-            matches: [{
-              match: 'Empty Page',
-              index: 0,
-              line: 1,
-              context: 'Page has no source content',
-              sequenceOnLine: 1,
+      const { token } = app;
+      const queue = allFiles.slice();
+      const maxConcurrent = 10;
+
+      const processJsonItem = async (item) => {
+        filesScanned++;
+        updateProgress(20 + Math.min((filesScanned / Math.max(allFiles.length, 1)) * 70, 70), `Checking ${item.name}...`);
+        const cleanPath = item.path.startsWith('/') ? item.path.substring(1) : item.path;
+        const url = `${API.SOURCE}/${cleanPath}`;
+        try {
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+          if (!response.ok) return;
+          const contentText = await response.text();
+          // Strict parse after minimal normalization
+          const trimmed = contentText.trimStart().replace(/^\uFEFF/, '').replace(/^\)\]\}',?\s*/, '');
+          let parsed;
+          try {
+            parsed = JSON.parse(trimmed);
+          } catch (e) {
+            return; // not JSON
+          }
+          // If no search term, include all JSON files (one generic match)
+          if (!searchTerm) {
+            app.results.push({
+              file: item,
+              matches: [{
+                match: 'JSON file',
+                index: 0,
+                line: 1,
+                context: 'Detected JSON content',
+                sequenceOnLine: 1,
+                selected: true,
+              }],
+              originalContent: '',
+              updatedContent: '',
               selected: true,
-            }],
-            originalContent: fetchResult.content || '',
-            updatedContent: fetchResult.content || '',
+              foundElements: false,
+              elementCount: 0,
+              isJsonFile: true,
+            });
+            matchesFound += 1;
+            return;
+          }
+          // Search within raw JSON text using existing regex options
+          const searchType = document.getElementById('search-type')?.value || 'contains';
+          const caseSensitive = document.getElementById('case-sensitive')?.checked || false;
+          const regex = createSearchRegex(searchTerm, searchType, caseSensitive);
+          const matches = [];
+          let m = regex.exec(trimmed);
+          const lineMatchCounts = {};
+          while (m) {
+            const idx = m.index;
+            const line = trimmed.substring(0, idx).split('\n').length;
+            if (!lineMatchCounts[line]) lineMatchCounts[line] = 0;
+            lineMatchCounts[line]++;
+            matches.push({
+              match: m[0],
+              index: idx,
+              line,
+              context: getMatchContext(trimmed, idx, 75),
+              sequenceOnLine: lineMatchCounts[line],
+              selected: true,
+            });
+            m = regex.exec(trimmed);
+          }
+          if (matches.length === 0) return;
+
+          app.results.push({
+            file: item,
+            matches,
+            originalContent: '',
+            updatedContent: '',
             selected: true,
             foundElements: false,
             elementCount: 0,
-            isBlankPage: true,
-          };
-          app.results.push(result);
-          matchesFound++;
+            isJsonFile: true,
+          });
+          matchesFound += matches.length;
+        } catch (e) {
+          // ignore
         }
-        return; // Continue to next file
-      }
+      };
 
-      // Regular search logic
-      if (!fetchResult.success || !fetchResult.content) return;
-
-      const result = searchInContent(fetchResult.content, searchTerm, replaceTerm);
-      if (result.matches.length > 0) {
-        const fileResult = {
-          file: item,
-          matches: result.matches,
-          originalContent: fetchResult.content,
-          updatedContent: result.updatedContent,
-          selected: true,
-          foundElements: result.foundElements || false,
-          elementCount: result.elementCount || 0,
-        };
-        app.results.push(fileResult);
-        matchesFound += result.matches.length;
-      }
-    };
-
-    // Process each crawl path using DA's crawl function
-    // Following the pattern from DA documentation
-    const crawlPromises = crawlPaths.map(async (crawlPath) => {
-      const { results } = crawl({
-        path: crawlPath,
-        callback: processItem,
-        concurrent: 10, // Use DA's recommended concurrency to prevent resource exhaustion
+      const workers = Array.from({ length: Math.min(maxConcurrent, queue.length) }, async () => {
+        while (queue.length) {
+          const next = queue.shift();
+          // eslint-disable-next-line no-await-in-loop
+          await processJsonItem(next);
+        }
       });
-      return results;
-    });
-    await Promise.all(crawlPromises);
+      await Promise.all(workers);
+    } else {
+      // Build proper paths with org/site prefix for crawl function
+      let crawlPaths;
+      if (app.searchPaths.length > 0) {
+        // Use specified search paths, ensuring they have org/site prefix
+        crawlPaths = app.searchPaths.map((path) => {
+          const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+          return `/${orgSite.org}/${orgSite.site}/${cleanPath}`.replace(/\/+/g, '/');
+        });
+      } else {
+        // Default to org/site root
+        crawlPaths = [`/${orgSite.org}/${orgSite.site}`];
+      }
+
+      const processItem = async (item) => {
+        // Only process HTML files
+        if (!item.path.endsWith('.html')) return;
+
+        filesScanned++;
+        updateProgress(20 + Math.min((filesScanned / 100) * 70, 70), `Scanning ${item.name}...`);
+
+        // Use cache for all searches for better performance
+        const fetchResult = await fetchContent(item.path, true);
+
+        // Handle blank page search
+        if (findBlankPages) {
+          // Skip files that failed to fetch (network errors, throttling, etc.)
+          if (!fetchResult.success) {
+            return; // Don't include fetch failures as empty pages
+          }
+
+          // For blank page search, check if source API returns no content
+          const isBlank = isPageEmpty(fetchResult.content);
+          if (isBlank) {
+            const result = {
+              file: item,
+              matches: [{
+                match: 'Empty Page',
+                index: 0,
+                line: 1,
+                context: 'Page has no source content',
+                sequenceOnLine: 1,
+                selected: true,
+              }],
+              originalContent: fetchResult.content || '',
+              updatedContent: fetchResult.content || '',
+              selected: true,
+              foundElements: false,
+              elementCount: 0,
+              isBlankPage: true,
+            };
+            app.results.push(result);
+            matchesFound++;
+          }
+          return; // Continue to next file
+        }
+
+        // Regular search logic
+        if (!fetchResult.success || !fetchResult.content) return;
+
+        const result = searchInContent(fetchResult.content, searchTerm, replaceTerm);
+        if (result.matches.length > 0) {
+          const fileResult = {
+            file: item,
+            matches: result.matches,
+            originalContent: fetchResult.content,
+            updatedContent: result.updatedContent,
+            selected: true,
+            foundElements: result.foundElements || false,
+            elementCount: result.elementCount || 0,
+          };
+          app.results.push(fileResult);
+          matchesFound += result.matches.length;
+        }
+      };
+
+      // Process each crawl path using DA's crawl function
+      // Following the pattern from DA documentation
+      const crawlPromises = crawlPaths.map(async (crawlPath) => {
+        const { results } = crawl({
+          path: crawlPath,
+          callback: processItem,
+          concurrent: 10, // Use DA's recommended concurrency to prevent resource exhaustion
+        });
+        return results;
+      });
+      await Promise.all(crawlPromises);
+    }
 
     // Initialize all matches as selected by default and populate selectedFiles
     app.selectedFiles.clear();
@@ -1243,7 +1429,8 @@ async function scanFiles() {
     const exportBtn = document.getElementById('export-btn');
     const revertBtn = document.getElementById('revert-btn');
     const bulkPublishBtn = document.getElementById('bulk-publish-btn');
-    if (executeBtn) executeBtn.disabled = app.results.length === 0;
+    // Disable execute for blank pages and JSON search-only mode
+    if (executeBtn) executeBtn.disabled = app.results.length === 0 || findBlankPages || findJsonFiles;
     if (exportBtn) exportBtn.disabled = app.results.length === 0;
     if (revertBtn) revertBtn.disabled = app.results.length === 0;
     if (bulkPublishBtn) bulkPublishBtn.disabled = app.results.length === 0;
@@ -1255,6 +1442,12 @@ async function scanFiles() {
     let message;
     if (findBlankPages) {
       message = `Found ${app.results.length} empty pages (no source content)`;
+    } else if (findJsonFiles) {
+      if (!searchTerm) {
+        message = `Found ${app.results.length} JSON files`;
+      } else {
+        message = `Found ${matchesFound} matches in ${app.results.length} JSON files`;
+      }
     } else if (targetType === 'custom' && !searchTerm && customSelector) {
       const totalElements = app.results.reduce((total, result) => total + (result.elementCount || 0), 0);
       message = `Found ${totalElements} ${customSelector} elements in ${app.results.length} files`;
@@ -1281,7 +1474,10 @@ function updateActionButtons() {
   const exportBtn = document.getElementById('export-btn');
   const bulkPublishBtn = document.getElementById('bulk-publish-btn');
 
-  if (executeBtn) executeBtn.disabled = !hasSelected;
+  const findBlankPages = document.getElementById('find-blank-pages')?.checked || false;
+  const findJsonFiles = document.getElementById('find-json-files')?.checked || false;
+
+  if (executeBtn) executeBtn.disabled = !hasSelected || findBlankPages || findJsonFiles;
   if (exportBtn) exportBtn.disabled = !hasSelected;
   if (bulkPublishBtn) bulkPublishBtn.disabled = !hasSelected;
 
@@ -1387,11 +1583,15 @@ function displayResults(filteredResults = null) {
     const matchCount = result.matches.length;
     const isExpanded = result.expanded === true; // Default to collapsed
 
+    const editorHref = result.isJsonFile
+      ? `https://da.live/sheet#${result.file.path.replace(/\.[^/.]+$/, '')}`
+      : `https://da.live/edit#${result.file.path.replace('.html', '')}`;
+
     item.innerHTML = `
       <input type="checkbox" class="result-checkbox" data-index="${originalIndex}" ${result.selected ? 'checked' : ''}>
       <div class="result-content">
         <div class="result-header" data-result-index="${originalIndex}">
-                      <a href="https://da.live/edit#${result.file.path.replace('.html', '')}" target="_blank" class="result-path">${result.file.path}</a>
+                      <a href="${editorHref}" target="_blank" class="result-path">${result.file.path}</a>
           <div class="result-meta">
             <span class="match-count">${matchCount} match${matchCount !== 1 ? 'es' : ''}</span>
             <div class="result-toggle">
@@ -1715,6 +1915,11 @@ function replaceSelectedMatches(content, matches, searchTerm, replaceTerm) {
 }
 
 async function executeReplace() {
+  const findJsonFiles = document.getElementById('find-json-files')?.checked || false;
+  if (findJsonFiles) {
+    showMessage('Replace is disabled in JSON search-only mode.', 'warning');
+    return;
+  }
   const selected = app.results.filter((r) => r.selected);
 
   if (selected.length === 0) {
@@ -2978,6 +3183,7 @@ function setupEventListeners() {
   const htmlModeHelp = document.getElementById('html-mode-help');
   const searchTermTextarea = document.getElementById('search-term');
   const replaceTermTextarea = document.getElementById('replace-term');
+  const replaceEmptyEl = document.getElementById('replace-empty');
 
   if (htmlModeCheckbox && htmlModeHelp) {
     htmlModeCheckbox.addEventListener('change', () => {
@@ -2998,6 +3204,43 @@ function setupEventListeners() {
           replaceTermTextarea.placeholder = 'Enter replacement text (use $1, $2 for regex groups when using Regular Expression)';
         }
       }
+    });
+  }
+
+  // JSON search-only mode: disable replace and HTML-specific controls
+  const findJsonFilesCheckbox = document.getElementById('find-json-files');
+  if (findJsonFilesCheckbox && searchTermTextarea) {
+    const disableControls = ['html-mode', 'target-type', 'custom-selector', 'exclude-urls'];
+    const originalSearchPlaceholder = searchTermTextarea.placeholder;
+    const toggleJsonMode = (isJsonMode) => {
+      searchTermTextarea.disabled = false;
+      searchTermTextarea.placeholder = isJsonMode
+        ? 'Enter text or regex to find in JSON'
+        : originalSearchPlaceholder;
+      disableControls.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.disabled = isJsonMode;
+          el.classList.toggle('blank-page-disabled', isJsonMode);
+        }
+      });
+      if (replaceTermTextarea) {
+        replaceTermTextarea.disabled = isJsonMode;
+        replaceTermTextarea.classList.toggle('blank-page-disabled', isJsonMode);
+        replaceTermTextarea.placeholder = isJsonMode
+          ? 'Replace disabled in JSON search-only mode'
+          : 'Enter replacement text (use $1, $2 for regex groups when using Regular Expression)';
+      }
+      if (replaceEmptyEl) {
+        replaceEmptyEl.disabled = isJsonMode;
+        replaceEmptyEl.classList.toggle('blank-page-disabled', isJsonMode);
+      }
+      updateActionButtons();
+    };
+    // Initialize and bind
+    toggleJsonMode(findJsonFilesCheckbox.checked);
+    findJsonFilesCheckbox.addEventListener('change', () => {
+      toggleJsonMode(findJsonFilesCheckbox.checked);
     });
   }
 
