@@ -7,7 +7,6 @@
 
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { crawl } from 'https://da.live/nx/public/utils/tree.js';
-import addAppAccessControl from '../access-control/access-control.js';
 
 function isPageEmpty(content) {
   if (!content || content.length === 0) {
@@ -3607,15 +3606,8 @@ async function init() {
   }
 }
 
-async function startApp() {
-  const hasAccess = await addAppAccessControl();
-  if (hasAccess) {
-    init();
-  }
-}
-
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', startApp);
+  document.addEventListener('DOMContentLoaded', init);
 } else {
-  startApp();
+  init();
 }
