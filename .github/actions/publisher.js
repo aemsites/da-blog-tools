@@ -186,7 +186,11 @@ async function unpublishPage(pagePath, environment) {
   log('info', `Unpublishing page from helix ${environment}: ${pagePath}`);
 
   try {
-    const response = await fetch(`${HELIX_URL}/${environment}/${HLX_ORG}/${HLX_SITE}/main/${pagePath}`, {
+    // Remove leading slash to avoid double slashes in URL
+    const cleanPath = pagePath.startsWith('/') ? pagePath.substring(1) : pagePath;
+    const url = `${HELIX_URL}/${environment}/${HLX_ORG}/${HLX_SITE}/main/${cleanPath}`;
+    log('info', `Fetching URL: ${url}`);
+    const response = await fetch(url, {
       method: 'DELETE',
       headers: {
         'Authorization': `token ${HELIX_TOKEN}`,
@@ -199,6 +203,25 @@ async function unpublishPage(pagePath, environment) {
       log('info', 'Unpublish response: ' + (await response.text()));
     } else {
       log('error', `Unpublish failed with status ${response.status}`);
+      
+      // Log response body
+      const responseText = await response.text();
+      if (responseText) {
+        log('error', `Response body: ${responseText}`);
+      }
+      
+      // Log X-Error header if present
+      const xErrorHeader = response.headers.get('X-Error');
+      if (xErrorHeader) {
+        log('error', `X-Error header: ${xErrorHeader}`);
+      }
+      
+      // Log all response headers for debugging
+      log('error', 'Response headers:');
+      response.headers.forEach((value, key) => {
+        log('error', `  ${key}: ${value}`);
+      });
+      
       process.exit(1);
     }
   } catch (err) {
@@ -216,7 +239,11 @@ async function publishPage(pagePath, environment) {
   log('info', `Publishing page to helix ${environment}: ${pagePath}`);
 
   try {
-    const response = await fetch(`${HELIX_URL}/${environment}/${HLX_ORG}/${HLX_SITE}/main/${pagePath}`, {
+    // Remove leading slash to avoid double slashes in URL
+    const cleanPath = pagePath.startsWith('/') ? pagePath.substring(1) : pagePath;
+    const url = `${HELIX_URL}/${environment}/${HLX_ORG}/${HLX_SITE}/main/${cleanPath}`;
+    log('info', `Fetching URL: ${url}`);
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `token ${HELIX_TOKEN}`,
@@ -228,11 +255,23 @@ async function publishPage(pagePath, environment) {
     } else {
       log('error', `Publish failed with status ${response.status}`);
       
+      // Log response body
+      const responseText = await response.text();
+      if (responseText) {
+        log('error', `Response body: ${responseText}`);
+      }
+      
       // Log X-Error header if present
       const xErrorHeader = response.headers.get('X-Error');
       if (xErrorHeader) {
         log('error', `X-Error header: ${xErrorHeader}`);
       }
+      
+      // Log all response headers for debugging
+      log('error', 'Response headers:');
+      response.headers.forEach((value, key) => {
+        log('error', `  ${key}: ${value}`);
+      });
       
       process.exit(1);
     }
@@ -260,13 +299,17 @@ async function movePageToDateStructure(pagePath, DA_TOKEN) {
 
   // Prepare the source path for the fetch URL (retain prefix, but .md -> .html)
   let sourcePath = mdToHtml(pagePath);
+  // Remove leading slash to avoid double slashes in URL
+  const cleanSourcePath = sourcePath.startsWith('/') ? sourcePath.substring(1) : sourcePath;
 
   // Prepare multipart/form-data body
   const form = new FormData();
   form.set('destination', dirPath);
 
   try {
-    const response = await fetch(`${DA_URL}/move/${HLX_ORG}/${HLX_SITE}/${sourcePath}`, {
+    const url = `${DA_URL}/move/${HLX_ORG}/${HLX_SITE}/${cleanSourcePath}`;
+    log('info', `Fetching URL: ${url}`);
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${DA_TOKEN}`,
@@ -283,6 +326,25 @@ async function movePageToDateStructure(pagePath, DA_TOKEN) {
       return `/${SITE_ROOT}/${datePath}/${destinationPath}`;
     } else {
       log('error', `Move failed with status ${response.status}`);
+      
+      // Log response body
+      const responseText = await response.text();
+      if (responseText) {
+        log('error', `Response body: ${responseText}`);
+      }
+      
+      // Log X-Error header if present
+      const xErrorHeader = response.headers.get('X-Error');
+      if (xErrorHeader) {
+        log('error', `X-Error header: ${xErrorHeader}`);
+      }
+      
+      // Log all response headers for debugging
+      log('error', 'Response headers:');
+      response.headers.forEach((value, key) => {
+        log('error', `  ${key}: ${value}`);
+      });
+      
       process.exit(1);
     }
   } catch (err) {
