@@ -117,7 +117,96 @@ function runTest(pageSource) {
       : 'Ensure page has one &lt;h1&gt;, and headings follow sequential order without skipping levels.',
   });
 
-  // Test 4: Check form inputs for labels
+  // Test 4: Check for duplicate heading text (which causes duplicate IDs)
+  const headingTextCounts = {};
+  const duplicateHeadingTexts = [];
+
+  headings.forEach((heading) => {
+    const text = heading.textContent.trim();
+    if (text) {
+      const normalizedText = text.toLowerCase();
+      if (!headingTextCounts[normalizedText]) {
+        headingTextCounts[normalizedText] = [];
+      }
+      headingTextCounts[normalizedText].push({
+        tag: heading.tagName,
+        text: text.length > 50 ? `${text.substring(0, 50)}...` : text,
+      });
+    }
+  });
+
+  // Find heading texts that appear more than once
+  Object.entries(headingTextCounts).forEach(([, occurrences]) => {
+    if (occurrences.length > 1) {
+      const firstOccurrence = occurrences[0];
+      const highlightStyle = 'background-color: #ffeb3b; padding: 2px 4px; border-radius: 3px;';
+      const tagList = occurrences.map((h) => `&lt;${h.tag.toLowerCase()}&gt;`).join(', ');
+      duplicateHeadingTexts.push(
+        `<strong style="${highlightStyle}">"${escapeHtml(firstOccurrence.text)}"</strong> appears ${occurrences.length} times in: ${tagList}`,
+      );
+    }
+  });
+
+  subTests.push({
+    name: 'Unique Heading Text',
+    status: duplicateHeadingTexts.length === 0 ? 'pass' : 'fail',
+    message: duplicateHeadingTexts.length === 0
+      ? 'All headings have unique text content'
+      : `${duplicateHeadingTexts.length} duplicate heading text(s) found`,
+    location: duplicateHeadingTexts.length === 0
+      ? 'All headings'
+      : duplicateHeadingTexts.join('\n• '),
+    remediation: duplicateHeadingTexts.length === 0
+      ? 'No action needed'
+      : 'Use unique text for each heading. Duplicate heading text creates duplicate IDs which breaks accessibility and anchor links.',
+  });
+
+  // Test 5: Check for duplicate IDs
+  const elementsWithId = doc.querySelectorAll('[id]');
+  const idCounts = {};
+  const duplicateIds = [];
+
+  elementsWithId.forEach((element) => {
+    const id = element.getAttribute('id');
+    if (id) {
+      if (!idCounts[id]) {
+        idCounts[id] = [];
+      }
+      const tagName = element.tagName.toLowerCase();
+      const text = element.textContent.trim().substring(0, 30);
+      const preview = text ? `${text}${element.textContent.trim().length > 30 ? '...' : ''}` : '';
+      idCounts[id].push({ tagName, preview });
+    }
+  });
+
+  // Find IDs that appear more than once
+  Object.entries(idCounts).forEach(([id, elements]) => {
+    if (elements.length > 1) {
+      const elementList = elements
+        .map((el) => `&lt;${el.tagName}&gt;${el.preview ? `: "${el.preview}"` : ''}`)
+        .join(', ');
+      const highlightStyle = 'background-color: #ffeb3b; padding: 2px 4px; border-radius: 3px;';
+      duplicateIds.push(
+        `ID <strong style="${highlightStyle}">"${escapeHtml(id)}"</strong> used ${elements.length} times: ${elementList}`,
+      );
+    }
+  });
+
+  subTests.push({
+    name: 'Unique Element IDs',
+    status: duplicateIds.length === 0 ? 'pass' : 'fail',
+    message: duplicateIds.length === 0
+      ? `All ${elementsWithId.length} IDs are unique`
+      : `${duplicateIds.length} duplicate ID(s) found`,
+    location: duplicateIds.length === 0
+      ? 'All elements with IDs'
+      : duplicateIds.join('\n• '),
+    remediation: duplicateIds.length === 0
+      ? 'No action needed'
+      : 'Ensure all ID attributes are unique. Duplicate IDs break accessibility and JavaScript functionality.',
+  });
+
+  // Test 6: Check form inputs for labels
   const inputs = doc.querySelectorAll('input, select, textarea');
   const inputsWithoutLabels = [];
 
@@ -160,7 +249,7 @@ function runTest(pageSource) {
       : 'Associate labels with inputs using for/id attributes or aria-label.',
   });
 
-  // Test 5: Check for lang attribute on html element
+  // Test 7: Check for lang attribute on html element
   const htmlElement = doc.querySelector('html');
   const hasLang = htmlElement && htmlElement.hasAttribute('lang');
   const langValue = htmlElement ? htmlElement.getAttribute('lang') : '';
@@ -177,7 +266,7 @@ function runTest(pageSource) {
       : 'Add lang attribute to &lt;html&gt; element (e.g., lang="en" for English).',
   });
 
-  // Test 6: Check for empty buttons
+  // Test 8: Check for empty buttons
   const buttons = doc.querySelectorAll('button');
   const emptyButtons = [];
 
@@ -205,7 +294,7 @@ function runTest(pageSource) {
       : 'Add text content or aria-label to all buttons.',
   });
 
-  // Test 7: Check for redundant title attributes
+  // Test 9: Check for redundant title attributes
   const elementsWithTitle = doc.querySelectorAll('[title]');
   const redundantTitles = [];
 
@@ -236,7 +325,7 @@ function runTest(pageSource) {
       : 'Remove title attributes that duplicate visible text or aria-label.',
   });
 
-  // Test 8: Check for ARIA misuse
+  // Test 10: Check for ARIA misuse
   const ariaIssues = [];
   const elementsWithAria = doc.querySelectorAll('[role], [aria-label], [aria-labelledby], [aria-describedby]');
 
