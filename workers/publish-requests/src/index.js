@@ -1,8 +1,9 @@
+/* eslint-disable no-console, no-restricted-syntax, no-continue, no-await-in-loop */
 /**
  * WSU Publish Request Workflow - MVP Worker
  * Cloudflare Worker for email-only publish request orchestration
  *
- * NO D1 database, NO n8n - direct Email integration 
+ * NO D1 database, NO n8n - direct Email integration
  */
 
 // CORS headers for cross-origin requests
@@ -94,10 +95,9 @@ function validateDAToken(request) {
     user: {
       id: payload.user_id,
       email: payload.aa_id,
-    }
+    },
   };
 }
-
 
 /**
  * Get a fresh Gmail OAuth access token using the refresh token
@@ -126,12 +126,17 @@ async function getGmailAccessToken(env) {
 /**
  * Send email via Gmail API using OAuth
  */
-async function sendEmailGmail(env, { to, cc, subject, html }) {
+async function sendEmailGmail(env, {
+  to, cc, subject, html,
+}) {
   const accessToken = await getGmailAccessToken(env);
 
   const fromAddress = env.GMAIL_FROM || `DA Publishing <${env.PUBLISH_REQUESTS_GMAIL_EMAIL}>`;
   const toList = Array.isArray(to) ? to : [to];
-  const ccList = (cc && cc.length > 0) ? (Array.isArray(cc) ? cc : [cc]) : [];
+  let ccList = [];
+  if (cc && cc.length > 0) {
+    ccList = Array.isArray(cc) ? cc : [cc];
+  }
 
   // Build RFC 2822 email with HTML content
   const emailLines = [
@@ -173,7 +178,7 @@ async function sendEmailGmail(env, { to, cc, subject, html }) {
     throw new Error(`Email send failed: ${error}`);
   }
 
-  return await sendResponse.json();
+  return sendResponse.json();
 }
 
 /**
@@ -194,7 +199,9 @@ function toRecipientObject(recipient) {
  * Body follows the SendGrid-style personalizations format.
  * TODO: CC support for sending emails
  */
-async function sendEmailWSU(env, { to, cc, subject, html }) {
+async function sendEmailWSU(env, {
+  to, cc, subject, html,
+}) {
   const toList = (Array.isArray(to) ? to : [to]).map(toRecipientObject);
   const ccList = cc && cc.length > 0
     ? (Array.isArray(cc) ? cc : [cc]).map(toRecipientObject)
@@ -229,7 +236,7 @@ async function sendEmailWSU(env, { to, cc, subject, html }) {
     throw new Error(`Email send failed (WSU API): ${error}`);
   }
 
-  return await response.json();
+  return response.json();
 }
 
 /**
@@ -285,7 +292,9 @@ async function sendEmail(env, params) {
  * Build approval request email HTML
  * Styled to match DA.live design system (Spectrum 2 / nexter.css)
  */
-function buildApprovalRequestEmail({ org, repo, path, previewUrl, authorEmail, authorName, comment, appUrl, inboxUrl }) {
+function buildApprovalRequestEmail({
+  org, repo, path, previewUrl, authorEmail, authorName, comment, appUrl, inboxUrl,
+}) {
   const authorDisplay = authorName || authorEmail;
 
   return `
@@ -355,7 +364,9 @@ function buildApprovalRequestEmail({ org, repo, path, previewUrl, authorEmail, a
  * Build rejection notification email HTML
  * Styled to match DA.live design system (Spectrum 2 / nexter.css)
  */
-function buildRejectionEmail({ org, repo, path, authorEmail, authorName, rejecterEmail, rejecterName, reason }) {
+function buildRejectionEmail({
+  org, repo, path, authorEmail, authorName, rejecterEmail, rejecterName, reason,
+}) {
   const authorDisplay = authorName || authorEmail;
   const rejecterDisplay = rejecterName || rejecterEmail;
 
@@ -417,7 +428,9 @@ function buildRejectionEmail({ org, repo, path, authorEmail, authorName, rejecte
  * Build publish-success notification email HTML
  * Styled to match DA.live design system (Spectrum 2 / nexter.css)
  */
-function buildPublishedEmail({ org, repo, paths, approverEmail, approverName }) {
+function buildPublishedEmail({
+  org, repo, paths, approverEmail, approverName,
+}) {
   const approverDisplay = approverName || approverEmail;
   const isBulk = paths.length > 1;
   const title = isBulk
@@ -533,7 +546,7 @@ async function handleRequestPublish(request, env) {
 
   // Build approval URL with parameters
   // Format: https://da.live/app/{org}/{repo}/tools/apps/publish-requests-inbox/publish-requests-inbox?org={org}&repo={repo}&...
-  const appParams = new URLSearchParams({    
+  const appParams = new URLSearchParams({
     org,
     repo,
     path,
@@ -577,14 +590,15 @@ async function handleRequestPublish(request, env) {
     });
   } catch (error) {
     console.error('Error sending publish request email:', error);
-    return jsonResponse({ error: 'Failed to send email: ' + error.message }, {}, 500);
+    return jsonResponse({ error: `Failed to send email: ${error.message}` }, {}, 500);
   }
 }
 
 /**
  * Send rejection notification email
  * POST /api/notify-rejection
- * Body: { org, repo, path, authorEmail, authorName?, rejecterEmail, rejecterName?, reason, digiops? }
+ * Body: { org, repo, path, authorEmail, authorName?, rejecterEmail,
+ *         rejecterName?, reason, digiops? }
  */
 async function handleNotifyRejection(request, env) {
   let body;
@@ -652,7 +666,7 @@ async function handleNotifyRejection(request, env) {
     });
   } catch (error) {
     console.error('Error sending rejection email:', error);
-    return jsonResponse({ error: 'Failed to send email: ' + error.message }, {}, 500);
+    return jsonResponse({ error: `Failed to send email: ${error.message}` }, {}, 500);
   }
 }
 
@@ -722,7 +736,7 @@ async function handleNotifyPublished(request, env) {
     });
   } catch (error) {
     console.error('Error sending publish notification email:', error);
-    return jsonResponse({ error: 'Failed to send email: ' + error.message }, {}, 500);
+    return jsonResponse({ error: `Failed to send email: ${error.message}` }, {}, 500);
   }
 }
 
@@ -734,7 +748,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const { pathname } = url;
-    const method = request.method;
+    const { method } = request;
 
     // Handle CORS preflight
     if (method === 'OPTIONS') {
