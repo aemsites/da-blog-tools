@@ -123,7 +123,7 @@ class RequestForPublishPlugin extends LitElement {
     // Sample RUM enhancer if the RUM script is loaded
     window.hlx?.rum?.sampleRUM?.enhance?.();
 
-    sampleRUM('request-for-plugin:loaded', { source: this.contentPath });
+    sampleRUM('request-for-publish:loaded', { source: this.contentPath });
     this._isLoading = false;
   }
 
@@ -409,7 +409,7 @@ class RequestForPublishPlugin extends LitElement {
   }
 }
 
-customElements.define('request-for-plugin', RequestForPublishPlugin);
+customElements.define('request-for-publish', RequestForPublishPlugin);
 
 /**
  * Self-initialize when loaded as HTML (fullsize-dialog mode)
@@ -433,7 +433,7 @@ customElements.define('request-for-plugin', RequestForPublishPlugin);
     const { org, repo, path } = context;
 
     // Create and append the component
-    const cmp = document.createElement('request-for-plugin');
+    const cmp = document.createElement('request-for-publish');
     cmp.context = context;
     cmp.path = `/${org}/${repo}${path}`;
     cmp.token = token;
@@ -457,7 +457,7 @@ export default async function init({ context, token }) {
     panel: {
       render: (container) => {
         const { org, repo, path } = context;
-        const cmp = document.createElement('request-for-plugin');
+        const cmp = document.createElement('request-for-publish');
         cmp.context = context;
         cmp.path = `/${org}/${repo}${path}`;
         cmp.token = token;

@@ -1,6 +1,6 @@
 # Publish Requests Worker
 
-A Cloudflare Worker that handles email notifications for the content publish request workflow. This is the **backend orchestration layer** — it sends emails on behalf of the [DA Plugin](../../tools/plugins/request-for-plugin/) (publish requests) and the [DA App](../../tools/apps/publish-requests-inbox/) (rejections, publish confirmations).
+A Cloudflare Worker that handles email notifications for the content publish request workflow. This is the **backend orchestration layer** — it sends emails on behalf of the [DA Plugin](../../tools/plugins/request-for-publish/) (publish requests) and the [DA App](../../tools/apps/publish-requests-inbox/) (rejections, publish confirmations).
 
 ## How It Works
 

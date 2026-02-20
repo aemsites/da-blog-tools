@@ -10,7 +10,7 @@ When an author finishes editing content and wants to publish it, they open this 
 
 ### Architecture
 
-- **Web Component**: Built as a LitElement custom element (`<request-for-plugin>`)
+- **Web Component**: Built as a LitElement custom element (`<request-for-publish>`)
 - **DA SDK**: Integrates with the DA.live SDK for authentication, context (org, repo, path), and dialog rendering
 - **DA Config API**: Reads the workflow configuration (approver rules and group-to-email mappings) via `GET https://admin.da.live/config/{org}/{repo}/` with automatic fallback to `GET https://admin.da.live/config/{org}/` if not found at repo level. See [DA Config API docs](https://docs.da.live/developers/api/config#get-config)
 - **DA Admin API**: Reads/writes the pending requests sheet at `/publish-workflow-requests.json`
@@ -133,9 +133,9 @@ If the request fails to submit (network error, worker error, etc.), an error mes
 
 | File | Description |
 |------|-------------|
-| `request-for-plugin.html` | Entry HTML for fullsize-dialog mode; loads DA SDK and the plugin module |
-| `request-for-plugin.js` | Main LitElement component with form, states, and event handlers; includes both dialog and panel mode initialization |
-| `request-for-plugin.css` | Styles for all component states (form, pending, success, loading) |
+| `request-for-publish.html` | Entry HTML for fullsize-dialog mode; loads DA SDK and the plugin module |
+| `request-for-publish.js` | Main LitElement component with form, states, and event handlers; includes both dialog and panel mode initialization |
+| `request-for-publish.css` | Styles for all component states (form, pending, success, loading) |
 | `utils.js` | Utility layer — approver and CC detection with group resolution via DA Config API (with org fallback), publish request submission, DA sheet read/write, IMS profile fetch |
 
 ## Configuration
