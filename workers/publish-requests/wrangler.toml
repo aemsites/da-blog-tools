@@ -1,0 +1,46 @@
+name = "publish-requests"
+main = "src/index.js"
+compatibility_date = "2025-02-14"
+
+# Environment variables
+[vars]
+ENVIRONMENT = "dev"
+
+# -------------------------------------------------------------------
+# Email provider toggle — flip this to switch between email backends:
+#   "gmail"   → Gmail API via OAuth (current production path)
+#   "wsu-api" → WSU AEM Cloud sendEmail endpoint (testing)
+# -------------------------------------------------------------------
+EMAIL_PROVIDER = "wsu-api"
+
+# Gmail OAuth email sender
+# Override the From display name (defaults to "DA Publishing <gmail-address>")
+# GMAIL_FROM = "WSU Publishing <sagaradobework@gmail.com>"
+
+# Security: Gmail OAuth credentials stored via `wrangler secret put`
+# Run each of:
+#   npx wrangler secret put PUBLISH_REQUESTS_GMAIL_CLIENT_ID
+#   npx wrangler secret put PUBLISH_REQUESTS_GMAIL_CLIENT_SECRET
+#   npx wrangler secret put PUBLISH_REQUESTS_GMAIL_REFRESH_TOKEN
+#   npx wrangler secret put PUBLISH_REQUESTS_GMAIL_EMAIL
+
+# WSU AEM Cloud email API (used when EMAIL_PROVIDER = "wsu-api")
+# Endpoint: https://publish-p136310-e1368284.adobeaemcloud.com/bin/wsu/sendEmail.json
+# Store the API key via: npx wrangler secret put WSU_EMAIL_API_KEY
+WSU_EMAIL_API_URL = "https://www.aem-uat-65.westernsydney.edu.au/bin/wsu/sendEmail.json"
+WSU_EMAIL_FROM_ADDRESS = "aem-noreply@westernsydney.edu.au"
+WSU_EMAIL_FROM_NAME = "WSU"
+
+# --- Previous Resend config (kept for reference) ---
+# RESEND_FROM = "Rama Publishing <onboarding@resend.dev>"
+# Security: RESEND_API_KEY stored via `wrangler secret put RESEND_API_KEY`
+
+[env.prod]
+vars = { ENVIRONMENT = "production" }
+
+[observability]
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
