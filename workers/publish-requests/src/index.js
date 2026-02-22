@@ -100,6 +100,35 @@ function validateDAToken(request) {
 }
 
 /**
+ * Convert a plain email string or object into a { email, name } object
+ * accepted by the WSU AEM Cloud API.
+ */
+function toRecipientObject(recipient) {
+  if (typeof recipient === 'string') {
+    return { email: recipient };
+  }
+  return recipient; // already { email, name? }
+}
+
+/**
+ * Extract the raw email address from a recipient (string or { email, name } object).
+ */
+function toRecipientEmail(recipient) {
+  if (typeof recipient === 'string') return recipient;
+  return recipient.email || '';
+}
+
+/**
+ * Format a recipient for RFC 2822 (used in Gmail raw email headers).
+ * Produces "Display Name <email>" when a name is present, otherwise just "email".
+ */
+function toRFC2822Address(recipient) {
+  if (typeof recipient === 'string') return recipient;
+  const { email, name } = recipient;
+  return name ? `${name} <${email}>` : email;
+}
+
+/**
  * Get a fresh Gmail OAuth access token using the refresh token
  */
 async function getGmailAccessToken(env) {
@@ -132,11 +161,10 @@ async function sendEmailGmail(env, {
   const accessToken = await getGmailAccessToken(env);
 
   const fromAddress = env.GMAIL_FROM || `DA Publishing <${env.PUBLISH_REQUESTS_GMAIL_EMAIL}>`;
-  const toList = Array.isArray(to) ? to : [to];
-  let ccList = [];
-  if (cc && cc.length > 0) {
-    ccList = Array.isArray(cc) ? cc : [cc];
-  }
+  const toList = (Array.isArray(to) ? to : [to]).map(toRFC2822Address);
+  const ccList = cc && cc.length > 0
+    ? (Array.isArray(cc) ? cc : [cc]).map(toRFC2822Address)
+    : [];
 
   // Build RFC 2822 email with HTML content
   const emailLines = [
@@ -182,22 +210,11 @@ async function sendEmailGmail(env, {
 }
 
 /**
- * Convert a plain email string or object into a { email, name } object
- * accepted by the WSU AEM Cloud API.
- */
-function toRecipientObject(recipient) {
-  if (typeof recipient === 'string') {
-    return { email: recipient };
-  }
-  return recipient; // already { email, name? }
-}
-
-/**
  * Send email via the WSU AEM Cloud API
  * POST https://publish-p136310-e1368284.adobeaemcloud.com/bin/wsu/sendEmail.json
  * Header: x-auth-api-key: <WSU_EMAIL_API_KEY>
- * Body follows the SendGrid-style personalizations format.
- * TODO: CC support for sending emails
+ * Body follows the SendGrid-style personalizations format, supporting multiple
+ * TO and CC recipients via the personalizations[0].to / .cc arrays.
  */
 async function sendEmailWSU(env, {
   to, cc, subject, html,
@@ -571,9 +588,14 @@ async function handleRequestPublish(request, env) {
       inboxUrl,
     });
 
-    // Filter CC to exclude anyone already in the approvers list (avoid duplicate emails)
-    const approverSet = new Set((approvers || []).map((a) => a.toLowerCase()));
-    const filteredCC = (cc || []).filter((c) => !approverSet.has(c.toLowerCase()));
+    // Filter CC to exclude anyone already in the approvers list (avoid duplicate emails).
+    // Recipients can be plain email strings or { email, name } objects.
+    const approverSet = new Set(
+      (approvers || []).map((a) => toRecipientEmail(a).toLowerCase()),
+    );
+    const filteredCC = (cc || []).filter(
+      (c) => !approverSet.has(toRecipientEmail(c).toLowerCase()),
+    );
 
     await sendEmail(env, {
       to: approvers,

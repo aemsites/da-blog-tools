@@ -339,6 +339,46 @@ export async function getApproversForPath(org, repo, path, token) {
 }
 
 /**
+ * Get both the resolved approvers and CC recipients for a given content path.
+ * Reads the same config as getApproversForPath but also resolves the CC column.
+ * @param {string} org - Organization
+ * @param {string} repo - Repository
+ * @param {string} path - Content path
+ * @param {string} token - Authorization token
+ * @returns {Promise<{ approvers: string[], cc: string[] }>}
+ */
+async function getApproversAndCCForPath(org, repo, path, token) {
+  const config = await fetchWorkflowConfig(org, repo, token);
+  if (!config) {
+    throw new Error(
+      'Publish workflow configuration not found. Please ensure the "publish-workflow-config" tab '
+      + `exists in the DA config for repo "${org}/${repo}" or org "${org}".`,
+    );
+  }
+
+  const rules = config['publish-workflow-config']?.data || config.data || [];
+  const groupsData = config['groups-to-email']?.data || [];
+
+  const rule = findBestMatchingRule(path, rules);
+  if (!rule) return { approvers: [], cc: [] };
+
+  let approvers = rule.Approvers || rule.approvers || [];
+  if (typeof approvers === 'string') {
+    approvers = approvers.split(',').map((a) => a.trim()).filter(Boolean);
+  }
+
+  let cc = rule.CC || rule.cc || [];
+  if (typeof cc === 'string') {
+    cc = cc.split(',').map((c) => c.trim()).filter(Boolean);
+  }
+
+  return {
+    approvers: resolveApproversWithGroups(approvers, groupsData),
+    cc: cc.length > 0 ? resolveApproversWithGroups(cc, groupsData) : [],
+  };
+}
+
+/**
  * Check if a pending publish request exists for the given path in the requests sheet
  * @param {string} org - Organization
  * @param {string} repo - Repository
@@ -657,7 +697,7 @@ export async function removeMultiplePublishRequests(org, repo, paths, token) {
  */
 export async function resendPublishRequest(org, repo, path, requesterEmail, token) {
   try {
-    const approvers = await getApproversForPath(org, repo, path, token);
+    const { approvers, cc } = await getApproversAndCCForPath(org, repo, path, token);
     if (!approvers || approvers.length === 0) {
       return { success: false, error: 'No approvers found for this content path.' };
     }
@@ -671,6 +711,7 @@ export async function resendPublishRequest(org, repo, path, requesterEmail, toke
       previewUrl,
       authorEmail: requesterEmail,
       approvers,
+      cc,
     });
     const response = await fetch(`${getWorkerUrl()}/api/request-publish`, opts);
     const result = await response.json();
