@@ -14,7 +14,7 @@ When an author submits a publish request (via the [Request for Publish Plugin](.
 - **DA SDK**: Integrates with the DA.live SDK for authentication and context
 - **Helix Admin API**: Publishes content via `POST https://admin.hlx.page/live/{org}/{repo}/main/{path}` (single) or the [bulk publish API](https://www.aem.live/docs/admin.html#tag/publish/operation/bulkPublish) `POST https://admin.hlx.page/live/{org}/{repo}/main/*` (Approve All)
 - **DA Config API**: Reads the workflow configuration (approver rules and group-to-email mappings) via `GET https://admin.da.live/config/{org}/{repo}/` with automatic fallback to `GET https://admin.da.live/config/{org}/` if not found at repo level. See [DA Config API docs](https://docs.da.live/developers/api/config#get-config)
-- **DA Admin API**: Reads/writes the pending requests sheet at `/publish-workflow-requests.json`
+- **DA Admin API**: Reads/writes the pending requests sheet at `/.da/publish-workflow-requests.json`
 - **Cloudflare Worker**: Sends rejection notifications (`/api/notify-rejection`) and publish-success notifications to authors (`/api/notify-published`) via the `publish-requests` worker
 - **Adobe IMS**: Fetches the current user's email from the Adobe IMS profile endpoint
 
@@ -26,7 +26,7 @@ When the app is opened with just `org` and `repo` parameters, it enters **inbox 
 
 1. Fetches the user's email from Adobe IMS
 2. Reads the workflow config via the DA Config API (`/config/{org}/{repo}/`, falling back to `/config/{org}/`) — if not found at either level, an error is displayed
-3. Reads all pending requests from `publish-workflow-requests.json`
+3. Reads all pending requests from `/.da/publish-workflow-requests.json`
 4. For each pending request, finds the best (most specific) matching rule for that path, resolves the approvers (including expanding DL groups via the `groups-to-email` tab), and checks if the current user is among them
 5. Displays only the requests the user is authorized to approve
 6. Provides individual approve, review, and diff links per request, plus an **Approve All** bulk action
@@ -186,7 +186,7 @@ The config is a multi-sheet JSON. The app uses these two tabs:
 
 If the `publish-workflow-config` tab is not found at either level, the app shows an error.
 
-### `/publish-workflow-requests.json` (DA Source API)
+### `/.da/publish-workflow-requests.json` (DA Source API)
 
 Tracks pending publish requests with columns: `requester`, `approver`, `path`, `status`
 

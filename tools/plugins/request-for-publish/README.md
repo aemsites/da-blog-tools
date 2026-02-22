@@ -13,7 +13,7 @@ When an author finishes editing content and wants to publish it, they open this 
 - **Web Component**: Built as a LitElement custom element (`<request-for-publish>`)
 - **DA SDK**: Integrates with the DA.live SDK for authentication, context (org, repo, path), and dialog rendering
 - **DA Config API**: Reads the workflow configuration (approver rules and group-to-email mappings) via `GET https://admin.da.live/config/{org}/{repo}/` with automatic fallback to `GET https://admin.da.live/config/{org}/` if not found at repo level. See [DA Config API docs](https://docs.da.live/developers/api/config#get-config)
-- **DA Admin API**: Reads/writes the pending requests sheet at `/publish-workflow-requests.json`
+- **DA Admin API**: Reads/writes the pending requests sheet at `/.da/publish-workflow-requests.json`
 - **Cloudflare Worker**: Submits publish requests via the `publish-requests` worker (`/api/request-publish`) which sends email notifications to approvers with CC recipients copied
 - **Adobe IMS**: Fetches the current user's email from the Adobe IMS profile endpoint
 - **Dual Mode**: Can run as a fullsize-dialog (HTML entry point) or as a DA panel plugin (exported `init` function)
@@ -24,7 +24,7 @@ When an author finishes editing content and wants to publish it, they open this 
 2. The content path is derived from the DA SDK context (`/{org}/{repo}{path}` → strips org/repo prefix)
 3. It reads the workflow config via the DA Config API (`/config/{org}/{repo}/`, falling back to `/config/{org}/`) — if the `publish-workflow-config` tab is not found at either level, an error message is displayed and the form is not shown
 4. Distribution list (DL) groups in the Approvers and CC fields are resolved to individual emails using the `groups-to-email` tab
-5. It checks the requests sheet (`/publish-workflow-requests.json`) for any existing pending request by this user for this path
+5. It checks the requests sheet (`/.da/publish-workflow-requests.json`) for any existing pending request by this user for this path
 6. If a pending request exists, it shows a "Request Pending" state instead of the form
 7. Otherwise, the submission form is rendered with pre-filled details
 
@@ -75,7 +75,7 @@ If no matching rule is found, an error message is shown prompting the user to ad
 3. Author optionally adds a note for the reviewers
 4. Author clicks **"Request Publish"**
 5. The plugin sends the request to the Cloudflare Worker (`/api/request-publish`), which triggers email notifications to all resolved approvers with CC recipients copied
-6. On success, it writes a new entry to `/publish-workflow-requests.json` with status `pending`
+6. On success, it writes a new entry to `/.da/publish-workflow-requests.json` with status `pending`
 7. A success confirmation is shown listing the notified approvers and CC'd recipients
 
 ## Use Cases Handled
@@ -154,7 +154,7 @@ The config is a multi-sheet JSON. The plugin uses these two tabs:
 
 If the `publish-workflow-config` tab is not found at either level, the plugin shows an error message and disables submission.
 
-### `/publish-workflow-requests.json` (DA Source API)
+### `/.da/publish-workflow-requests.json` (DA Source API)
 
 Tracks pending publish requests with columns: `requester`, `approver`, `path`, `status`
 

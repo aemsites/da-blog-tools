@@ -11,7 +11,7 @@ const { getDaAdmin } = await import('https://da.live/nx/public/utils/constants.j
 const DA_ADMIN = getDaAdmin();
 
 // DA sheet path for requests (read/written via Source API)
-const REQUESTS_SHEET_PATH = '/publish-workflow-requests.json';
+const REQUESTS_SHEET_PATH = '/.da/publish-workflow-requests.json';
 
 // Config is read from the root repo/org config via DA Config API
 // The publish-workflow-config and groups-to-email tabs live inside
