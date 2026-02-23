@@ -37,8 +37,8 @@ class PublishRequestsApp extends LitElement {
   static properties = {
     context: { attribute: false },
     token: { attribute: false },
-    // view states: 'loading', 'inbox', 'review', 'approved', 'rejected',
-    //               'error', 'unauthorized', 'no-request'
+    // view states: 'loading', 'site-select', 'inbox', 'review', 'approved',
+    //               'rejected', 'error', 'unauthorized', 'no-request'
     _state: { state: true },
     _isProcessing: { state: true },
     _message: { state: true },
@@ -58,6 +58,8 @@ class PublishRequestsApp extends LitElement {
     _approveAllProcessing: { state: true },
     // My-requests mode: tracks per-path action ('resending' | 'withdrawing')
     _myRequestActions: { state: true },
+    // Site selection form
+    _siteSelectLoading: { state: true },
   };
 
   constructor() {
@@ -78,6 +80,7 @@ class PublishRequestsApp extends LitElement {
     this._approveAllProcessing = false;
     this._requester = false;
     this._myRequestActions = new Map();
+    this._siteSelectLoading = false;
   }
 
   connectedCallback() {
@@ -145,23 +148,17 @@ class PublishRequestsApp extends LitElement {
     // Parse URL parameters
     const urlParams = new URLSearchParams(window.location.search);
 
-    // Extract org and repo from URL path as fallback
-    // URL pattern: https://da.live/app/{org}/{repo}/tools/...
-    const pathSegments = window.location.pathname.split('/');
-    const pathOrg = pathSegments[2] || '';
-    const pathRepo = pathSegments[3] || '';
-
-    this._org = urlParams.get('org') || this.context?.org || pathOrg;
-    this._repo = urlParams.get('repo') || this.context?.repo || pathRepo;
+    this._org = urlParams.get('org') || this.context?.org;
+    this._repo = urlParams.get('repo') || this.context?.repo;
     this._path = urlParams.get('path') || '';
     this._authorEmail = urlParams.get('author') || '';
     this._previewUrl = urlParams.get('preview') || '';
     this._comment = urlParams.get('comment') || '';
     this._requester = urlParams.get('requester') || false;
-    // Validate org and repo are present
+
+    // If org/repo are missing, show the site selection form
     if (!this._org || !this._repo) {
-      this._state = 'error';
-      this._message = { type: 'error', text: 'Missing required parameters: org and repo are required.' };
+      this._state = 'site-select';
       return;
     }
 
@@ -272,6 +269,67 @@ class PublishRequestsApp extends LitElement {
     }
 
     this._state = 'review';
+  }
+
+  // ======== Site selection handler ========
+
+  async handleSiteSelect(e) {
+    e.preventDefault();
+    this._message = null;
+
+    const form = this.shadowRoot.querySelector('#site-select-form');
+    const formData = new FormData(form);
+    const org = formData.get('org')?.trim();
+    const repo = formData.get('repo')?.trim();
+
+    if (!org || !repo) {
+      this._message = { type: 'error', text: 'Please provide both Organization and Repository.' };
+      return;
+    }
+
+    this._siteSelectLoading = true;
+
+    // Fetch user email first (needed for permission check)
+    if (!this._userEmail) {
+      this._userEmail = await getUserEmail(this.token);
+      this._needsEmail = !this._userEmail;
+    }
+
+    if (this._needsEmail) {
+      this._siteSelectLoading = false;
+      this._message = { type: 'error', text: 'Unable to determine your email. Please log in to DA first.' };
+      return;
+    }
+
+    // Fetch pending requests — route based on requester vs approver mode
+    try {
+      const isRequesterMode = !!this._requester;
+      const requests = isRequesterMode
+        ? await getAllPendingRequestsByRequester(org, repo, this._userEmail, this.token)
+        : await getAllPendingRequestsForUser(org, repo, this._userEmail, this.token);
+
+      // If we got here without error, the user has access
+      this._org = org;
+      this._repo = repo;
+      this._pendingRequests = requests;
+
+      // Update URL params so the user can bookmark/share
+      const url = new URL(window.location.href);
+      url.searchParams.set('org', org);
+      url.searchParams.set('repo', repo);
+      try {
+        window.top.history.replaceState({}, '', url.toString());
+      } catch {
+        // Cross-origin iframe — update own history instead
+        window.history.replaceState({}, '', url.toString());
+      }
+
+      this._siteSelectLoading = false;
+      this._state = isRequesterMode ? 'my-requests' : 'inbox';
+    } catch (error) {
+      this._siteSelectLoading = false;
+      this._message = { type: 'error', text: error.message || `Unable to access site "${org}/${repo}". Please check the organization and repository names.` };
+    }
   }
 
   // ======== Single-request action handlers ========
@@ -563,6 +621,65 @@ class PublishRequestsApp extends LitElement {
   renderMessage() {
     if (!this._message) return nothing;
     return html`<div class="message ${this._message.type}">${this._message.text}</div>`;
+  }
+
+  // ======== Site Selection render ========
+
+  renderSiteSelect() {
+    const isRequesterMode = !!this._requester;
+    const title = isRequesterMode ? 'My Publish Requests' : 'Publish Request Inbox';
+    const subtitle = isRequesterMode
+      ? 'Select a DA site to view your pending publish requests.'
+      : 'Select a DA site to view pending publish requests for approval.';
+
+    return html`
+      <div class="site-select-container">
+        <header class="site-select-header">
+          <h1>${title}</h1>
+          <p class="site-select-subtitle">${subtitle}</p>
+        </header>
+
+        ${this._userEmail
+          ? html`<p class="reviewer-info">Logged in as: <strong>${this._userEmail}</strong></p>`
+          : nothing}
+
+        ${this.renderMessage()}
+
+        <form id="site-select-form" @submit=${this.handleSiteSelect} class="site-select-form">
+          <div class="form-group">
+            <label for="org">Organization <span class="required">*</span></label>
+            <input
+              type="text"
+              id="org"
+              name="org"
+              placeholder="e.g. my-org"
+              required
+              autocomplete="off"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="repo">Repository <span class="required">*</span></label>
+            <input
+              type="text"
+              id="repo"
+              name="repo"
+              placeholder="e.g. my-repo"
+              required
+              autocomplete="off"
+            />
+          </div>
+
+          <button
+            type="submit"
+            class="btn-primary btn-large"
+            ?disabled=${this._siteSelectLoading}
+          >
+            ${this._siteSelectLoading ? 'Loading...' : 'View Publish Requests'}
+          </button>
+        </form>
+      </div>
+    `;
   }
 
   // ======== Inbox renders ========
@@ -957,6 +1074,8 @@ class PublishRequestsApp extends LitElement {
     switch (this._state) {
       case 'loading':
         return this.renderLoading();
+      case 'site-select':
+        return this.renderSiteSelect();
       case 'error':
         return this.renderError();
       case 'unauthorized':
