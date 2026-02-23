@@ -89,6 +89,18 @@ class PublishRequestsApp extends LitElement {
     this.init();
   }
 
+  /**
+   * Build the parent DA app base URL from the context.
+   * Since this app runs inside a DA iframe, window.location reflects the
+   * iframe origin, not the parent DA URL. The context provides the host
+   * org/repo used to construct the parent-level DA app path.
+   */
+  get appBaseUrl() {
+    const { org, repo } = this.context || {};
+    const appPath = 'tools/apps/publish-requests-inbox/publish-requests-inbox';
+    return `https://da.live/app/${org}/${repo}/${appPath}`;
+  }
+
   get liveUrl() {
     // Build live URL: https://main--<repo>--<org>.aem.live/<path>
     return `https://main--${this._repo}--${this._org}.aem.live${this._path}`;
@@ -112,17 +124,14 @@ class PublishRequestsApp extends LitElement {
     // Build preview URL for the request path
     const previewUrl = `https://main--${this._repo}--${this._org}.aem.page${request.path}`;
     params.set('preview', previewUrl);
-    return `https://da.live/app/${this._org}/${this._repo}/tools/publish-requests-inbox/publish-requests-inbox?${params.toString()}`;
+    return `${this.appBaseUrl}?${params.toString()}`;
   }
 
   getInboxUrl() {
-    const params = new URLSearchParams(window.location.search);
-    params.delete('path');
-    params.delete('author');
-    params.delete('preview');
-    params.delete('comment');
-    params.delete('requester');
-    return `https://da.live/app/${this._org}/${this._repo}/tools/publish-requests-inbox/publish-requests-inbox?${params.toString()}`;
+    const params = new URLSearchParams();
+    params.set('org', this._org);
+    params.set('repo', this._repo);
+    return `${this.appBaseUrl}?${params.toString()}`;
   }
 
   /**
@@ -148,8 +157,11 @@ class PublishRequestsApp extends LitElement {
     // Parse URL parameters
     const urlParams = new URLSearchParams(window.location.search);
 
-    this._org = urlParams.get('org') || this.context?.org;
-    this._repo = urlParams.get('repo') || this.context?.repo;
+    // Only use explicit URL params for org/repo — do NOT fall back to
+    // this.context because that reflects the *current* DA site the app is
+    // hosted on, not the site the user wants to manage.
+    this._org = urlParams.get('org') || '';
+    this._repo = urlParams.get('repo') || '';
     this._path = urlParams.get('path') || '';
     this._authorEmail = urlParams.get('author') || '';
     this._previewUrl = urlParams.get('preview') || '';
