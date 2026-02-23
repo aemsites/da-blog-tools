@@ -201,7 +201,7 @@ export async function publishContent(org, repo, path, token) {
     // Ensure path starts with /
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
-    const publishUrl = `https://admin.hlx.page/live/${org}/${repo}/main${cleanPath}`;
+    const publishUrl = `https://da-etc.adobeaem.workers.dev/cors?url=https://admin.hlx.page/live/${org}/${repo}/main${cleanPath}`;
 
     const response = await fetch(publishUrl, {
       method: 'POST',
