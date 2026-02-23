@@ -10,6 +10,9 @@ const WORKER_URLS = {
 const { getDaAdmin } = await import('https://da.live/nx/public/utils/constants.js');
 const DA_ADMIN = getDaAdmin();
 
+// daFetch ensures a fresh IMS token is used on every request (handles token expiry)
+const { daFetch } = await import('https://da.live/nx/utils/daFetch.js');
+
 // DA sheet path for requests (read/written via Source API)
 const REQUESTS_SHEET_PATH = '/.da/publish-workflow-requests.json';
 
@@ -196,19 +199,14 @@ async function fetchWorkflowConfig(org, repo, token) {
  * @param {string} token - Authorization token
  * @returns {Promise<Object>} Result
  */
-export async function publishContent(org, repo, path, token) {
+export async function publishContent(org, repo, path) {
   try {
     // Ensure path starts with /
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
     const publishUrl = `https://da-etc.adobeaem.workers.dev/cors?url=https://admin.hlx.page/live/${org}/${repo}/main${cleanPath}`;
 
-    const response = await fetch(publishUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const response = await daFetch(publishUrl, { method: 'POST' });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -535,19 +533,16 @@ export async function getAllPendingRequestsForUser(org, repo, userEmail, token) 
  * @param {string} token - Authorization token
  * @returns {Promise<Object>} Result with job info or error
  */
-export async function bulkPublishContent(org, repo, paths, token) {
+export async function bulkPublishContent(org, repo, paths) {
   try {
     // Normalize paths — ensure each starts with /
     const cleanPaths = paths.map((p) => (p.startsWith('/') ? p : `/${p}`));
 
     const bulkUrl = `https://admin.hlx.page/live/${org}/${repo}/main/*`;
 
-    const response = await fetch(bulkUrl, {
+    const response = await daFetch(bulkUrl, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paths: cleanPaths }),
     });
 
@@ -585,15 +580,13 @@ export async function bulkPublishContent(org, repo, paths, token) {
  * @param {number} intervalMs - Polling interval in milliseconds (default: 2s)
  * @returns {Promise<Object>} Final job status
  */
-export async function pollJobStatus(jobSelfUrl, token, maxWaitMs = 60000, intervalMs = 2000) {
+export async function pollJobStatus(jobSelfUrl, maxWaitMs = 60000, intervalMs = 2000) {
   const jobUrl = `${jobSelfUrl}/details`;
   const startTime = Date.now();
 
   while (Date.now() - startTime < maxWaitMs) {
     try {
-      const resp = await fetch(jobUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const resp = await daFetch(jobUrl);
 
       if (!resp.ok) {
         console.warn('Job status check failed:', resp.status);

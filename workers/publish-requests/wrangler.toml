@@ -1,3 +1,4 @@
+account_id = "ac7ee4615628005dc5ba0a22f0aae2a6"
 name = "publish-requests"
 main = "src/index.js"
 compatibility_date = "2025-02-14"
@@ -11,7 +12,7 @@ ENVIRONMENT = "dev"
 #   "gmail"   → Gmail API via OAuth (current production path)
 #   "wsu-api" → WSU AEM Cloud sendEmail endpoint (testing)
 # -------------------------------------------------------------------
-EMAIL_PROVIDER = "wsu-api"
+EMAIL_PROVIDER = "gmail"
 
 # Gmail OAuth email sender
 # Override the From display name (defaults to "DA Publishing <gmail-address>")
