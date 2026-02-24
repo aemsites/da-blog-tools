@@ -197,7 +197,8 @@ async function fetchWorkflowConfig(org, site, token) {
 /**
  * Detect approvers for a content path by reading the config via DA Config API.
  * Tries site-level config first, then falls back to org-level.
- * Resolves distribution list groups to individual emails using the publish-workflow-groups-to-email tab.
+ * Resolves distribution list groups to individual emails using the
+ * publish-workflow-groups-to-email tab.
  * @param {string} path - The content path
  * @param {string} org - Organization
  * @param {string} site - Site

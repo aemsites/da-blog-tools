@@ -565,7 +565,7 @@ async function handleRequestPublish(request, env) {
   // Format: https://da.live/app/{org}/{site}/tools/apps/publish-requests-inbox/publish-requests-inbox?org={org}&site={site}&...
   const appParams = new URLSearchParams({
     org,
-    site: site,
+    site,
     path,
     author: authorEmail,
     ...(previewUrl && { preview: previewUrl }),
