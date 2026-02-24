@@ -130,6 +130,7 @@ class RequestForPublishPlugin extends LitElement {
 
   async handleSubmit(e) {
     e.preventDefault();
+    if (this._isSubmitting) return;
     this._isSubmitting = true;
     this._message = null;
 
