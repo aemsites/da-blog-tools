@@ -9,6 +9,9 @@
     "deploy:prod": "wrangler deploy --env prod",
     "tail": "wrangler tail"
   },
+  "dependencies": {
+    "jose": "^5.10.0"
+  },
   "devDependencies": {
     "wrangler": "^4.62.0"
   }

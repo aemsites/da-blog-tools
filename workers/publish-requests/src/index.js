@@ -6,6 +6,8 @@
  * NO D1 database, NO n8n - direct Email integration
  */
 
+import { createRemoteJWKSet, jwtVerify } from 'jose';
+
 // CORS headers for cross-origin requests
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,34 +25,20 @@ function jsonResponse(data, headers = {}, status = 200) {
   });
 }
 
-/**
- * Decode a JWT token (without signature verification)
- * For DA tokens, we validate claims instead of signature
- */
-function decodeJWT(token) {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-      return null;
-    }
+// Adobe IMS JWKS endpoint — public keys used to verify token signatures
+const IMS_JWKS_URL = 'https://ims-na1.adobelogin.com/ims/keys';
+const DA_CLIENT_ID = 'darkalley';
 
-    // Decode the payload (second part)
-    const payload = parts[1];
-    // Handle base64url encoding (replace - with +, _ with /)
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonStr = atob(base64);
-    return JSON.parse(jsonStr);
-  } catch (error) {
-    console.error('JWT decode error:', error);
-    return null;
-  }
-}
+// Cache the JWKS remotely — createRemoteJWKSet handles key caching internally
+const getJWKS = createRemoteJWKSet(new URL(IMS_JWKS_URL));
 
 /**
- * Validate DA token by decoding and checking claims
- * Checks: client_id is 'darkalley', token not expired, has user
+ * Validate a DA Bearer token by verifying its signature against Adobe IMS
+ * public keys (JWKS) and checking required claims.
+ * @param {Request} request - Incoming request
+ * @returns {Promise<{valid: boolean, error?: string, user?: object}>}
  */
-function validateDAToken(request) {
+async function validateDAToken(request) {
   const authHeader = request.headers.get('Authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -58,45 +46,37 @@ function validateDAToken(request) {
     return { valid: false, error: 'Missing or invalid Authorization header' };
   }
 
-  const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+  const token = authHeader.substring(7);
 
-  // Decode the JWT
-  const payload = decodeJWT(token);
+  try {
+    // Verify signature against Adobe IMS public keys.
+    // Note: IMS access tokens don't include a standard "iss" claim,
+    // so we skip issuer validation and check "as" + "client_id" instead.
+    const { payload } = await jwtVerify(token, getJWKS);
 
-  if (!payload) {
-    console.error('Invalid token format');
-    return { valid: false, error: 'Invalid token format' };
+    // Confirm the token was issued for the DA application
+    if (payload.client_id !== DA_CLIENT_ID) {
+      console.error('Token client_id mismatch:', payload.client_id);
+      return { valid: false, error: 'Token not issued for this application' };
+    }
+
+    // Confirm a user identity is present
+    if (!payload.user_id && !payload.aa_id) {
+      console.error('Token missing user identity');
+      return { valid: false, error: 'Token missing user identity' };
+    }
+
+    return {
+      valid: true,
+      user: {
+        id: payload.user_id,
+        email: payload.aa_id,
+      },
+    };
+  } catch (error) {
+    console.error('Token verification failed:', error.message);
+    return { valid: false, error: 'Token verification failed' };
   }
-
-  // Check client_id is from DA (darkalley)
-  if (payload.client_id !== 'darkalley') {
-    console.error('Token not from DA');
-    return { valid: false, error: 'Token not from DA' };
-  }
-
-  // Check token is not expired
-  const createdAt = parseInt(payload.created_at, 10);
-  const expiresIn = parseInt(payload.expires_in, 10);
-  const now = Date.now();
-
-  if (createdAt + expiresIn < now) {
-    console.error('Token expired');
-    return { valid: false, error: 'Token expired' };
-  }
-
-  // Check has valid user
-  if (!payload.aa_id && !payload.user_id) {
-    console.error('Token missing user identity');
-    return { valid: false, error: 'Token missing user identity' };
-  }
-
-  return {
-    valid: true,
-    user: {
-      id: payload.user_id,
-      email: payload.aa_id,
-    },
-  };
 }
 
 /**
@@ -306,13 +286,48 @@ async function sendEmail(env, params) {
 // }
 
 /**
+ * Escape HTML special characters to prevent injection in email bodies.
+ * Applied to all user-supplied values before interpolation into HTML.
+ * @param {*} value - The value to escape (coerced to string)
+ * @returns {string} HTML-safe string
+ */
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+/**
+ * Strip CR and LF characters from a value used in an RFC 2822 email Subject header.
+ * A newline in the subject allows an attacker to inject arbitrary headers
+ * (e.g. "Bcc: victim@example.com") into the outgoing message.
+ * @param {*} value - The value to sanitize (coerced to string)
+ * @returns {string} Subject-safe string with no line-break characters
+ */
+function sanitizeSubject(value) {
+  return String(value ?? '').replace(/[\r\n]+/g, ' ');
+}
+
+/**
  * Build approval request email HTML
  * Styled to match DA.live design system (Spectrum 2 / nexter.css)
  */
 function buildApprovalRequestEmail({
-  org, repo, path, previewUrl, authorEmail, authorName, comment, appUrl, inboxUrl,
+  org, site, path, previewUrl, authorEmail, authorName, comment, appUrl, inboxUrl,
 }) {
-  const authorDisplay = authorName || authorEmail;
+  const authorDisplay = escapeHtml(authorName || authorEmail);
+  const ePath = escapeHtml(path);
+  const eOrg = escapeHtml(org);
+  const eSite = escapeHtml(site);
+  // appUrl and inboxUrl are constructed server-side from URLSearchParams
+  // — escape for HTML attribute context
+  const eAppUrl = escapeHtml(appUrl);
+  const eInboxUrl = escapeHtml(inboxUrl);
+  const ePreviewUrl = previewUrl ? escapeHtml(previewUrl) : null;
+  const eComment = comment ? escapeHtml(comment) : null;
 
   return `
 <!DOCTYPE html>
@@ -334,30 +349,30 @@ function buildApprovalRequestEmail({
 
     <div style="background: #f7f7f7; border: 1px solid #e1e1e1; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
       <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #505050;">Content URL</p>
-      <p style="margin: 0 0 16px 0; font-weight: 700; word-break: break-all; font-size: 14px;">${path}</p>
+      <p style="margin: 0 0 16px 0; font-weight: 700; word-break: break-all; font-size: 14px;">${ePath}</p>
 
-      ${previewUrl ? `
+      ${ePreviewUrl ? `
       <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #505050;">Preview Page URL</p>
       <p style="margin: 0 0 16px 0;">
-        <a href="${previewUrl}" style="color: #3b63fb; text-decoration: none; font-size: 14px;">${previewUrl}</a>
+        <a href="${ePreviewUrl}" style="color: #3b63fb; text-decoration: none; font-size: 14px;">${ePreviewUrl}</a>
       </p>
       ` : ''}
 
-      ${comment ? `
+      ${eComment ? `
       <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #505050;">CONTENT UPDATE DESCRIPTION:</p>
-      <p style="margin: 0; font-style: italic; background: #f1f1f1; padding: 12px; border-radius: 8px; font-size: 14px;">"${comment}"</p>
+      <p style="margin: 0; font-style: italic; background: #f1f1f1; padding: 12px; border-radius: 8px; font-size: 14px;">"${eComment}"</p>
       ` : ''}
     </div>
 
     <div style="text-align: center; margin: 24px 0;">
-      <a href="${appUrl}"
+      <a href="${eAppUrl}"
          style="display: inline-block; background: #990033; color: white; padding: 12px 32px; text-decoration: none; border-radius: 16px; font-weight: 700; font-size: 15px; line-height: 16px;">
         Review &amp; Approve
       </a>
     </div>
 
     <div style="text-align: center; margin: 24px 0;">
-      <a href="${inboxUrl}"
+      <a href="${eInboxUrl}"
          style="color: #3b63fb; text-decoration: none; font-size: 14px;">
         View all pending approvals
       </a>
@@ -370,7 +385,7 @@ function buildApprovalRequestEmail({
 
   <div style="padding: 16px; text-align: center; font-size: 12px; color: #505050;">
     <p style="margin: 0;">Content Publishing Workflow</p>
-    <p style="margin: 4px 0 0 0;">Org: ${org} | Repo: ${repo}</p>
+    <p style="margin: 4px 0 0 0;">Org: ${eOrg} | Site: ${eSite}</p>
   </div>
 </body>
 </html>
@@ -382,10 +397,14 @@ function buildApprovalRequestEmail({
  * Styled to match DA.live design system (Spectrum 2 / nexter.css)
  */
 function buildRejectionEmail({
-  org, repo, path, authorEmail, authorName, rejecterEmail, rejecterName, reason,
+  org, site, path, authorEmail, authorName, rejecterEmail, rejecterName, reason,
 }) {
-  const authorDisplay = authorName || authorEmail;
-  const rejecterDisplay = rejecterName || rejecterEmail;
+  const authorDisplay = escapeHtml(authorName || authorEmail);
+  const rejecterDisplay = escapeHtml(rejecterName || rejecterEmail);
+  const ePath = escapeHtml(path);
+  const eOrg = escapeHtml(org);
+  const eSite = escapeHtml(site);
+  const eReason = escapeHtml(reason);
 
   return `
 <!DOCTYPE html>
@@ -409,7 +428,7 @@ function buildRejectionEmail({
       <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
         <tr>
           <td style="padding: 8px 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #505050; width: 120px; vertical-align: top;">Content Path</td>
-          <td style="padding: 8px 0; font-weight: 700; word-break: break-all;">${path}</td>
+          <td style="padding: 8px 0; font-weight: 700; word-break: break-all;">${ePath}</td>
         </tr>
         <tr>
           <td style="padding: 8px 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #505050; vertical-align: top;">Requested By</td>
@@ -424,7 +443,7 @@ function buildRejectionEmail({
 
     <div style="background: #fce8e6; border: 1px solid #f5c6c2; border-radius: 8px; padding: 16px;">
       <p style="margin: 0 0 8px 0; font-weight: 700; color: #990033; font-size: 14px;">Reason for Rejection</p>
-      <p style="margin: 0; font-style: italic; font-size: 14px;">"${reason}"</p>
+      <p style="margin: 0; font-style: italic; font-size: 14px;">"${eReason}"</p>
     </div>
 
     <p style="margin: 24px 0 0 0; font-size: 13px; color: #505050;">
@@ -434,7 +453,7 @@ function buildRejectionEmail({
 
   <div style="padding: 16px; text-align: center; font-size: 12px; color: #505050;">
     <p style="margin: 0;">Content Publishing Workflow</p>
-    <p style="margin: 4px 0 0 0;">Org: ${org} | Repo: ${repo}</p>
+    <p style="margin: 4px 0 0 0;">Org: ${eOrg} | Site: ${eSite}</p>
   </div>
 </body>
 </html>
@@ -446,9 +465,11 @@ function buildRejectionEmail({
  * Styled to match DA.live design system (Spectrum 2 / nexter.css)
  */
 function buildPublishedEmail({
-  org, repo, paths, approverEmail, approverName,
+  org, site, paths, approverEmail, approverName,
 }) {
-  const approverDisplay = approverName || approverEmail;
+  const approverDisplay = escapeHtml(approverName || approverEmail);
+  const eOrg = escapeHtml(org);
+  const eSite = escapeHtml(site);
   const isBulk = paths.length > 1;
   const title = isBulk
     ? `${paths.length} Pages Published`
@@ -459,11 +480,14 @@ function buildPublishedEmail({
 
   const pathRows = paths
     .map(
-      (p) => `<tr>
+      (p) => {
+        const ep = escapeHtml(p);
+        return `<tr>
         <td style="padding: 8px 12px; border-bottom: 1px solid #e1e1e1; word-break: break-all; font-size: 14px;">
-          <a href="https://main--${repo}--${org}.aem.live${p}" style="color: #3b63fb; text-decoration: none;">${p}</a>
+          <a href="https://main--${eSite}--${eOrg}.aem.live${ep}" style="color: #3b63fb; text-decoration: none;">${ep}</a>
         </td>
-      </tr>`,
+      </tr>`;
+      },
     )
     .join('');
 
@@ -501,7 +525,7 @@ function buildPublishedEmail({
 
   <div style="padding: 16px; text-align: center; font-size: 12px; color: #505050;">
     <p style="margin: 0;">Content Publishing Workflow</p>
-    <p style="margin: 4px 0 0 0;">Org: ${org} | Repo: ${repo}</p>
+    <p style="margin: 4px 0 0 0;">Org: ${eOrg} | Site: ${eSite}</p>
   </div>
 </body>
 </html>
@@ -528,7 +552,7 @@ async function handleHealth(env) {
 /**
  * Send publish request email to approvers
  * POST /api/request-publish
- * Body: { org, repo, path, previewUrl, authorEmail, authorName?, comment?, approvers }
+ * Body: { org, site, path, previewUrl, authorEmail, authorName?, comment?, approvers }
  */
 async function handleRequestPublish(request, env) {
   let body;
@@ -548,7 +572,7 @@ async function handleRequestPublish(request, env) {
     cc,
   } = body;
   const org = body.org || env.DA_ORG;
-  const repo = body.repo || env.DA_REPO;
+  const site = body.site || env.DA_SITE;
 
   // Validation
   if (!path) {
@@ -562,10 +586,10 @@ async function handleRequestPublish(request, env) {
   }
 
   // Build approval URL with parameters
-  // Format: https://da.live/app/{org}/{repo}/tools/apps/publish-requests-inbox/publish-requests-inbox?org={org}&repo={repo}&...
+  // Format: https://da.live/app/{org}/{site}/tools/apps/publish-requests-inbox/publish-requests-inbox?org={org}&site={site}&...
   const appParams = new URLSearchParams({
     org,
-    repo,
+    site,
     path,
     author: authorEmail,
     ...(previewUrl && { preview: previewUrl }),
@@ -578,7 +602,7 @@ async function handleRequestPublish(request, env) {
   try {
     const emailHtml = buildApprovalRequestEmail({
       org,
-      repo,
+      site,
       path,
       previewUrl,
       authorEmail,
@@ -600,7 +624,7 @@ async function handleRequestPublish(request, env) {
     await sendEmail(env, {
       to: approvers,
       cc: filteredCC,
-      subject: `[Website Publish Request] ${path}`,
+      subject: `[Website Publish Request] ${sanitizeSubject(path)}`,
       html: emailHtml,
     });
 
@@ -619,7 +643,7 @@ async function handleRequestPublish(request, env) {
 /**
  * Send rejection notification email
  * POST /api/notify-rejection
- * Body: { org, repo, path, authorEmail, authorName?, rejecterEmail,
+ * Body: { org, site, path, authorEmail, authorName?, rejecterEmail,
  *         rejecterName?, reason, digiops? }
  */
 async function handleNotifyRejection(request, env) {
@@ -640,7 +664,7 @@ async function handleNotifyRejection(request, env) {
     digiops,
   } = body;
   const org = body.org || env.DA_ORG;
-  const repo = body.repo || env.DA_REPO;
+  const site = body.site || env.DA_SITE;
 
   // Validation
   if (!path) {
@@ -666,7 +690,7 @@ async function handleNotifyRejection(request, env) {
   try {
     const emailHtml = buildRejectionEmail({
       org,
-      repo,
+      site,
       path,
       authorEmail,
       authorName,
@@ -677,7 +701,7 @@ async function handleNotifyRejection(request, env) {
 
     await sendEmail(env, {
       to: recipients,
-      subject: `[Rejected] Website Publish Request: ${path}`,
+      subject: `[Rejected] Website Publish Request: ${sanitizeSubject(path)}`,
       html: emailHtml,
     });
 
@@ -695,7 +719,7 @@ async function handleNotifyRejection(request, env) {
 /**
  * Send publish-success notification to authors
  * POST /api/notify-published
- * Body: { org, repo, paths: [{ path, authorEmail }], approverEmail, approverName? }
+ * Body: { org, site, paths: [{ path, authorEmail }], approverEmail, approverName? }
  */
 async function handleNotifyPublished(request, env) {
   let body;
@@ -711,7 +735,7 @@ async function handleNotifyPublished(request, env) {
     approverName,
   } = body;
   const org = body.org || env.DA_ORG;
-  const repo = body.repo || env.DA_REPO;
+  const site = body.site || env.DA_SITE;
 
   // Validation
   if (!paths || paths.length === 0) {
@@ -735,7 +759,7 @@ async function handleNotifyPublished(request, env) {
     for (const [authorEmail, authorPaths] of Object.entries(byAuthor)) {
       const emailHtml = buildPublishedEmail({
         org,
-        repo,
+        site,
         paths: authorPaths,
         approverEmail,
         approverName,
@@ -745,7 +769,7 @@ async function handleNotifyPublished(request, env) {
         to: [authorEmail],
         subject: authorPaths.length > 1
           ? `[Published] ${authorPaths.length} pages published`
-          : `[Published] ${authorPaths[0]}`,
+          : `[Published] ${sanitizeSubject(authorPaths[0])}`,
         html: emailHtml,
       });
       notifiedAuthors.push(authorEmail);
@@ -784,7 +808,7 @@ export default {
       }
 
       // All other endpoints require DA token validation
-      const authResult = validateDAToken(request);
+      const authResult = await validateDAToken(request);
       if (!authResult.valid) {
         return jsonResponse({ error: authResult.error }, {}, 401);
       }

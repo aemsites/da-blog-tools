@@ -1,11 +1,7 @@
 /* eslint-disable import/no-unresolved, no-console, no-restricted-syntax */
 /* eslint-disable no-continue, prefer-destructuring */
-// Worker URLs by environment
-const WORKER_URLS = {
-  local: 'http://localhost:8787',
-  dev: 'https://publish-requests.aem-poc-lab.workers.dev',
-  prod: 'https://publish-requests.aem-poc-lab.workers.dev',
-};
+
+const LOCAL_WORKER_URL = 'http://localhost:8787';
 
 const { getDaAdmin } = await import('https://da.live/nx/public/utils/constants.js');
 const DA_ADMIN = getDaAdmin();
@@ -13,36 +9,42 @@ const DA_ADMIN = getDaAdmin();
 // DA sheet path for requests (read/written via Source API)
 const REQUESTS_SHEET_PATH = '/.da/publish-workflow-requests.json';
 
-// Config is read from the root repo/org config via DA Config API
-// The publish-workflow-config and groups-to-email tabs live inside
-// the root config at GET /config/{org}/{repo}/
+// Config is read from the root site/org config via DA Config API
+// The publish-workflow-config, publish-workflow-groups-to-email, and
+// publish-workflow-settings tabs live inside the root config at
+// GET /config/{org}/{site}/
 // See: https://docs.da.live/developers/api/config#get-config
 
+let cachedWorkerUrl = null;
+
 /**
- * Detect the current environment from URL or hostname
- * @returns {string} 'local', 'dev', or 'prod'
+ * Extract the workerUrl value from the publish-workflow-settings config tab.
+ * @param {Object} config - The full config object from DA Config API
+ * @returns {string|null} The worker URL or null if not configured
  */
-function getEnvironment() {
-  const hostname = window.location.hostname;
-
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'local';
-  }
-
-  if (hostname.startsWith('main--')) {
-    return 'prod';
-  }
-
-  return 'dev';
+function extractWorkerUrl(config) {
+  const settings = config?.['publish-workflow-settings']?.data || [];
+  const entry = settings.find((r) => (r.key || r.Key) === 'workerUrl');
+  return entry?.value || entry?.Value || null;
 }
 
 /**
- * Get the Worker URL for the current environment
+ * Get the Worker URL (resolved from publish-workflow-settings config tab).
+ * Falls back to localhost:8787 for local development.
  * @returns {string} Worker URL
  */
-export function getWorkerUrl() {
-  const env = getEnvironment();
-  return WORKER_URLS[env] || WORKER_URLS.dev;
+function getWorkerUrl() {
+  const { hostname } = window.location;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return cachedWorkerUrl || LOCAL_WORKER_URL;
+  }
+  if (!cachedWorkerUrl) {
+    throw new Error(
+      'Worker URL not configured. Please add a "publish-workflow-settings" tab '
+      + 'with a "workerUrl" key-value pair to the DA config.',
+    );
+  }
+  return cachedWorkerUrl;
 }
 
 /**
@@ -121,7 +123,7 @@ function findBestMatchingRule(path, rules) {
 
 /**
  * Resolve approvers list by expanding distribution list (DL) groups to individual
- * emails using the groups-to-email mapping from the config sheet.
+ * emails using the publish-workflow-groups-to-email mapping from the config sheet.
  * @param {string[]} approversList - Raw approver entries (may include DL names)
  * @param {Array<{group: string, email: string}>} groupsData - Group-to-email mappings
  * @returns {string[]} Deduplicated list of individual email addresses
@@ -153,27 +155,29 @@ function resolveApproversWithGroups(approversList, groupsData) {
 
 /**
  * Fetch the workflow config via the DA Config API.
- * Tries repo-level first: GET /config/{org}/{repo}/publish-workflow-config
+ * Tries site-level first: GET /config/{org}/{site}/publish-workflow-config
  * Falls back to org-level: GET /config/{org}/publish-workflow-config
  * See: https://docs.da.live/developers/api/config#get-config
  * @param {string} org - Organization
- * @param {string} repo - Repository
+ * @param {string} site - Site
  * @param {string} token - Authorization token
  * @returns {Promise<Object|null>} Config data or null on failure
  */
-async function fetchWorkflowConfig(org, repo, token) {
+async function fetchWorkflowConfig(org, site, token) {
   const headers = {
     Authorization: `Bearer ${token}`,
     Accept: 'application/json',
   };
 
-  // 1. Try repo-level root config (contains publish-workflow-config & groups-to-email tabs)
-  const repoUrl = `${DA_ADMIN}/config/${org}/${repo}/`;
-  const repoResp = await fetch(repoUrl, { headers });
-  if (repoResp.ok) {
-    const config = await repoResp.json();
-    // Only use this config if it actually has the publish-workflow-config tab
-    if (config['publish-workflow-config']) return config;
+  // 1. Try site-level root config
+  const siteUrl = `${DA_ADMIN}/config/${org}/${site}/`;
+  const siteResp = await fetch(siteUrl, { headers });
+  if (siteResp.ok) {
+    const config = await siteResp.json();
+    if (config['publish-workflow-config']) {
+      cachedWorkerUrl = extractWorkerUrl(config) || cachedWorkerUrl;
+      return config;
+    }
   }
 
   // 2. Fallback to org-level root config
@@ -181,7 +185,10 @@ async function fetchWorkflowConfig(org, repo, token) {
   const orgResp = await fetch(orgUrl, { headers });
   if (orgResp.ok) {
     const config = await orgResp.json();
-    if (config['publish-workflow-config']) return config;
+    if (config['publish-workflow-config']) {
+      cachedWorkerUrl = extractWorkerUrl(config) || cachedWorkerUrl;
+      return config;
+    }
   }
 
   return null;
@@ -189,16 +196,17 @@ async function fetchWorkflowConfig(org, repo, token) {
 
 /**
  * Detect approvers for a content path by reading the config via DA Config API.
- * Tries repo-level config first, then falls back to org-level.
- * Resolves distribution list groups to individual emails using the groups-to-email tab.
+ * Tries site-level config first, then falls back to org-level.
+ * Resolves distribution list groups to individual emails using the
+ * publish-workflow-groups-to-email tab.
  * @param {string} path - The content path
  * @param {string} org - Organization
- * @param {string} repo - Repository
+ * @param {string} site - Site
  * @param {string} token - Authorization token
  * @returns {Promise<Object>} Approvers data
  */
-export async function detectApprovers(path, org, repo, token) {
-  const config = await fetchWorkflowConfig(org, repo, token);
+export async function detectApprovers(path, org, site, token) {
+  const config = await fetchWorkflowConfig(org, site, token);
 
   if (!config) {
     return {
@@ -207,13 +215,13 @@ export async function detectApprovers(path, org, repo, token) {
       pattern: '',
       source: 'error',
       error: 'Publish workflow configuration not found. Please ensure the "publish-workflow-config" tab '
-        + `exists in the DA config for repo "${org}/${repo}" or org "${org}".`,
+        + `exists in the DA config for site "${org}/${site}" or org "${org}".`,
     };
   }
 
-  // Multi-sheet format: tabs are 'publish-workflow-config' and 'groups-to-email'
+  // Multi-sheet format: tabs are 'publish-workflow-config' and 'publish-workflow-groups-to-email'
   const rules = config['publish-workflow-config']?.data || config.data || config.rules || [];
-  const groupsData = config['groups-to-email']?.data || [];
+  const groupsData = config['publish-workflow-groups-to-email']?.data || [];
 
   // Find the best (most specific) matching rule for this path
   // Prioritizes closest match → parent match → root-level match
@@ -261,14 +269,14 @@ export async function detectApprovers(path, org, repo, token) {
  * Add a request entry to the requests sheet in DA.
  * Reads the current sheet, appends the new request row, and writes it back.
  * @param {string} org - Organization
- * @param {string} repo - Repository
+ * @param {string} site - Site
  * @param {Object} requestData - The request data (path, authorEmail, approvers)
  * @param {string} token - Authorization token
  * @returns {Promise<Object>} Result
  */
-async function addRequestToDASheet(org, repo, requestData, token) {
+async function addRequestToDASheet(org, site, requestData, token) {
   try {
-    const sheetUrl = `${DA_ADMIN}/source/${org}/${repo}${REQUESTS_SHEET_PATH}`;
+    const sheetUrl = `${DA_ADMIN}/source/${org}/${site}${REQUESTS_SHEET_PATH}`;
 
     // 1. Read the current sheet
     const readOpts = getOpts(token, 'GET');
@@ -338,8 +346,8 @@ export async function submitPublishRequest(requestData, token) {
     }
 
     // After successful submission, add the request to the DA sheet
-    const { org, repo } = requestData;
-    const sheetResult = await addRequestToDASheet(org, repo, requestData, token);
+    const { org, site } = requestData;
+    const sheetResult = await addRequestToDASheet(org, site, requestData, token);
     if (!sheetResult.success) {
       console.warn('Request sent but failed to update DA sheet:', sheetResult.error);
     }
@@ -398,15 +406,15 @@ export async function resendPublishRequest(requestData, token) {
  * Withdraw (remove) a pending publish request from the DA sheet.
  * Reads the sheet, filters out the matching pending request, and writes it back.
  * @param {string} org - Organization
- * @param {string} repo - Repository
+ * @param {string} site - Site
  * @param {string} path - Content path
  * @param {string} requesterEmail - The requester's email
  * @param {string} token - Authorization token
  * @returns {Promise<Object>} Result
  */
-export async function withdrawPublishRequest(org, repo, path, requesterEmail, token) {
+export async function withdrawPublishRequest(org, site, path, requesterEmail, token) {
   try {
-    const sheetUrl = `${DA_ADMIN}/source/${org}/${repo}${REQUESTS_SHEET_PATH}`;
+    const sheetUrl = `${DA_ADMIN}/source/${org}/${site}${REQUESTS_SHEET_PATH}`;
     const readOpts = getOpts(token, 'GET');
     const resp = await fetch(sheetUrl, readOpts);
     if (!resp.ok) {
@@ -465,15 +473,15 @@ export async function withdrawPublishRequest(org, repo, path, requesterEmail, to
 /**
  * Check if a pending publish request already exists for the given path and requester
  * @param {string} org - Organization
- * @param {string} repo - Repository
+ * @param {string} site - Site
  * @param {string} path - Content path
  * @param {string} requesterEmail - The requester's email
  * @param {string} token - Authorization token
  * @returns {Promise<Object|null>} The existing pending request row, or null if none found
  */
-export async function checkExistingRequest(org, repo, path, requesterEmail, token) {
+export async function checkExistingRequest(org, site, path, requesterEmail, token) {
   try {
-    const sheetUrl = `${DA_ADMIN}/source/${org}/${repo}${REQUESTS_SHEET_PATH}`;
+    const sheetUrl = `${DA_ADMIN}/source/${org}/${site}${REQUESTS_SHEET_PATH}`;
     const opts = getOpts(token, 'GET');
     const resp = await fetch(sheetUrl, opts);
     if (!resp.ok) return null;
@@ -510,5 +518,3 @@ export async function getUserEmail(token) {
     return '';
   }
 }
-
-export { getEnvironment };

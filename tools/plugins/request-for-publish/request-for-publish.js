@@ -72,21 +72,21 @@ class RequestForPublishPlugin extends LitElement {
   }
 
   get contentPath() {
-    // Remove org/repo prefix to get the content path
+    // Remove org/site prefix to get the content path
     return this.path.replace(/^\/[^/]+\/[^/]+/, '');
   }
 
   get previewUrl() {
-    // Build AEM preview URL: https://main--<repo>--<org>.aem.page/<path>
-    const { org, repo } = this.context;
-    return `https://main--${repo}--${org}.aem.page${this.contentPath}`;
+    // Build AEM preview URL: https://main--<site>--<org>.aem.page/<path>
+    const { org, repo: site } = this.context;
+    return `https://main--${site}--${org}.aem.page${this.contentPath}`;
   }
 
   get diffUrl() {
     // Use the Page Status diff tool with embed mode for clean iframe display
-    // https://tools.aem.live/tools/page-status/diff.html?org={org}&site={repo}&path={path}&embed=true
-    const { org, repo } = this.context;
-    return `https://tools.aem.live/tools/page-status/diff.html?org=${encodeURIComponent(org)}&site=${encodeURIComponent(repo)}&path=${encodeURIComponent(this.contentPath)}`;
+    // https://tools.aem.live/tools/page-status/diff.html?org={org}&site={site}&path={path}&embed=true
+    const { org, repo: site } = this.context;
+    return `https://tools.aem.live/tools/page-status/diff.html?org=${encodeURIComponent(org)}&site=${encodeURIComponent(site)}&path=${encodeURIComponent(this.contentPath)}`;
   }
 
   get requesterPendingRequestsUrl() {
@@ -100,8 +100,8 @@ class RequestForPublishPlugin extends LitElement {
     this._userEmail = await getUserEmail(this.token);
 
     // Detect approvers for this content path
-    const { org, repo } = this.context;
-    const result = await detectApprovers(this.contentPath, org, repo, this.token);
+    const { org, repo: site } = this.context;
+    const result = await detectApprovers(this.contentPath, org, site, this.token);
     this._approvers = result.approvers || [];
     this._cc = result.cc || [];
     this._approversSource = result.source || 'unknown';
@@ -116,7 +116,7 @@ class RequestForPublishPlugin extends LitElement {
     // Check if there's already a pending request for this path by this user
     if (this._userEmail) {
       this._existingRequest = await checkExistingRequest(
-        org, repo, this.contentPath, this._userEmail, this.token,
+        org, site, this.contentPath, this._userEmail, this.token,
       );
     }
 
@@ -144,12 +144,12 @@ class RequestForPublishPlugin extends LitElement {
       return;
     }
 
-    const { org, repo } = this.context;
+    const { org, repo: site } = this.context;
 
     const result = await submitPublishRequest(
       {
         org,
-        repo,
+        site,
         path: this.contentPath,
         previewUrl: this.previewUrl,
         authorEmail,
@@ -175,12 +175,12 @@ class RequestForPublishPlugin extends LitElement {
     this._isResending = true;
     this._message = null;
 
-    const { org, repo } = this.context;
+    const { org, repo: site } = this.context;
 
     const result = await resendPublishRequest(
       {
         org,
-        repo,
+        site,
         path: this.contentPath,
         previewUrl: this.previewUrl,
         authorEmail: this._userEmail,
@@ -204,10 +204,10 @@ class RequestForPublishPlugin extends LitElement {
     this._isWithdrawing = true;
     this._message = null;
 
-    const { org, repo } = this.context;
+    const { org, repo: site } = this.context;
 
     const result = await withdrawPublishRequest(
-      org, repo, this.contentPath, this._userEmail, this.token,
+      org, site, this.contentPath, this._userEmail, this.token,
     );
 
     this._isWithdrawing = false;
@@ -430,12 +430,12 @@ customElements.define('request-for-publish', RequestForPublishPlugin);
     const { context, token } = await DA_SDK;
     console.log('[Request Publish Plugin] Got SDK context:', context);
 
-    const { org, repo, path } = context;
+    const { org, repo: site, path } = context;
 
     // Create and append the component
     const cmp = document.createElement('request-for-publish');
     cmp.context = context;
-    cmp.path = `/${org}/${repo}${path}`;
+    cmp.path = `/${org}/${site}${path}`;
     cmp.token = token;
 
     console.log('[Request Publish Plugin] Appending component to body');
@@ -456,10 +456,10 @@ export default async function init({ context, token }) {
     searchEnabled: false,
     panel: {
       render: (container) => {
-        const { org, repo, path } = context;
+        const { org, repo: site, path } = context;
         const cmp = document.createElement('request-for-publish');
         cmp.context = context;
-        cmp.path = `/${org}/${repo}${path}`;
+        cmp.path = `/${org}/${site}${path}`;
         cmp.token = token;
         container.append(cmp);
       },
