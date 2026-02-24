@@ -3,5 +3,5 @@ Please always provide the [GitHub issue(s)](../issues) your PR is for, as well a
 Fix #<gh-issue-id>
 
 Test URLs:
-- Before: https://main--da-blog-tools--aemsites.hlx.page
-- After: https://<branch>--da-blog-tools--aemsites.hlx.page
+- Before: https://main--da-blog-tools--aemsites.aem.live
+- After: https://<branch>--da-blog-tools--aemsites.aem.live
