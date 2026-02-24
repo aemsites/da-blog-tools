@@ -545,7 +545,7 @@ export async function bulkPublishContent(org, site, paths) {
     // Normalize paths — ensure each starts with /
     const cleanPaths = paths.map((p) => (p.startsWith('/') ? p : `/${p}`));
 
-    const bulkUrl = `https://admin.hlx.page/live/${org}/${site}/main/*`;
+    const bulkUrl = `https://da-etc.adobeaem.workers.dev/cors?url=https://admin.hlx.page/live/${org}/${site}/main/*`;
 
     const response = await daFetch(bulkUrl, {
       method: 'POST',

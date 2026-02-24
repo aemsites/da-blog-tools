@@ -370,7 +370,7 @@ class PublishRequestsApp extends LitElement {
           notifyPublished(
             {
               org: this._org,
-              repo: this._site,
+              site: this._site,
               paths: [{ path: this._path, authorEmail: this._authorEmail }],
               approverEmail: this._userEmail,
             },
@@ -451,7 +451,7 @@ class PublishRequestsApp extends LitElement {
         notifyPublished(
           {
             org: this._org,
-            repo: this._site,
+            site: this._site,
             paths: [{ path: request.path, authorEmail }],
             approverEmail: this._userEmail,
           },
@@ -532,7 +532,7 @@ class PublishRequestsApp extends LitElement {
             notifyPublished(
               {
                 org: this._org,
-                repo: this._site,
+                site: this._site,
                 paths: succeededEntries,
                 approverEmail: this._userEmail,
               },
@@ -563,7 +563,7 @@ class PublishRequestsApp extends LitElement {
       notifyPublished(
         {
           org: this._org,
-          repo: this._site,
+          site: this._site,
           paths: publishedEntries,
           approverEmail: this._userEmail,
         },
