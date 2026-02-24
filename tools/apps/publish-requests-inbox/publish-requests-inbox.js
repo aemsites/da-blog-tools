@@ -313,31 +313,21 @@ class PublishRequestsApp extends LitElement {
       return;
     }
 
-    // Fetch pending requests — route based on requester vs approver mode
+    // Validate access by fetching requests for this org/site
     try {
       const isRequesterMode = !!this._requester;
-      const requests = isRequesterMode
-        ? await getAllPendingRequestsByRequester(org, site, this._userEmail, this.token)
-        : await getAllPendingRequestsForUser(org, site, this._userEmail, this.token);
+      await (isRequesterMode
+        ? getAllPendingRequestsByRequester(org, site, this._userEmail, this.token)
+        : getAllPendingRequestsForUser(org, site, this._userEmail, this.token));
 
-      // If we got here without error, the user has access
-      this._org = org;
-      this._site = site;
-      this._pendingRequests = requests;
-
-      // Update URL params so the user can bookmark/share
-      const url = new URL(window.location.href);
-      url.searchParams.set('org', org);
-      url.searchParams.set('site', site);
-      try {
-        window.top.history.replaceState({}, '', url.toString());
-      } catch {
-        // Cross-origin iframe — update own history instead
-        window.history.replaceState({}, '', url.toString());
-      }
-
-      this._siteSelectLoading = false;
-      this._state = isRequesterMode ? 'my-requests' : 'inbox';
+      // Access validated — navigate the top-level window with org/site in the URL
+      // so the params persist in the browser address bar across page refreshes.
+      const params = new URLSearchParams();
+      params.set('org', org);
+      params.set('site', site);
+      if (isRequesterMode) params.set('requester', 'true');
+      const targetUrl = `${this.appBaseUrl}?${params.toString()}`;
+      this.navigateTop(targetUrl);
     } catch (error) {
       this._siteSelectLoading = false;
       this._message = { type: 'error', text: error.message || `Unable to access site "${org}/${site}". Please check the organization and site names.` };

@@ -588,7 +588,7 @@ export async function bulkPublishContent(org, site, paths) {
  * @returns {Promise<Object>} Final job status
  */
 export async function pollJobStatus(jobSelfUrl, maxWaitMs = 60000, intervalMs = 2000) {
-  const jobUrl = `${jobSelfUrl}/details`;
+  const jobUrl = `https://da-etc.adobeaem.workers.dev/cors?url=${encodeURIComponent(jobSelfUrl)}/details`;
   const startTime = Date.now();
 
   while (Date.now() - startTime < maxWaitMs) {
