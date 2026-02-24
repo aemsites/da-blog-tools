@@ -46,7 +46,7 @@ class PublishRequestsApp extends LitElement {
     _needsEmail: { state: true },
     // Request data from URL params
     _org: { state: true },
-    _repo: { state: true },
+    _site: { state: true },
     _path: { state: true },
     _authorEmail: { state: true },
     _previewUrl: { state: true },
@@ -70,7 +70,7 @@ class PublishRequestsApp extends LitElement {
     this._userEmail = '';
     this._needsEmail = false;
     this._org = '';
-    this._repo = '';
+    this._site = '';
     this._path = '';
     this._authorEmail = '';
     this._previewUrl = '';
@@ -103,26 +103,26 @@ class PublishRequestsApp extends LitElement {
 
   get liveUrl() {
     // Build live URL: https://main--<repo>--<org>.aem.live/<path>
-    return `https://main--${this._repo}--${this._org}.aem.live${this._path}`;
+    return `https://main--${this._site}--${this._org}.aem.live${this._path}`;
   }
 
   get diffUrl() {
     // Use the Page Status diff tool with embed mode for clean iframe display
-    return `https://tools.aem.live/tools/page-status/diff.html?org=${encodeURIComponent(this._org)}&site=${encodeURIComponent(this._repo)}&path=${encodeURIComponent(this._path)}`;
+    return `https://tools.aem.live/tools/page-status/diff.html?org=${encodeURIComponent(this._org)}&site=${encodeURIComponent(this._site)}&path=${encodeURIComponent(this._path)}`;
   }
 
   getDiffUrlForPath(path) {
-    return `https://tools.aem.live/tools/page-status/diff.html?org=${encodeURIComponent(this._org)}&site=${encodeURIComponent(this._repo)}&path=${encodeURIComponent(path)}`;
+    return `https://tools.aem.live/tools/page-status/diff.html?org=${encodeURIComponent(this._org)}&site=${encodeURIComponent(this._site)}&path=${encodeURIComponent(path)}`;
   }
 
   getReviewUrl(request) {
     const params = new URLSearchParams();
     params.set('org', this._org);
-    params.set('repo', this._repo);
+    params.set('site', this._site);
     params.set('path', request.path);
     if (request.requester) params.set('author', request.requester);
     // Build preview URL for the request path
-    const previewUrl = `https://main--${this._repo}--${this._org}.aem.page${request.path}`;
+    const previewUrl = `https://main--${this._site}--${this._org}.aem.page${request.path}`;
     params.set('preview', previewUrl);
     return `${this.appBaseUrl}?${params.toString()}`;
   }
@@ -130,7 +130,7 @@ class PublishRequestsApp extends LitElement {
   getInboxUrl() {
     const params = new URLSearchParams();
     params.set('org', this._org);
-    params.set('repo', this._repo);
+    params.set('site', this._site);
     return `${this.appBaseUrl}?${params.toString()}`;
   }
 
@@ -161,7 +161,7 @@ class PublishRequestsApp extends LitElement {
     // this.context because that reflects the *current* DA site the app is
     // hosted on, not the site the user wants to manage.
     this._org = urlParams.get('org') || '';
-    this._repo = urlParams.get('repo') || '';
+    this._site = urlParams.get('site') || '';
     this._path = urlParams.get('path') || '';
     this._authorEmail = urlParams.get('author') || '';
     this._previewUrl = urlParams.get('preview') || '';
@@ -169,7 +169,7 @@ class PublishRequestsApp extends LitElement {
     this._requester = urlParams.get('requester') || false;
 
     // If org/repo are missing, show the site selection form
-    if (!this._org || !this._repo) {
+    if (!this._org || !this._site) {
       this._state = 'site-select';
       return;
     }
@@ -205,7 +205,7 @@ class PublishRequestsApp extends LitElement {
 
     try {
       const requests = await getAllPendingRequestsForUser(
-        this._org, this._repo, this._userEmail, this.token,
+        this._org, this._site, this._userEmail, this.token,
       );
 
       this._pendingRequests = requests;
@@ -229,7 +229,7 @@ class PublishRequestsApp extends LitElement {
 
     try {
       const requests = await getAllPendingRequestsByRequester(
-        this._org, this._repo, this._userEmail, this.token,
+        this._org, this._site, this._userEmail, this.token,
       );
 
       this._pendingRequests = requests;
@@ -246,7 +246,7 @@ class PublishRequestsApp extends LitElement {
    */
   async initReview() {
     // Check if this path has a pending publish request in the requests sheet
-    const pendingRequest = await checkPublishRequest(this._org, this._repo, this._path, this.token);
+    const pendingRequest = await checkPublishRequest(this._org, this._site, this._path, this.token);
     if (!pendingRequest) {
       this._state = 'no-request';
       this._message = { type: 'error', text: 'No pending publish request found for this content path.' };
@@ -261,7 +261,7 @@ class PublishRequestsApp extends LitElement {
     // Check if the current user is an authorized approver for this content path
     if (this._userEmail) {
       try {
-        const approvers = await getApproversForPath(this._org, this._repo, this._path, this.token);
+        const approvers = await getApproversForPath(this._org, this._site, this._path, this.token);
         const normalizedUser = this._userEmail.toLowerCase();
         const isApprover = approvers.some((a) => a.toLowerCase() === normalizedUser);
         if (!isApprover) {
@@ -292,10 +292,10 @@ class PublishRequestsApp extends LitElement {
     const form = this.shadowRoot.querySelector('#site-select-form');
     const formData = new FormData(form);
     const org = formData.get('org')?.trim();
-    const repo = formData.get('repo')?.trim();
+    const site = formData.get('site')?.trim();
 
-    if (!org || !repo) {
-      this._message = { type: 'error', text: 'Please provide both Organization and Repository.' };
+    if (!org || !site) {
+      this._message = { type: 'error', text: 'Please provide both Organization and Site.' };
       return;
     }
 
@@ -317,18 +317,18 @@ class PublishRequestsApp extends LitElement {
     try {
       const isRequesterMode = !!this._requester;
       const requests = isRequesterMode
-        ? await getAllPendingRequestsByRequester(org, repo, this._userEmail, this.token)
-        : await getAllPendingRequestsForUser(org, repo, this._userEmail, this.token);
+        ? await getAllPendingRequestsByRequester(org, site, this._userEmail, this.token)
+        : await getAllPendingRequestsForUser(org, site, this._userEmail, this.token);
 
       // If we got here without error, the user has access
       this._org = org;
-      this._repo = repo;
+      this._site = site;
       this._pendingRequests = requests;
 
       // Update URL params so the user can bookmark/share
       const url = new URL(window.location.href);
       url.searchParams.set('org', org);
-      url.searchParams.set('repo', repo);
+      url.searchParams.set('site', site);
       try {
         window.top.history.replaceState({}, '', url.toString());
       } catch {
@@ -340,7 +340,7 @@ class PublishRequestsApp extends LitElement {
       this._state = isRequesterMode ? 'my-requests' : 'inbox';
     } catch (error) {
       this._siteSelectLoading = false;
-      this._message = { type: 'error', text: error.message || `Unable to access site "${org}/${repo}". Please check the organization and repository names.` };
+      this._message = { type: 'error', text: error.message || `Unable to access site "${org}/${site}". Please check the organization and site names.` };
     }
   }
 
@@ -359,18 +359,18 @@ class PublishRequestsApp extends LitElement {
 
     try {
       // Publish the content via Helix Admin API
-      const result = await publishContent(this._org, this._repo, this._path, this.token);
+      const result = await publishContent(this._org, this._site, this._path, this.token);
 
       if (result.success) {
         // Remove the pending request from the requests sheet
-        await removePublishRequest(this._org, this._repo, this._path, this.token);
+        await removePublishRequest(this._org, this._site, this._path, this.token);
 
         // Notify the author that their content has been published
         if (this._authorEmail) {
           notifyPublished(
             {
               org: this._org,
-              repo: this._repo,
+              repo: this._site,
               paths: [{ path: this._path, authorEmail: this._authorEmail }],
               approverEmail: this._userEmail,
             },
@@ -412,7 +412,7 @@ class PublishRequestsApp extends LitElement {
     const result = await notifyRejection(
       {
         org: this._org,
-        repo: this._repo,
+        repo: this._site,
         path: this._path,
         authorEmail: this._authorEmail,
         rejecterEmail: this._userEmail,
@@ -425,7 +425,7 @@ class PublishRequestsApp extends LitElement {
 
     if (result.success) {
       // Remove the pending request from the requests sheet
-      await removePublishRequest(this._org, this._repo, this._path, this.token);
+      await removePublishRequest(this._org, this._site, this._path, this.token);
       this._state = 'rejected';
       this._message = { type: 'info', text: 'Rejection notification sent to author.' };
     } else {
@@ -440,10 +440,10 @@ class PublishRequestsApp extends LitElement {
     this._processingPaths = new Set([...this._processingPaths, request.path]);
     this.requestUpdate();
 
-    const result = await publishContent(this._org, this._repo, request.path);
+    const result = await publishContent(this._org, this._site, request.path);
 
     if (result.success) {
-      await removePublishRequest(this._org, this._repo, request.path, this.token);
+      await removePublishRequest(this._org, this._site, request.path, this.token);
 
       // Notify the author that their content has been published
       const authorEmail = request.requester || request.authorEmail;
@@ -451,7 +451,7 @@ class PublishRequestsApp extends LitElement {
         notifyPublished(
           {
             org: this._org,
-            repo: this._repo,
+            repo: this._site,
             paths: [{ path: request.path, authorEmail }],
             approverEmail: this._userEmail,
           },
@@ -484,7 +484,7 @@ class PublishRequestsApp extends LitElement {
     this._message = { type: 'info', text: `Starting bulk publish of ${totalCount} pages...` };
     this.requestUpdate();
 
-    const bulkResult = await bulkPublishContent(this._org, this._repo, allPaths);
+    const bulkResult = await bulkPublishContent(this._org, this._site, allPaths);
 
     if (!bulkResult.success) {
       this._approveAllProcessing = false;
@@ -521,7 +521,7 @@ class PublishRequestsApp extends LitElement {
 
         // Remove only succeeded requests from the sheet in one write
         if (succeededPaths.length > 0) {
-          await removeMultiplePublishRequests(this._org, this._repo, succeededPaths, this.token);
+          await removeMultiplePublishRequests(this._org, this._site, succeededPaths, this.token);
 
           // Notify authors of successfully published pages
           const succeededSet = new Set(succeededPaths);
@@ -532,7 +532,7 @@ class PublishRequestsApp extends LitElement {
             notifyPublished(
               {
                 org: this._org,
-                repo: this._repo,
+                repo: this._site,
                 paths: succeededEntries,
                 approverEmail: this._userEmail,
               },
@@ -554,7 +554,7 @@ class PublishRequestsApp extends LitElement {
     }
 
     // All succeeded — remove all requests from the sheet in a single write
-    await removeMultiplePublishRequests(this._org, this._repo, allPaths, this.token);
+    await removeMultiplePublishRequests(this._org, this._site, allPaths, this.token);
 
     // Notify all authors that their content has been published
     const publishedEntries = this._pendingRequests
@@ -563,7 +563,7 @@ class PublishRequestsApp extends LitElement {
       notifyPublished(
         {
           org: this._org,
-          repo: this._repo,
+          repo: this._site,
           paths: publishedEntries,
           approverEmail: this._userEmail,
         },
@@ -584,7 +584,7 @@ class PublishRequestsApp extends LitElement {
     this._message = null;
 
     const result = await resendPublishRequest(
-      this._org, this._repo, request.path, this._userEmail, this.token,
+      this._org, this._site, request.path, this._userEmail, this.token,
     );
 
     const updated = new Map(this._myRequestActions);
@@ -604,7 +604,7 @@ class PublishRequestsApp extends LitElement {
     this._message = null;
 
     const result = await removePublishRequest(
-      this._org, this._repo, request.path, this.token,
+      this._org, this._site, request.path, this.token,
     );
 
     const updated = new Map(this._myRequestActions);
@@ -671,12 +671,12 @@ class PublishRequestsApp extends LitElement {
           </div>
 
           <div class="form-group">
-            <label for="repo">Repository <span class="required">*</span></label>
+            <label for="site">Site <span class="required">*</span></label>
             <input
               type="text"
-              id="repo"
-              name="repo"
-              placeholder="e.g. my-repo"
+              id="site"
+              name="site"
+              placeholder="e.g. my-site"
               required
               autocomplete="off"
             />
@@ -819,7 +819,7 @@ class PublishRequestsApp extends LitElement {
   }
 
   renderMyRequestItem(request) {
-    const previewUrl = `https://main--${this._repo}--${this._org}.aem.page${request.path}`;
+    const previewUrl = `https://main--${this._site}--${this._org}.aem.page${request.path}`;
     const action = this._myRequestActions.get(request.path);
     const isBusy = !!action;
 

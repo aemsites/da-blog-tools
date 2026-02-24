@@ -11,8 +11,8 @@ When an author finishes editing content and wants to publish it, they open this 
 ### Architecture
 
 - **Web Component**: Built as a LitElement custom element (`<request-for-publish>`)
-- **DA SDK**: Integrates with the DA.live SDK for authentication, context (org, repo, path), and dialog rendering
-- **DA Config API**: Reads the workflow configuration (approver rules and group-to-email mappings) via `GET https://admin.da.live/config/{org}/{repo}/` with automatic fallback to `GET https://admin.da.live/config/{org}/` if not found at repo level. See [DA Config API docs](https://docs.da.live/developers/api/config#get-config)
+- **DA SDK**: Integrates with the DA.live SDK for authentication, context (org, site, path), and dialog rendering
+- **DA Config API**: Reads the workflow configuration (approver rules and group-to-email mappings) via `GET https://admin.da.live/config/{org}/{site}/` with automatic fallback to `GET https://admin.da.live/config/{org}/` if not found at site level. See [DA Config API docs](https://docs.da.live/developers/api/config#get-config)
 - **DA Admin API**: Reads/writes the pending requests sheet at `/.da/publish-workflow-requests.json`
 - **Cloudflare Worker**: Submits publish requests via the `publish-requests` worker (`/api/request-publish`) which sends email notifications to approvers with CC recipients copied
 - **Adobe IMS**: Fetches the current user's email from the Adobe IMS profile endpoint
@@ -21,8 +21,8 @@ When an author finishes editing content and wants to publish it, they open this 
 ### Initialization Flow
 
 1. The plugin loads and fetches the current user's email from Adobe IMS
-2. The content path is derived from the DA SDK context (`/{org}/{repo}{path}` → strips org/repo prefix)
-3. It reads the workflow config via the DA Config API (`/config/{org}/{repo}/`, falling back to `/config/{org}/`) — if the `publish-workflow-config` tab is not found at either level, an error message is displayed and the form is not shown
+2. The content path is derived from the DA SDK context (`/{org}/{site}{path}` → strips org/site prefix)
+3. It reads the workflow config via the DA Config API (`/config/{org}/{site}/`, falling back to `/config/{org}/`) — if the `publish-workflow-config` tab is not found at either level, an error message is displayed and the form is not shown
 4. Distribution list (DL) groups in the Approvers and CC fields are resolved to individual emails using the `groups-to-email` tab
 5. It checks the requests sheet (`/.da/publish-workflow-requests.json`) for any existing pending request by this user for this path
 6. If a pending request exists, it shows a "Request Pending" state instead of the form
@@ -33,7 +33,7 @@ When an author finishes editing content and wants to publish it, they open this 
 Approvers are detected by matching the content path against rules defined in the DA config sheet:
 
 ```
-DA Config API → /config/{org}/{repo}/ → publish-workflow-config tab
+DA Config API → /config/{org}/{site}/ → publish-workflow-config tab
 ```
 
 Each rule has a **Pattern** (e.g., `/drafts/*`, `/*`), **Approvers** (comma-separated emails or DL names), and an optional **CC** column (comma-separated emails or DL names). If no rule matches the path, an error is shown.
@@ -101,7 +101,7 @@ Before submitting, the author can click the diff link to open the AEM Page Statu
 
 ### 4. View Preview
 
-The plugin generates and displays a preview URL (`https://main--{repo}--{org}.aem.page/{path}`) that the author can click to see how the content will look when published.
+The plugin generates and displays a preview URL (`https://main--{site}--{org}.aem.page/{path}`) that the author can click to see how the content will look when published.
 
 ### 5. Approver Transparency
 
@@ -111,9 +111,9 @@ The plugin clearly shows which approvers and CC recipients will receive the requ
 
 ### 6. Missing Configuration
 
-If the `publish-workflow-config` tab is not found in the DA config at either the repo level (`/config/{org}/{repo}/`) or the org level (`/config/{org}/`), the plugin displays an error:
+If the `publish-workflow-config` tab is not found in the DA config at either the site level (`/config/{org}/{site}/`) or the org level (`/config/{org}/`), the plugin displays an error:
 
-> *"Publish workflow configuration not found. Please ensure the "publish-workflow-config" tab exists in the DA config for repo "{org}/{repo}" or org "{org}"."*
+> *"Publish workflow configuration not found. Please ensure the "publish-workflow-config" tab exists in the DA config for site "{org}/{site}" or org "{org}"."*
 
 Similarly, if the config exists but no rule matches the current content path, an error is shown:
 
@@ -144,7 +144,7 @@ If the request fails to submit (network error, worker error, etc.), an error mes
 
 The workflow configuration is read from the **DA Config API** as tabs within the root config:
 
-- **Repo-level** (primary): `GET https://admin.da.live/config/{org}/{repo}/`
+- **Site-level** (primary): `GET https://admin.da.live/config/{org}/{site}/`
 - **Org-level** (fallback): `GET https://admin.da.live/config/{org}/`
 
 The config is a multi-sheet JSON. The plugin uses these two tabs:

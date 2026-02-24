@@ -310,7 +310,7 @@ async function sendEmail(env, params) {
  * Styled to match DA.live design system (Spectrum 2 / nexter.css)
  */
 function buildApprovalRequestEmail({
-  org, repo, path, previewUrl, authorEmail, authorName, comment, appUrl, inboxUrl,
+  org, site, path, previewUrl, authorEmail, authorName, comment, appUrl, inboxUrl,
 }) {
   const authorDisplay = authorName || authorEmail;
 
@@ -370,7 +370,7 @@ function buildApprovalRequestEmail({
 
   <div style="padding: 16px; text-align: center; font-size: 12px; color: #505050;">
     <p style="margin: 0;">Content Publishing Workflow</p>
-    <p style="margin: 4px 0 0 0;">Org: ${org} | Repo: ${repo}</p>
+    <p style="margin: 4px 0 0 0;">Org: ${org} | Site: ${site}</p>
   </div>
 </body>
 </html>
@@ -382,7 +382,7 @@ function buildApprovalRequestEmail({
  * Styled to match DA.live design system (Spectrum 2 / nexter.css)
  */
 function buildRejectionEmail({
-  org, repo, path, authorEmail, authorName, rejecterEmail, rejecterName, reason,
+  org, site, path, authorEmail, authorName, rejecterEmail, rejecterName, reason,
 }) {
   const authorDisplay = authorName || authorEmail;
   const rejecterDisplay = rejecterName || rejecterEmail;
@@ -434,7 +434,7 @@ function buildRejectionEmail({
 
   <div style="padding: 16px; text-align: center; font-size: 12px; color: #505050;">
     <p style="margin: 0;">Content Publishing Workflow</p>
-    <p style="margin: 4px 0 0 0;">Org: ${org} | Repo: ${repo}</p>
+    <p style="margin: 4px 0 0 0;">Org: ${org} | Site: ${site}</p>
   </div>
 </body>
 </html>
@@ -446,7 +446,7 @@ function buildRejectionEmail({
  * Styled to match DA.live design system (Spectrum 2 / nexter.css)
  */
 function buildPublishedEmail({
-  org, repo, paths, approverEmail, approverName,
+  org, site, paths, approverEmail, approverName,
 }) {
   const approverDisplay = approverName || approverEmail;
   const isBulk = paths.length > 1;
@@ -461,7 +461,7 @@ function buildPublishedEmail({
     .map(
       (p) => `<tr>
         <td style="padding: 8px 12px; border-bottom: 1px solid #e1e1e1; word-break: break-all; font-size: 14px;">
-          <a href="https://main--${repo}--${org}.aem.live${p}" style="color: #3b63fb; text-decoration: none;">${p}</a>
+          <a href="https://main--${site}--${org}.aem.live${p}" style="color: #3b63fb; text-decoration: none;">${p}</a>
         </td>
       </tr>`,
     )
@@ -501,7 +501,7 @@ function buildPublishedEmail({
 
   <div style="padding: 16px; text-align: center; font-size: 12px; color: #505050;">
     <p style="margin: 0;">Content Publishing Workflow</p>
-    <p style="margin: 4px 0 0 0;">Org: ${org} | Repo: ${repo}</p>
+    <p style="margin: 4px 0 0 0;">Org: ${org} | Site: ${site}</p>
   </div>
 </body>
 </html>
@@ -528,7 +528,7 @@ async function handleHealth(env) {
 /**
  * Send publish request email to approvers
  * POST /api/request-publish
- * Body: { org, repo, path, previewUrl, authorEmail, authorName?, comment?, approvers }
+ * Body: { org, site, path, previewUrl, authorEmail, authorName?, comment?, approvers }
  */
 async function handleRequestPublish(request, env) {
   let body;
@@ -548,7 +548,7 @@ async function handleRequestPublish(request, env) {
     cc,
   } = body;
   const org = body.org || env.DA_ORG;
-  const repo = body.repo || env.DA_REPO;
+  const site = body.site || env.DA_SITE;
 
   // Validation
   if (!path) {
@@ -562,10 +562,10 @@ async function handleRequestPublish(request, env) {
   }
 
   // Build approval URL with parameters
-  // Format: https://da.live/app/{org}/{repo}/tools/apps/publish-requests-inbox/publish-requests-inbox?org={org}&repo={repo}&...
+  // Format: https://da.live/app/{org}/{site}/tools/apps/publish-requests-inbox/publish-requests-inbox?org={org}&site={site}&...
   const appParams = new URLSearchParams({
     org,
-    repo,
+    site: site,
     path,
     author: authorEmail,
     ...(previewUrl && { preview: previewUrl }),
@@ -578,7 +578,7 @@ async function handleRequestPublish(request, env) {
   try {
     const emailHtml = buildApprovalRequestEmail({
       org,
-      repo,
+      site,
       path,
       previewUrl,
       authorEmail,
@@ -619,7 +619,7 @@ async function handleRequestPublish(request, env) {
 /**
  * Send rejection notification email
  * POST /api/notify-rejection
- * Body: { org, repo, path, authorEmail, authorName?, rejecterEmail,
+ * Body: { org, site, path, authorEmail, authorName?, rejecterEmail,
  *         rejecterName?, reason, digiops? }
  */
 async function handleNotifyRejection(request, env) {
@@ -640,7 +640,7 @@ async function handleNotifyRejection(request, env) {
     digiops,
   } = body;
   const org = body.org || env.DA_ORG;
-  const repo = body.repo || env.DA_REPO;
+  const site = body.site || env.DA_SITE;
 
   // Validation
   if (!path) {
@@ -666,7 +666,7 @@ async function handleNotifyRejection(request, env) {
   try {
     const emailHtml = buildRejectionEmail({
       org,
-      repo,
+      site,
       path,
       authorEmail,
       authorName,
@@ -695,7 +695,7 @@ async function handleNotifyRejection(request, env) {
 /**
  * Send publish-success notification to authors
  * POST /api/notify-published
- * Body: { org, repo, paths: [{ path, authorEmail }], approverEmail, approverName? }
+ * Body: { org, site, paths: [{ path, authorEmail }], approverEmail, approverName? }
  */
 async function handleNotifyPublished(request, env) {
   let body;
@@ -711,7 +711,7 @@ async function handleNotifyPublished(request, env) {
     approverName,
   } = body;
   const org = body.org || env.DA_ORG;
-  const repo = body.repo || env.DA_REPO;
+  const site = body.site || env.DA_SITE;
 
   // Validation
   if (!paths || paths.length === 0) {
@@ -735,7 +735,7 @@ async function handleNotifyPublished(request, env) {
     for (const [authorEmail, authorPaths] of Object.entries(byAuthor)) {
       const emailHtml = buildPublishedEmail({
         org,
-        repo,
+        site,
         paths: authorPaths,
         approverEmail,
         approverName,

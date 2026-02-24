@@ -12,8 +12,8 @@ When an author submits a publish request (via the [Request for Publish Plugin](.
 
 - **Web Component**: Built as a LitElement custom element (`<publish-requests-inbox>`)
 - **DA SDK**: Integrates with the DA.live SDK for authentication and context
-- **Helix Admin API**: Publishes content via `POST https://admin.hlx.page/live/{org}/{repo}/main/{path}` (single) or the [bulk publish API](https://www.aem.live/docs/admin.html#tag/publish/operation/bulkPublish) `POST https://admin.hlx.page/live/{org}/{repo}/main/*` (Approve All)
-- **DA Config API**: Reads the workflow configuration (approver rules and group-to-email mappings) via `GET https://admin.da.live/config/{org}/{repo}/` with automatic fallback to `GET https://admin.da.live/config/{org}/` if not found at repo level. See [DA Config API docs](https://docs.da.live/developers/api/config#get-config)
+- **Helix Admin API**: Publishes content via `POST https://admin.hlx.page/live/{org}/{site}/main/{path}` (single) or the [bulk publish API](https://www.aem.live/docs/admin.html#tag/publish/operation/bulkPublish) `POST https://admin.hlx.page/live/{org}/{site}/main/*` (Approve All)
+- **DA Config API**: Reads the workflow configuration (approver rules and group-to-email mappings) via `GET https://admin.da.live/config/{org}/{site}/` with automatic fallback to `GET https://admin.da.live/config/{org}/` if not found at site level. See [DA Config API docs](https://docs.da.live/developers/api/config#get-config)
 - **DA Admin API**: Reads/writes the pending requests sheet at `/.da/publish-workflow-requests.json`
 - **Cloudflare Worker**: Sends rejection notifications (`/api/notify-rejection`) and publish-success notifications to authors (`/api/notify-published`) via the `publish-requests` worker
 - **Adobe IMS**: Fetches the current user's email from the Adobe IMS profile endpoint
@@ -22,10 +22,10 @@ When an author submits a publish request (via the [Request for Publish Plugin](.
 
 #### Inbox Mode (no `path` parameter)
 
-When the app is opened with just `org` and `repo` parameters, it enters **inbox mode**:
+When the app is opened with just `org` and `site` parameters, it enters **inbox mode**:
 
 1. Fetches the user's email from Adobe IMS
-2. Reads the workflow config via the DA Config API (`/config/{org}/{repo}/`, falling back to `/config/{org}/`) — if not found at either level, an error is displayed
+2. Reads the workflow config via the DA Config API (`/config/{org}/{site}/`, falling back to `/config/{org}/`) — if not found at either level, an error is displayed
 3. Reads all pending requests from `/.da/publish-workflow-requests.json`
 4. For each pending request, finds the best (most specific) matching rule for that path, resolves the approvers (including expanding DL groups via the `groups-to-email` tab), and checks if the current user is among them
 5. Displays only the requests the user is authorized to approve
@@ -37,7 +37,7 @@ When the app is opened with a `path` parameter (e.g., from an approval email lin
 
 1. Fetches the user's email from Adobe IMS
 2. Validates that a pending request exists for the given path in the requests sheet
-3. Reads the workflow config via the DA Config API (repo-level, then org-level fallback) — if not found, an error is displayed
+3. Reads the workflow config via the DA Config API (site-level, then org-level fallback) — if not found, an error is displayed
 4. Finds the best (most specific) matching rule for the path, resolves the approvers (expanding DL groups), and verifies the user is authorized
 5. Renders the full review interface with content diff, approve, and reject options
 
@@ -75,7 +75,7 @@ For path `/about`, only `/*` matches, so `dl-reviewers@example.com` is resolved 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `org`     | Yes      | The DA organization (e.g., `my-org`) |
-| `repo`    | Yes      | The DA repository (e.g., `my-repo`) |
+| `site`    | Yes      | The DA site / repository (e.g., `my-site`) |
 | `path`    | No       | The content path to review. If omitted → inbox mode |
 | `author`  | No       | Email of the author who submitted the request |
 | `preview` | No       | URL to the preview version of the content |
@@ -83,12 +83,12 @@ For path `/about`, only `/*` matches, so `dl-reviewers@example.com` is resolved 
 
 **Inbox URL (all pending requests):**
 ```
-/tools/publish-requests-inbox/publish-requests-inbox?org=my-org&repo=my-repo
+/tools/publish-requests-inbox/publish-requests-inbox?org=my-org&site=my-site
 ```
 
 **Single-review URL (specific request):**
 ```
-/tools/publish-requests-inbox/publish-requests-inbox?org=my-org&repo=my-repo&path=/drafts/my-page&author=author@example.com
+/tools/publish-requests-inbox/publish-requests-inbox?org=my-org&site=my-site&path=/drafts/my-page&author=author@example.com
 ```
 
 ## Use Cases Handled
@@ -102,8 +102,8 @@ The landing page when no `path` is specified. Displays a list of all pending pub
 From the inbox, the approver can click **"Approve All"** to bulk-publish all visible pending requests in a single operation using the [AEM Admin bulk publish API](https://www.aem.live/docs/admin.html#tag/publish/operation/bulkPublish).
 
 **How it works:**
-1. All pending paths are collected and sent in a single `POST` to `https://admin.hlx.page/live/{org}/{repo}/main/*` with a `{ "paths": [...] }` body
-2. The API returns a job; the app polls `https://admin.hlx.page/job/{org}/{repo}/main/{jobName}/details` until the job completes (up to 60 seconds, polling every 2 seconds)
+1. All pending paths are collected and sent in a single `POST` to `https://admin.hlx.page/live/{org}/{site}/main/*` with a `{ "paths": [...] }` body
+2. The API returns a job; the app polls `https://admin.hlx.page/job/{org}/{site}/main/{jobName}/details` until the job completes (up to 60 seconds, polling every 2 seconds)
 3. On completion, the app checks the job details for per-resource status codes
 4. All successfully published requests are removed from the requests sheet in a single batch write (rather than N individual writes)
 5. If some paths failed, only the succeeded ones are removed and a summary is shown
@@ -151,9 +151,9 @@ If the user has no pending requests to act on, the inbox displays an empty state
 
 ### 11. Missing Configuration
 
-If the `publish-workflow-config` tab is not found in the DA config at either the repo level (`/config/{org}/{repo}/`) or the org level (`/config/{org}/`), the app displays an error message:
+If the `publish-workflow-config` tab is not found in the DA config at either the site level (`/config/{org}/{site}/`) or the org level (`/config/{org}/`), the app displays an error message:
 
-> *"Publish workflow configuration not found. Please ensure the "publish-workflow-config" tab exists in the DA config for repo "{org}/{repo}" or org "{org}"."*
+> *"Publish workflow configuration not found. Please ensure the "publish-workflow-config" tab exists in the DA config for site "{org}/{site}" or org "{org}"."*
 
 This prevents the app from operating without proper approver rules.
 
@@ -176,7 +176,7 @@ If the user's email cannot be determined from the Adobe IMS token, a warning is 
 
 The workflow configuration is read from the **DA Config API** as tabs within the root config:
 
-- **Repo-level** (primary): `GET https://admin.da.live/config/{org}/{repo}/`
+- **Site-level** (primary): `GET https://admin.da.live/config/{org}/{site}/`
 - **Org-level** (fallback): `GET https://admin.da.live/config/{org}/`
 
 The config is a multi-sheet JSON. The app uses these two tabs:

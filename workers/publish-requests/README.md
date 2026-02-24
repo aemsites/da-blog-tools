@@ -6,12 +6,14 @@ A Cloudflare Worker that handles email notifications for the content publish req
 
 ### Overview
 
-The worker is a stateless email relay. It receives authenticated requests from the DA Plugin and DA App, constructs HTML emails, and sends them via the Gmail API using OAuth. There is no database — all workflow state lives in DA Sheets.
+The worker is a stateless email relay. It receives authenticated requests from the DA Plugin and DA App, constructs HTML emails, and sends them via a configurable email provider. There is no database — all workflow state lives in DA Sheets.
+
+Multiple instances of the worker can be deployed as **Wrangler environments**, each with its own email provider, secrets, and URL. This allows the same codebase to serve different customers and use cases (e.g., WSU production vs. internal demos).
 
 ### Architecture
 
 - **Cloudflare Worker**: Vanilla JS, no frameworks or SDKs
-- **Gmail API**: Sends emails via `https://gmail.googleapis.com/gmail/v1/users/me/messages/send` using OAuth 2.0 refresh token flow
+- **Pluggable Email Providers**: Gmail API (OAuth 2.0) or WSU AEM Cloud sendEmail API, selected via `EMAIL_PROVIDER` env var
 - **DA Token Validation**: All endpoints (except `/health`) require a valid DA JWT bearer token
 - **Stateless**: No D1 database, no n8n — the worker only sends emails
 
@@ -20,6 +22,23 @@ The worker is a stateless email relay. It receives authenticated requests from t
 1. **Publish Request** (`/api/request-publish`): DA Plugin submits a request → worker emails the approver(s) with a deep-link to the DA App review page. CC recipients are supported.
 2. **Rejection** (`/api/notify-rejection`): DA App submits a rejection → worker emails the original author (and DigiOps if provided) with the rejection reason.
 3. **Publish Success** (`/api/notify-published`): DA App publishes content → worker emails author(s) confirming their content is live. Groups paths by author so each author gets one consolidated email.
+
+## Environments
+
+The worker uses [Wrangler environments](https://developers.cloudflare.com/workers/wrangler/environments/) to deploy multiple instances from the same codebase. Each environment gets its own worker name, URL, env vars, and secrets.
+
+| Environment | Worker Name | URL | Email Provider |
+|-------------|-------------|-----|----------------|
+| `wsu` | `publish-requests-wsu` | `https://publish-requests-wsu.aem-poc-lab.workers.dev` | WSU AEM Cloud API |
+| `demo` | `publish-requests-demo` | `https://publish-requests-demo.aem-poc-lab.workers.dev` | Gmail API |
+| *(local)* | — | `http://localhost:8787` | Whichever is set in top-level `[vars]` |
+
+### Adding a new customer
+
+1. Add a new `[env.<name>]` section to `wrangler.toml` with the appropriate `EMAIL_PROVIDER` and vars
+2. Deploy: `npx wrangler deploy --env <name>`
+3. Set secrets: `npx wrangler secret put <KEY> --env <name>`
+4. In the customer's DA config, add a `publish-workflow-settings` tab with `workerUrl` pointing to the new worker URL
 
 ## API Endpoints
 
@@ -99,13 +118,15 @@ The worker validates:
 
 Note: signature verification is not performed — the worker validates claims only.
 
-## Email Provider
+## Email Providers
 
-### Gmail API (current)
+The `EMAIL_PROVIDER` env var in `wrangler.toml` selects which backend sends emails. Each environment can use a different provider.
+
+### Gmail API (`EMAIL_PROVIDER = "gmail"`)
 
 Emails are sent via the Gmail API using OAuth 2.0. The worker exchanges a long-lived refresh token for a short-lived access token on each request, then sends the email as a Base64URL-encoded RFC 2822 message.
 
-**Required secrets** (set via `wrangler secret put`):
+**Required secrets** (set per environment):
 
 | Secret | Description |
 |--------|-------------|
@@ -115,15 +136,39 @@ Emails are sent via the Gmail API using OAuth 2.0. The worker exchanges a long-l
 | `PUBLISH_REQUESTS_GMAIL_EMAIL` | The Gmail address used as the sender |
 
 ```bash
-npx wrangler secret put PUBLISH_REQUESTS_GMAIL_CLIENT_ID
-npx wrangler secret put PUBLISH_REQUESTS_GMAIL_CLIENT_SECRET
-npx wrangler secret put PUBLISH_REQUESTS_GMAIL_REFRESH_TOKEN
-npx wrangler secret put PUBLISH_REQUESTS_GMAIL_EMAIL
+npx wrangler secret put PUBLISH_REQUESTS_GMAIL_CLIENT_ID --env demo
+npx wrangler secret put PUBLISH_REQUESTS_GMAIL_CLIENT_SECRET --env demo
+npx wrangler secret put PUBLISH_REQUESTS_GMAIL_REFRESH_TOKEN --env demo
+npx wrangler secret put PUBLISH_REQUESTS_GMAIL_EMAIL --env demo
 ```
 
-### Resend API (previous, commented out)
+**Optional vars:**
 
-The original Resend API implementation is preserved as commented-out code in `src/index.js` (`sendEmailResend`). To switch back, uncomment it and rename to `sendEmail`, then set `RESEND_API_KEY` via `wrangler secret put` and restore `RESEND_FROM` in `wrangler.toml` vars.
+| Variable | Description |
+|----------|-------------|
+| `GMAIL_FROM` | Override the From display name (defaults to `DA Publishing <gmail-address>`) |
+
+### WSU AEM Cloud API (`EMAIL_PROVIDER = "wsu-api"`)
+
+Emails are sent via the WSU AEM Cloud `sendEmail` endpoint using a SendGrid-style personalizations payload.
+
+**Required secrets** (set per environment):
+
+| Secret | Description |
+|--------|-------------|
+| `WSU_EMAIL_API_KEY` | API key for the WSU sendEmail endpoint |
+
+```bash
+npx wrangler secret put WSU_EMAIL_API_KEY --env wsu
+```
+
+**Required vars** (set in `wrangler.toml`):
+
+| Variable | Description |
+|----------|-------------|
+| `WSU_EMAIL_API_URL` | The sendEmail endpoint URL |
+| `WSU_EMAIL_FROM_ADDRESS` | Sender email address |
+| `WSU_EMAIL_FROM_NAME` | Sender display name |
 
 ## Configuration
 
@@ -131,18 +176,34 @@ The original Resend API implementation is preserved as commented-out code in `sr
 
 | Variable | Description |
 |----------|-------------|
-| `ENVIRONMENT` | `dev` or `production` |
+| `ENVIRONMENT` | `dev`, `demo`, or `production` |
+| `EMAIL_PROVIDER` | `"gmail"` or `"wsu-api"` — selects the email backend |
 | `DA_ORG` | Default DA organization (used when `org` not in request body) |
 | `DA_REPO` | Default DA repository (used when `repo` not in request body) |
-| `GMAIL_FROM` | Optional — override the From display name (defaults to `DA Publishing <gmail-address>`) |
+
+### DA Config (client-side)
+
+The DA Plugin and DA App resolve the worker URL from the customer's DA config. The root config spreadsheet must include a **`publish-workflow-settings`** tab:
+
+| key | value |
+|-----|-------|
+| workerUrl | `https://publish-requests-wsu.aem-poc-lab.workers.dev` |
+
+If `workerUrl` is missing, the plugin/app will throw an error (except on localhost, where it falls back to `http://localhost:8787`).
 
 ## Development
 
 ```bash
-npm run dev          # Local dev server (wrangler dev)
-npm run deploy       # Deploy to default environment
-npm run deploy:prod  # Deploy to production
-npm run tail         # Stream live logs
+# Local dev server (uses top-level [vars] from wrangler.toml)
+npx wrangler dev
+
+# Deploy to a specific environment
+npx wrangler deploy --env wsu
+npx wrangler deploy --env demo
+
+# Stream live logs for an environment
+npx wrangler tail --env wsu
+npx wrangler tail --env demo
 ```
 
 ## Email Templates
@@ -151,6 +212,6 @@ The worker includes three HTML email templates:
 
 | Template | Used By | Description |
 |----------|---------|-------------|
-| `buildApprovalRequestEmail` | `/api/request-publish` | WSU-branded email with content details and a "Review & Approve" button linking to the DA App |
+| `buildApprovalRequestEmail` | `/api/request-publish` | Branded email with content details and a "Review & Approve" button linking to the DA App |
 | `buildRejectionEmail` | `/api/notify-rejection` | Red-themed email with rejection reason, sent to author and DigiOps |
-| `buildPublishedEmail` | `/api/notify-published` | Green-themed success email with live links to published pages |
+| `buildPublishedEmail` | `/api/notify-published` | Success email with live links to published pages |
