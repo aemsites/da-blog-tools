@@ -10,7 +10,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 // CORS headers for cross-origin requests
 const corsHeaders = {
-  'Access-Control-Allow-Origin': 'https://main--da-blog-tools--aemsites.aem.live',
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
