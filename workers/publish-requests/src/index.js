@@ -27,7 +27,6 @@ function jsonResponse(data, headers = {}, status = 200) {
 
 // Adobe IMS JWKS endpoint — public keys used to verify token signatures
 const IMS_JWKS_URL = 'https://ims-na1.adobelogin.com/ims/keys';
-const IMS_ISSUER = 'https://ims-na1.adobelogin.com';
 const DA_CLIENT_ID = 'darkalley';
 
 // Cache the JWKS remotely — createRemoteJWKSet handles key caching internally
@@ -50,11 +49,10 @@ async function validateDAToken(request) {
   const token = authHeader.substring(7);
 
   try {
-    // Verify signature, expiry, and issuer in one call.
-    // jwtVerify throws if the signature is invalid or any claim fails.
-    const { payload } = await jwtVerify(token, getJWKS, {
-      issuer: IMS_ISSUER,
-    });
+    // Verify signature against Adobe IMS public keys.
+    // Note: IMS access tokens don't include a standard "iss" claim,
+    // so we skip issuer validation and check "as" + "client_id" instead.
+    const { payload } = await jwtVerify(token, getJWKS);
 
     // Confirm the token was issued for the DA application
     if (payload.client_id !== DA_CLIENT_ID) {
