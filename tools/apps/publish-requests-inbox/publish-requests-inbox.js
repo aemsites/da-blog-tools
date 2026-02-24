@@ -440,7 +440,7 @@ class PublishRequestsApp extends LitElement {
     this._processingPaths = new Set([...this._processingPaths, request.path]);
     this.requestUpdate();
 
-    const result = await publishContent(this._org, this._repo, request.path, this.token);
+    const result = await publishContent(this._org, this._repo, request.path);
 
     if (result.success) {
       await removePublishRequest(this._org, this._repo, request.path, this.token);
@@ -484,7 +484,7 @@ class PublishRequestsApp extends LitElement {
     this._message = { type: 'info', text: `Starting bulk publish of ${totalCount} pages...` };
     this.requestUpdate();
 
-    const bulkResult = await bulkPublishContent(this._org, this._repo, allPaths, this.token);
+    const bulkResult = await bulkPublishContent(this._org, this._repo, allPaths);
 
     if (!bulkResult.success) {
       this._approveAllProcessing = false;
@@ -498,7 +498,7 @@ class PublishRequestsApp extends LitElement {
       this._message = { type: 'info', text: 'Bulk publish job started. Waiting for completion...' };
       this.requestUpdate();
 
-      const jobResult = await pollJobStatus(jobSelfUrl, this.token);
+      const jobResult = await pollJobStatus(jobSelfUrl);
 
       if (!jobResult.success) {
         this._approveAllProcessing = false;

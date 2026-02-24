@@ -571,8 +571,8 @@ async function handleRequestPublish(request, env) {
     ...(previewUrl && { preview: previewUrl }),
     ...(comment && { comment }),
   });
-  const appUrl = `https://da.live/app/${org}/${repo}/tools/apps/publish-requests-inbox/publish-requests-inbox?${appParams.toString()}`;
-  const inboxUrl = `https://da.live/app/${org}/${repo}/tools/apps/publish-requests-inbox/publish-requests-inbox`;
+  const appUrl = `https://da.live/app/aemsites/da-blog-tools/tools/apps/publish-requests-inbox/publish-requests-inbox?${appParams.toString()}`;
+  const inboxUrl = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/publish-requests-inbox/publish-requests-inbox';
 
   // Send email to approvers
   try {
