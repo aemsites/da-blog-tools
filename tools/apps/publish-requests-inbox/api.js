@@ -199,14 +199,14 @@ async function fetchWorkflowConfig(org, repo, token) {
  * @param {string} token - Authorization token
  * @returns {Promise<Object>} Result
  */
-export async function publishContent(org, repo, path) {
+export async function publishContent(org, repo, path, token) {
   try {
     // Ensure path starts with /
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
     const publishUrl = `https://da-etc.adobeaem.workers.dev/cors?url=https://admin.hlx.page/live/${org}/${repo}/main${cleanPath}`;
 
-    const response = await daFetch(publishUrl, { method: 'POST' });
+    const response = await daFetch(publishUrl, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
 
     if (!response.ok) {
       const errorText = await response.text();

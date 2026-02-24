@@ -359,7 +359,7 @@ class PublishRequestsApp extends LitElement {
 
     try {
       // Publish the content via Helix Admin API
-      const result = await publishContent(this._org, this._repo, this._path);
+      const result = await publishContent(this._org, this._repo, this._path, this.token);
 
       if (result.success) {
         // Remove the pending request from the requests sheet
