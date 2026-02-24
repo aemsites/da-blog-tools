@@ -324,7 +324,8 @@ function buildApprovalRequestEmail({
   const ePath = escapeHtml(path);
   const eOrg = escapeHtml(org);
   const eSite = escapeHtml(site);
-  // appUrl and inboxUrl are constructed server-side from URLSearchParams — escape for HTML attribute context
+  // appUrl and inboxUrl are constructed server-side from URLSearchParams
+  // — escape for HTML attribute context
   const eAppUrl = escapeHtml(appUrl);
   const eInboxUrl = escapeHtml(inboxUrl);
   const ePreviewUrl = previewUrl ? escapeHtml(previewUrl) : null;
