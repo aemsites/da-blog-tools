@@ -90,7 +90,8 @@ class RequestForPublishPlugin extends LitElement {
   }
 
   get requesterPendingRequestsUrl() {
-    return 'https://da.live/app/aemsites/da-blog-tools/tools/apps/publish-requests-inbox/publish-requests-inbox?requester=true';
+    const { org, repo: site } = this.context;
+    return `https://da.live/app/aemsites/da-blog-tools/tools/apps/publish-requests-inbox/publish-requests-inbox?org=${encodeURIComponent(org)}&site=${encodeURIComponent(site)}&requester=true`;
   }
 
   async init() {
