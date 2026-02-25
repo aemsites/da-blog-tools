@@ -15,7 +15,7 @@ When an author submits a publish request (via the [Request for Publish Plugin](.
 - **Helix Admin API**: Publishes content via `POST https://admin.hlx.page/live/{org}/{site}/main/{path}` (single) or the [bulk publish API](https://www.aem.live/docs/admin.html#tag/publish/operation/bulkPublish) `POST https://admin.hlx.page/live/{org}/{site}/main/*` (Approve All)
 - **DA Config API**: Reads the workflow configuration (approver rules and group-to-email mappings) via `GET https://admin.da.live/config/{org}/{site}/` with automatic fallback to `GET https://admin.da.live/config/{org}/` if not found at site level. See [DA Config API docs](https://docs.da.live/developers/api/config#get-config)
 - **DA Admin API**: Reads/writes the pending requests sheet at `/.da/publish-workflow-requests.json`
-- **Cloudflare Worker**: Sends rejection notifications (`/api/notify-rejection`) and publish-success notifications to authors (`/api/notify-published`) via the `publish-requests` worker
+- **Cloudflare Worker**: Sends rejection notifications (`/api/notify-rejection`) and publish-success notifications to authors (`/api/notify-published`)
 - **Adobe IMS**: Fetches the current user's email from the Adobe IMS profile endpoint
 
 ### Two Operating Modes

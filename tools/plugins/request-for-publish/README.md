@@ -14,7 +14,7 @@ When an author finishes editing content and wants to publish it, they open this 
 - **DA SDK**: Integrates with the DA.live SDK for authentication, context (org, site, path), and dialog rendering
 - **DA Config API**: Reads the workflow configuration (approver rules and group-to-email mappings) via `GET https://admin.da.live/config/{org}/{site}/` with automatic fallback to `GET https://admin.da.live/config/{org}/` if not found at site level. See [DA Config API docs](https://docs.da.live/developers/api/config#get-config)
 - **DA Admin API**: Reads/writes the pending requests sheet at `/.da/publish-workflow-requests.json`
-- **Cloudflare Worker**: Submits publish requests via the `publish-requests` worker (`/api/request-publish`) which sends email notifications to approvers with CC recipients copied
+- **Cloudflare Worker**: Submits publish requests to a worker (`/api/request-publish`) which sends email notifications to approvers with CC recipients copied
 - **Adobe IMS**: Fetches the current user's email from the Adobe IMS profile endpoint
 - **Dual Mode**: Can run as a fullsize-dialog (HTML entry point) or as a DA panel plugin (exported `init` function)
 
