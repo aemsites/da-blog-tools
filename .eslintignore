@@ -1,2 +1,4 @@
 helix-importer-ui
 tools/test-ims-token.js
+tools/deps/
+workers/
