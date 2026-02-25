@@ -1,0 +1,483 @@
+/* ===========================
+   Request for Publish Plugin
+   Design tokens aligned with DA.live (nexter.css)
+   See: https://github.com/adobe/da-live
+   Context: sidebar / panel plugin
+   =========================== */
+
+:host {
+  /* DA.live design tokens (from nexter.css) */
+  --body-font-family: "Adobe Clean", adobe-clean, "Trebuchet MS", sans-serif;
+  --fixed-font-family: "Roboto Mono", menlo, consolas, "Liberation Mono", monospace;
+
+  /* Colors — Spectrum 2 palette */
+  --s2-blue-200: #e5f0fe;
+  --s2-blue-700: #5989ff;
+  --s2-blue-800: #3b63fb;
+  --s2-blue-900: #3b63fb;
+  --s2-blue-1000: #274dea;
+  --s2-blue-1200: #1532ad;
+  --s2-green: #009851;
+  --s2-red: #f73b26;
+  --s2-red-200: #fde8e6;
+  --s2-red-500: #990033;
+  --s2-red-600: #730026;
+  --s2-red-1200: #670800;
+  --s2-gray-50: #f7f7f7;
+  --s2-gray-75: #f1f1f1;
+  --s2-gray-200: #e1e1e1;
+  --s2-gray-700: #505050;
+  --s2-gray-800: #292929;
+  --s2-gray-900: #121212;
+
+  /* Spacing */
+  --spacing-50: 2px;
+  --spacing-75: 4px;
+  --spacing-100: 8px;
+  --spacing-200: 12px;
+  --spacing-300: 16px;
+  --spacing-400: 24px;
+  --spacing-500: 32px;
+  --spacing-600: 40px;
+  --spacing-700: 48px;
+  --spacing-800: 64px;
+
+  /* Corner radii */
+  --s2-radius-75: 4px;
+  --s2-radius-100: 8px;
+  --s2-radius-200: 10px;
+  --s2-radius-300: 16px;
+
+  /* Font sizing */
+  --s2-font-size-100: 14px;
+  --s2-font-size-200: 16px;
+  --s2-font-size-300: 18px;
+  --s2-font-size-400: 20px;
+
+  /* Heading sizing */
+  --s2-heading-size-300: 18px;
+  --s2-heading-size-400: 20px;
+  --s2-heading-size-500: 22px;
+
+  /* Semantic aliases */
+  --color-primary: var(--s2-red-500);
+  --color-primary-hover: var(--s2-red-600);
+  --color-success: var(--s2-green);
+  --color-danger: var(--s2-red);
+  --color-text: var(--s2-gray-800);
+  --color-text-muted: var(--s2-gray-700);
+  --color-bg-light: var(--s2-gray-50);
+  --color-bg-code: var(--s2-gray-75);
+  --color-border: var(--s2-gray-200);
+  --color-link: var(--s2-blue-800);
+  --color-link-hover: var(--s2-blue-1000);
+
+  display: block;
+  height: 100%;
+  overflow: auto;
+  -webkit-font-smoothing: antialiased;
+  font-family: var(--body-font-family, "Adobe Clean", adobe-clean, "Trebuchet MS", sans-serif);
+  color: var(--s2-gray-800, #292929);
+}
+
+/* ========== Loading ========== */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 200px;
+  color: var(--color-text-muted);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--s2-gray-75);
+  border-top: 3px solid var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: var(--spacing-300);
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ========== Messages ========== */
+.message {
+  padding: var(--spacing-200) var(--spacing-300);
+  border-radius: var(--s2-radius-100);
+  margin-bottom: var(--spacing-300);
+  font-size: var(--s2-font-size-100);
+  line-height: 1.5;
+}
+
+.message.success {
+  background: #e6f4ea;
+  border: 1px solid #b7dfbf;
+  color: #1a6b2a;
+}
+
+.message.error {
+  background: #fce8e6;
+  border: 1px solid #f5c6c2;
+  color: #b3261e;
+}
+
+.message.info {
+  background: var(--s2-red-200);
+  border: 1px solid #b8d4fe;
+  color: var(--s2-red-1200);
+}
+
+/* ========== Result / Status States ========== */
+.result-container {
+  padding: var(--spacing-400);
+  text-align: center;
+}
+
+.result-icon {
+  font-size: 48px;
+  margin-bottom: var(--spacing-300);
+}
+
+.result-container h3 {
+  margin: 0 0 var(--spacing-200) 0;
+  font-size: var(--s2-heading-size-400);
+  font-weight: 700;
+}
+
+.result-container.success h3 {
+  color: #1a6b2a;
+}
+
+.result-container.pending h3 {
+  color: var(--color-text);
+}
+
+.result-container p {
+  margin: 0 0 var(--spacing-200) 0;
+  color: var(--color-text);
+}
+
+.result-note {
+  margin-top: var(--spacing-300) !important;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.my-pending-requests-link {
+  margin-top: var(--spacing-300) !important;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.my-pending-requests-link a {
+  color: var(--color-link);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.my-pending-requests-link a:hover {
+  color: var(--color-link-hover);
+  text-decoration: underline;
+}
+
+/* ========== Info Card ========== */
+.info-card {
+  background: var(--color-bg-light);
+  border-radius: var(--s2-radius-100);
+  padding: var(--spacing-300);
+  margin-bottom: var(--spacing-300);
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  gap: var(--spacing-100);
+  margin-bottom: var(--spacing-100);
+  font-size: 13px;
+}
+
+.info-row:last-child {
+  margin-bottom: 0;
+}
+
+.info-row .label {
+  color: var(--color-text-muted);
+  min-width: 120px;
+  flex-shrink: 0;
+}
+
+.info-row .value,
+.info-row code {
+  background: var(--color-bg-code);
+  padding: var(--spacing-75) var(--spacing-100);
+  border-radius: var(--s2-radius-75);
+  font-family: var(--fixed-font-family);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.info-row a {
+  color: var(--color-link);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.info-row a:hover {
+  color: var(--color-link-hover);
+  text-decoration: underline;
+}
+
+/* ========== Diff Section ========== */
+.diff-section {
+  margin-bottom: var(--spacing-300);
+}
+
+.diff-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-100);
+  margin-bottom: var(--spacing-100);
+}
+
+.diff-header .open-diff-link {
+  margin-left: auto;
+  margin-top: 0;
+}
+
+.diff-icon {
+  font-size: 18px;
+}
+
+.diff-title {
+  font-weight: 700;
+  font-size: var(--s2-font-size-100);
+  color: var(--color-text);
+}
+
+.diff-description {
+  margin: 0 0 var(--spacing-200) 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.open-diff-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-75);
+  margin-top: var(--spacing-100);
+  font-size: 13px;
+  color: var(--color-link);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.open-diff-link:hover {
+  color: var(--color-link-hover);
+  text-decoration: underline;
+}
+
+/* ========== Approvers Section ========== */
+.approvers-section {
+  background: var(--s2-red-200);
+  border: 1px solid #b8d4fe;
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--s2-radius-100);
+  padding: var(--spacing-300);
+  margin-bottom: var(--spacing-400);
+}
+
+.approvers-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-100);
+  margin-bottom: var(--spacing-200);
+}
+
+.approvers-icon {
+  font-size: 18px;
+}
+
+.approvers-title {
+  font-weight: 700;
+  font-size: var(--s2-font-size-100);
+  color: var(--color-text);
+}
+
+.approvers-list {
+  margin: 0;
+  padding-left: var(--spacing-400);
+  font-size: var(--s2-font-size-100);
+  color: var(--color-text);
+  list-style-type: none;
+}
+
+.approvers-list li {
+  margin-bottom: var(--spacing-75);
+}
+
+.approvers-list li:last-child {
+  margin-bottom: 0;
+}
+
+.approvers-note {
+  margin: var(--spacing-200) 0 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* ========== Form Container ========== */
+.form-container {
+  padding: var(--spacing-400);
+}
+
+.form-container h3 {
+  margin: 0 0 var(--spacing-75) 0;
+  font-size: var(--s2-font-size-300);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.form-subtitle {
+  color: var(--color-text-muted);
+  font-size: var(--s2-font-size-100);
+  margin: 0 0 var(--spacing-400) 0;
+}
+
+/* ========== Form Elements ========== */
+.form-group {
+  margin-bottom: var(--spacing-300);
+}
+
+.form-group label {
+  display: block;
+  font-size: var(--s2-font-size-100);
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--color-text);
+}
+
+.form-group label .required {
+  color: var(--color-danger);
+}
+
+.form-group input[type="email"],
+.form-group textarea {
+  width: 100%;
+  padding: 10px var(--spacing-200);
+  border: 1px solid var(--color-border);
+  border-radius: var(--s2-radius-100);
+  font-size: var(--s2-font-size-100);
+  font-family: var(--body-font-family);
+  box-sizing: border-box;
+  color: var(--color-text);
+}
+
+.form-group input[type="email"]:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(59, 99, 251, 0.15);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.form-group .email-display {
+  margin: 0;
+  padding: 10px var(--spacing-200);
+  background: var(--color-bg-light);
+  border-radius: var(--s2-radius-100);
+  font-size: var(--s2-font-size-100);
+  color: var(--color-text);
+}
+
+.form-actions {
+  margin-top: var(--spacing-400);
+}
+
+/* ========== Buttons ========== */
+button {
+  cursor: pointer;
+  font-family: var(--body-font-family);
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  padding: var(--spacing-200) var(--spacing-400);
+  border-radius: var(--s2-radius-300);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 16px;
+  display: inline-block;
+  text-decoration: none;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-large {
+  width: 100%;
+  padding: 14px var(--spacing-400);
+  font-size: var(--s2-font-size-200);
+}
+
+.btn-secondary {
+  background: white;
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-200) var(--spacing-400);
+  border-radius: var(--s2-radius-300);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 16px;
+  display: inline-block;
+  text-decoration: none;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-bg-light);
+  border-color: var(--s2-gray-700);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-withdraw {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.btn-withdraw:hover:not(:disabled) {
+  background: #fce8e6;
+  border-color: var(--color-danger);
+}
+
+/* Existing request action buttons layout */
+.result-container .form-actions {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: var(--spacing-200);
+  margin-top: var(--spacing-300);
+  margin-bottom: var(--spacing-200);
+}
