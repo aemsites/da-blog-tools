@@ -268,7 +268,7 @@ class PublishRequestsApp extends LitElement {
           this._state = 'unauthorized';
           this._message = {
             type: 'error',
-            text: `You (${this._userEmail}) are not authorized to approve or reject this request. Only the following approvers can act on this content: ${approvers.join(', ')}`,
+            text: `You (${this._userEmail}) are not authorized to approve or reject this request. Please contact your administrator.`,
           };
           return;
         }
