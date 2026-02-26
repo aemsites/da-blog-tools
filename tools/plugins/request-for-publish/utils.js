@@ -1,6 +1,7 @@
 /* eslint-disable import/no-unresolved, no-console, no-restricted-syntax */
 /* eslint-disable no-continue, prefer-destructuring */
 
+const WORKER_URL = 'https://publish-requests.aem-poc-lab.workers.dev';
 const LOCAL_WORKER_URL = 'http://localhost:8787';
 
 const { getDaAdmin } = await import('https://da.live/nx/public/utils/constants.js');
@@ -9,42 +10,17 @@ const DA_ADMIN = getDaAdmin();
 // DA sheet path for requests (read/written via Source API)
 const REQUESTS_SHEET_PATH = '/.da/publish-workflow-requests.json';
 
-// Config is read from the root site/org config via DA Config API
-// The publish-workflow-config, publish-workflow-groups-to-email, and
-// publish-workflow-settings tabs live inside the root config at
-// GET /config/{org}/{site}/
-// See: https://docs.da.live/developers/api/config#get-config
-
-let cachedWorkerUrl = null;
-
 /**
- * Extract the workerUrl value from the publish-workflow-settings config tab.
- * @param {Object} config - The full config object from DA Config API
- * @returns {string|null} The worker URL or null if not configured
- */
-function extractWorkerUrl(config) {
-  const settings = config?.['publish-workflow-settings']?.data || [];
-  const entry = settings.find((r) => (r.key || r.Key) === 'workerUrl');
-  return entry?.value || entry?.Value || null;
-}
-
-/**
- * Get the Worker URL (resolved from publish-workflow-settings config tab).
+ * Get the Worker URL.
  * Falls back to localhost:8787 for local development.
  * @returns {string} Worker URL
  */
 function getWorkerUrl() {
   const { hostname } = window.location;
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return cachedWorkerUrl || LOCAL_WORKER_URL;
+    return LOCAL_WORKER_URL;
   }
-  if (!cachedWorkerUrl) {
-    throw new Error(
-      'Worker URL not configured. Please add a "publish-workflow-settings" tab '
-      + 'with a "workerUrl" key-value pair to the DA config.',
-    );
-  }
-  return cachedWorkerUrl;
+  return WORKER_URL;
 }
 
 /**
@@ -175,7 +151,6 @@ async function fetchWorkflowConfig(org, site, token) {
   if (siteResp.ok) {
     const config = await siteResp.json();
     if (config['publish-workflow-config']) {
-      cachedWorkerUrl = extractWorkerUrl(config) || cachedWorkerUrl;
       return config;
     }
   }
@@ -186,7 +161,6 @@ async function fetchWorkflowConfig(org, site, token) {
   if (orgResp.ok) {
     const config = await orgResp.json();
     if (config['publish-workflow-config']) {
-      cachedWorkerUrl = extractWorkerUrl(config) || cachedWorkerUrl;
       return config;
     }
   }
