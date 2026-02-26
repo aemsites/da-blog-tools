@@ -402,7 +402,7 @@ class PublishRequestsApp extends LitElement {
     const result = await notifyRejection(
       {
         org: this._org,
-        repo: this._site,
+        site: this._site,
         path: this._path,
         authorEmail: this._authorEmail,
         rejecterEmail: this._userEmail,
