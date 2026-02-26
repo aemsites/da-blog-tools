@@ -236,10 +236,6 @@ export async function resolveWorkflowConfig(path, org, site, token) {
   const commentsRequiredSetting = extractSetting(config, 'request.comments.required');
   const commentsRequired = commentsRequiredSetting?.toLowerCase() === 'true';
 
-  // Read minimum comment length (default: 10)
-  const commentsLengthSetting = extractSetting(config, 'request.comments.length');
-  const commentsMinLength = parseInt(commentsLengthSetting, 10) || 10;
-
   // Multi-sheet format: tabs are 'publish-workflow-config' and 'publish-workflow-groups-to-email'
   const rules = config['publish-workflow-config']?.data || config.data || config.rules || [];
   const groupsData = config['publish-workflow-groups-to-email']?.data || [];
@@ -273,7 +269,6 @@ export async function resolveWorkflowConfig(path, org, site, token) {
       pattern,
       source: 'config',
       commentsRequired,
-      commentsMinLength,
       digiops: rule.DigiOps || rule.digiops || config.digiops || '',
     };
   }
@@ -285,7 +280,6 @@ export async function resolveWorkflowConfig(path, org, site, token) {
     pattern: '*',
     source: 'no-match',
     commentsRequired,
-    commentsMinLength,
     error: `No approver rule found matching path "${path}". Please add a matching pattern to the "publish-workflow-config" tab.`,
   };
 }

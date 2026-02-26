@@ -47,7 +47,6 @@ class RequestForPublishPlugin extends LitElement {
     _isResending: { state: true },
     _isWithdrawing: { state: true },
     _commentsRequired: { state: true },
-    _commentsMinLength: { state: true },
   };
 
   constructor() {
@@ -64,7 +63,6 @@ class RequestForPublishPlugin extends LitElement {
     this._isResending = false;
     this._isWithdrawing = false;
     this._commentsRequired = false;
-    this._commentsMinLength = 10;
   }
 
   connectedCallback() {
@@ -111,7 +109,6 @@ class RequestForPublishPlugin extends LitElement {
     this._cc = result.cc || [];
     this._approversSource = result.source || 'unknown';
     this._commentsRequired = result.commentsRequired || false;
-    this._commentsMinLength = result.commentsMinLength || 10;
 
     // Show error if config is missing or no matching rule found
     if (result.error) {
@@ -145,9 +142,9 @@ class RequestForPublishPlugin extends LitElement {
     const comment = formData.get('comment')?.trim() || '';
 
     // Validate comment if required
-    if (this._commentsRequired && comment.length < this._commentsMinLength) {
+    if (this._commentsRequired && comment.length < 10) {
       this._isSubmitting = false;
-      this._message = { type: 'error', text: `Please provide a description of at least ${this._commentsMinLength} characters.` };
+      this._message = { type: 'error', text: 'Please provide a description of at least 10 characters.' };
       return;
     }
 
@@ -396,7 +393,7 @@ class RequestForPublishPlugin extends LitElement {
               rows="3"
               ?required=${this._commentsRequired}
             ></textarea>
-            ${this._commentsRequired ? html`<span class="field-hint">Minimum ${this._commentsMinLength} characters required.</span>` : nothing}
+            ${this._commentsRequired ? html`<span class="field-hint">Minimum 10 characters required.</span>` : nothing}
           </div>
 
           <div class="form-actions">
