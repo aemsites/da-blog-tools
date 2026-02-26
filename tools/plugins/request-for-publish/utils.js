@@ -29,6 +29,18 @@ function extractWorkerUrl(config) {
 }
 
 /**
+ * Extract a setting value from the publish-workflow-settings config tab.
+ * @param {Object} config - The full config object from DA Config API
+ * @param {string} key - The setting key to look up
+ * @returns {string|null} The setting value or null if not found
+ */
+function extractSetting(config, key) {
+  const settings = config?.['publish-workflow-settings']?.data || [];
+  const entry = settings.find((r) => (r.key || r.Key) === key);
+  return entry?.value || entry?.Value || null;
+}
+
+/**
  * Get the Worker URL (resolved from publish-workflow-settings config tab).
  * Falls back to localhost:8787 for local development.
  * @returns {string} Worker URL
@@ -195,17 +207,17 @@ async function fetchWorkflowConfig(org, site, token) {
 }
 
 /**
- * Detect approvers for a content path by reading the config via DA Config API.
- * Tries site-level config first, then falls back to org-level.
- * Resolves distribution list groups to individual emails using the
- * publish-workflow-groups-to-email tab.
+ * Resolve the full publish workflow configuration for a content path.
+ * Fetches the config via the DA Config API (site-level first, then org-level),
+ * resolves approvers and CC recipients (expanding DL groups to individual emails),
+ * and extracts workflow settings such as commentsRequired.
  * @param {string} path - The content path
  * @param {string} org - Organization
  * @param {string} site - Site
  * @param {string} token - Authorization token
- * @returns {Promise<Object>} Approvers data
+ * @returns {Promise<Object>} Workflow config including approvers, cc, settings, etc.
  */
-export async function detectApprovers(path, org, site, token) {
+export async function resolveWorkflowConfig(path, org, site, token) {
   const config = await fetchWorkflowConfig(org, site, token);
 
   if (!config) {
@@ -214,10 +226,19 @@ export async function detectApprovers(path, org, site, token) {
       cc: [],
       pattern: '',
       source: 'error',
+      commentsRequired: false,
       error: 'Publish workflow configuration not found. Please ensure the "publish-workflow-config" tab '
         + `exists in the DA config for site "${org}/${site}" or org "${org}".`,
     };
   }
+
+  // Check if request comments are required via publish-workflow-settings
+  const commentsRequiredSetting = extractSetting(config, 'request.comments.required');
+  const commentsRequired = commentsRequiredSetting?.toLowerCase() === 'true';
+
+  // Read minimum comment length (default: 10)
+  const commentsLengthSetting = extractSetting(config, 'request.comments.length');
+  const commentsMinLength = parseInt(commentsLengthSetting, 10) || 10;
 
   // Multi-sheet format: tabs are 'publish-workflow-config' and 'publish-workflow-groups-to-email'
   const rules = config['publish-workflow-config']?.data || config.data || config.rules || [];
@@ -251,6 +272,8 @@ export async function detectApprovers(path, org, site, token) {
       cc: resolvedCC,
       pattern,
       source: 'config',
+      commentsRequired,
+      commentsMinLength,
       digiops: rule.DigiOps || rule.digiops || config.digiops || '',
     };
   }
@@ -261,6 +284,8 @@ export async function detectApprovers(path, org, site, token) {
     cc: [],
     pattern: '*',
     source: 'no-match',
+    commentsRequired,
+    commentsMinLength,
     error: `No approver rule found matching path "${path}". Please add a matching pattern to the "publish-workflow-config" tab.`,
   };
 }
