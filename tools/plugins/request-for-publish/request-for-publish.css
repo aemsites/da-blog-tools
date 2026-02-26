@@ -363,8 +363,16 @@
   color: var(--color-text);
 }
 
-.form-group label .required {
+.form-group label .required,
+.form-group label .required-marker {
   color: var(--color-danger);
+}
+
+.form-group .field-hint {
+  display: block;
+  margin-top: var(--spacing-75);
+  font-size: 12px;
+  color: var(--color-text-muted);
 }
 
 .form-group input[type="email"],

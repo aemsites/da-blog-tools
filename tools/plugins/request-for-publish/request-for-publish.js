@@ -3,7 +3,7 @@
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { LitElement, html, nothing } from 'da-lit';
 import {
-  detectApprovers,
+  resolveWorkflowConfig,
   submitPublishRequest,
   resendPublishRequest,
   withdrawPublishRequest,
@@ -46,6 +46,8 @@ class RequestForPublishPlugin extends LitElement {
     _existingRequest: { state: true },
     _isResending: { state: true },
     _isWithdrawing: { state: true },
+    _commentsRequired: { state: true },
+    _commentsMinLength: { state: true },
   };
 
   constructor() {
@@ -61,6 +63,8 @@ class RequestForPublishPlugin extends LitElement {
     this._existingRequest = null;
     this._isResending = false;
     this._isWithdrawing = false;
+    this._commentsRequired = false;
+    this._commentsMinLength = 10;
   }
 
   connectedCallback() {
@@ -102,10 +106,12 @@ class RequestForPublishPlugin extends LitElement {
 
     // Detect approvers for this content path
     const { org, repo: site } = this.context;
-    const result = await detectApprovers(this.contentPath, org, site, this.token);
+    const result = await resolveWorkflowConfig(this.contentPath, org, site, this.token);
     this._approvers = result.approvers || [];
     this._cc = result.cc || [];
     this._approversSource = result.source || 'unknown';
+    this._commentsRequired = result.commentsRequired || false;
+    this._commentsMinLength = result.commentsMinLength || 10;
 
     // Show error if config is missing or no matching rule found
     if (result.error) {
@@ -136,7 +142,14 @@ class RequestForPublishPlugin extends LitElement {
 
     const form = this.shadowRoot.querySelector('form');
     const formData = new FormData(form);
-    const comment = formData.get('comment');
+    const comment = formData.get('comment')?.trim() || '';
+
+    // Validate comment if required
+    if (this._commentsRequired && comment.length < this._commentsMinLength) {
+      this._isSubmitting = false;
+      this._message = { type: 'error', text: `Please provide a description of at least ${this._commentsMinLength} characters.` };
+      return;
+    }
 
     // Use auto-fetched email from IMS profile
     const authorEmail = this._userEmail;
@@ -375,13 +388,15 @@ class RequestForPublishPlugin extends LitElement {
 
         <form @submit=${this.handleSubmit}>
           <div class="form-group">
-            <label for="comment">Please provide a description of your website content changes and reason for the content update.</label>
+            <label for="comment">Please provide a description of your website content changes and reason for the content update.${this._commentsRequired ? html` <span class="required-marker">*</span>` : nothing}</label>
             <textarea
               id="comment"
               name="comment"
               placeholder="Overview of the website updates and context for the content update request."
               rows="3"
+              ?required=${this._commentsRequired}
             ></textarea>
+            ${this._commentsRequired ? html`<span class="field-hint">Minimum ${this._commentsMinLength} characters required.</span>` : nothing}
           </div>
 
           <div class="form-actions">
