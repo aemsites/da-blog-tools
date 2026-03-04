@@ -16,6 +16,8 @@ import {
   getAllPendingRequestsForUser,
   getAllPendingRequestsByRequester,
   resendPublishRequest,
+  fetchSiteConfig,
+  getLiveHostFromConfig,
 } from './api.js';
 
 // Super Lite components
@@ -48,6 +50,7 @@ class PublishRequestsApp extends LitElement {
     _org: { state: true },
     _site: { state: true },
     _path: { state: true },
+    _liveHost: { state: true },
     _authorEmail: { state: true },
     _previewUrl: { state: true },
     _comment: { state: true },
@@ -72,6 +75,7 @@ class PublishRequestsApp extends LitElement {
     this._org = '';
     this._site = '';
     this._path = '';
+    this._liveHost = null;
     this._authorEmail = '';
     this._previewUrl = '';
     this._comment = '';
@@ -102,8 +106,9 @@ class PublishRequestsApp extends LitElement {
   }
 
   get liveUrl() {
-    // Build live URL: https://main--<repo>--<org>.aem.live/<path>
-    return `https://main--${this._site}--${this._org}.aem.live${this._path}`;
+    // Use CDN config live host when available, else default main--{site}--{org}.aem.live
+    const host = this._liveHost || `main--${this._site}--${this._org}.aem.live`;
+    return `https://${host}${this._path}`;
   }
 
   get diffUrl() {
@@ -172,6 +177,14 @@ class PublishRequestsApp extends LitElement {
     if (!this._org || !this._site) {
       this._state = 'site-select';
       return;
+    }
+
+    // Fetch CDN config from admin.hlx.page to resolve live host (custom domains, etc.)
+    try {
+      const config = await fetchSiteConfig(this._org, this._site, this.token);
+      this._liveHost = getLiveHostFromConfig(this._org, this._site, config);
+    } catch {
+      this._liveHost = null; // fall back to default in liveUrl getter
     }
 
     // Sample RUM enhancer if the RUM script is loaded
