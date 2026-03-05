@@ -1,7 +1,7 @@
 /* eslint-disable import/no-unresolved, no-console, no-restricted-syntax */
 /* eslint-disable no-continue, no-await-in-loop, prefer-destructuring */
 
-const WORKER_URL = 'https://publish-requests.aem-poc-lab.workers.dev';
+const WORKER_URL = 'https://publish-requests-ci.aem-poc-lab.workers.dev';
 const LOCAL_WORKER_URL = 'http://localhost:8787';
 
 const { getDaAdmin } = await import('https://da.live/nx/public/utils/constants.js');
