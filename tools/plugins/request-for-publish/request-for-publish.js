@@ -235,6 +235,20 @@ class RequestForPublishPlugin extends LitElement {
     }
   }
 
+  _handleCommentInvalid(e) {
+    const textarea = e.target;
+    if (!this._commentsRequired) return;
+    if (textarea.validity.valueMissing || textarea.validity.tooShort) {
+      textarea.setCustomValidity(`Please provide a description of at least ${this._commentsMinLength} characters.`);
+    } else {
+      textarea.setCustomValidity('');
+    }
+  }
+
+  _handleCommentInput(e) {
+    e.target.setCustomValidity('');
+  }
+
   renderLoading() {
     return html`
       <div class="loading-container">
@@ -396,6 +410,8 @@ class RequestForPublishPlugin extends LitElement {
               rows="3"
               ?required=${this._commentsRequired}
               minlength=${this._commentsRequired ? this._commentsMinLength : nothing}
+              @invalid=${this._handleCommentInvalid}
+              @input=${this._handleCommentInput}
             ></textarea>
             ${this._commentsRequired ? html`<span class="field-hint">Minimum ${this._commentsMinLength} characters required.</span>` : nothing}
           </div>
