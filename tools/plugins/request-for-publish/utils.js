@@ -227,6 +227,7 @@ export async function resolveWorkflowConfig(path, org, site, token) {
       pattern: '',
       source: 'error',
       commentsRequired: false,
+      commentsMinLength: 10,
       error: 'Publish workflow configuration not found. Please ensure the "publish-workflow-config" tab '
         + `exists in the DA config for site "${org}/${site}" or org "${org}".`,
     };
@@ -235,6 +236,10 @@ export async function resolveWorkflowConfig(path, org, site, token) {
   // Check if request comments are required via publish-workflow-settings
   const commentsRequiredSetting = extractSetting(config, 'request.comments.required');
   const commentsRequired = commentsRequiredSetting?.toLowerCase() === 'true';
+
+  // Read minimum comment length (fallback: 10)
+  const commentsLengthSetting = extractSetting(config, 'request.comments.length');
+  const commentsMinLength = parseInt(commentsLengthSetting, 10) || 10;
 
   // Multi-sheet format: tabs are 'publish-workflow-config' and 'publish-workflow-groups-to-email'
   const rules = config['publish-workflow-config']?.data || config.data || config.rules || [];
@@ -269,6 +274,7 @@ export async function resolveWorkflowConfig(path, org, site, token) {
       pattern,
       source: 'config',
       commentsRequired,
+      commentsMinLength,
       digiops: rule.DigiOps || rule.digiops || config.digiops || '',
     };
   }
@@ -280,6 +286,7 @@ export async function resolveWorkflowConfig(path, org, site, token) {
     pattern: '*',
     source: 'no-match',
     commentsRequired,
+    commentsMinLength,
     error: `No approver rule found matching path "${path}". Please add a matching pattern to the "publish-workflow-config" tab.`,
   };
 }
