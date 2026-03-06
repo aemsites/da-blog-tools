@@ -72,7 +72,7 @@ If no matching rule is found, an error message is shown prompting the user to ad
 
 1. Author opens the plugin and sees the pre-filled form (content path, preview link, detected approvers, and CC recipients)
 2. Author optionally reviews the content diff via the AEM Page Status diff tool link
-3. Author optionally adds a note for the reviewers
+3. Author adds a note for the reviewers (optional by default; can be made mandatory with a minimum length via `publish-workflow-settings`)
 4. Author clicks **"Request Publish"**
 5. The plugin sends the request to the Cloudflare Worker (`/api/request-publish`), which triggers email notifications to all resolved approvers with CC recipients copied
 6. On success, it writes a new entry to `/.da/publish-workflow-requests.json` with status `pending`
@@ -82,7 +82,7 @@ If no matching rule is found, an error message is shown prompting the user to ad
 
 ### 1. Submit a New Publish Request
 
-The primary use case. The author sees the content path, preview URL, resolved approvers and CC recipients (with DLs expanded), and a content diff link. They can add an optional note and submit. This:
+The primary use case. The author sees the content path, preview URL, resolved approvers and CC recipients (with DLs expanded), and a content diff link. They add a description/note (optional by default; mandatory when `request.comments.required` is `true` in `publish-workflow-settings`) and submit. This:
 - Sends the request via the Cloudflare Worker which emails the approvers (with CC recipients copied) with a review link
 - Records the pending request in the DA requests sheet (requester, approver, path, status)
 - Shows a success confirmation with the list of notified approvers and CC'd recipients
@@ -147,12 +147,29 @@ The workflow configuration is read from the **DA Config API** as tabs within the
 - **Site-level** (primary): `GET https://admin.da.live/config/{org}/{site}/`
 - **Org-level** (fallback): `GET https://admin.da.live/config/{org}/`
 
-The config is a multi-sheet JSON. The plugin uses these two tabs:
+The config is a multi-sheet JSON. The plugin uses these tabs:
 
 - **`publish-workflow-config`** tab: Path-based rules with `Pattern`, `Approvers`, `CC`, and `NotifyOnReject` columns. Patterns support wildcards (e.g., `/drafts/*`, `/*`)
-- **`groups-to-email`** tab: Maps distribution list group names (e.g., `dl-reviewers@example.com`) to comma-separated individual email addresses
+- **`publish-workflow-groups-to-email`** tab: Maps distribution list group names (e.g., `dl-reviewers@example.com`) to comma-separated individual email addresses
+- **`publish-workflow-settings`** tab: Key-value settings for the publish workflow (see below)
 
 If the `publish-workflow-config` tab is not found at either level, the plugin shows an error message and disables submission.
+
+#### `publish-workflow-settings` tab
+
+The `publish-workflow-settings` tab holds key-value pairs that control optional workflow behavior. Add a row for each setting:
+
+| Key | Value | Description |
+|-----|-------|-------------|
+| `request.comments.required` | `true` or `false` | When `true`, the description field ("Please provide a description of your website content changes...") becomes mandatory. Default: `false`. |
+| `request.comments.length` | number | Minimum character length for the description when comments are required. Fallback: `10` if missing or invalid. |
+
+**Example:**
+
+| key | value |
+|-----|-------|
+| `request.comments.required` | `true` |
+| `request.comments.length` | `25` |
 
 ### `/.da/publish-workflow-requests.json` (DA Source API)
 
