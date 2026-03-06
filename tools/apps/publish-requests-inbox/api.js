@@ -185,10 +185,7 @@ export async function fetchSiteConfig(org, site, token) {
   try {
     const configUrl = `https://admin.hlx.page/sidekick/${org}/${site}/main/config.json`;
     const url = `${CORS_PROXY}?url=${encodeURIComponent(configUrl)}`;
-    const response = await daFetch(url, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await daFetch(url);
     if (!response.ok) return null;
     return response.json();
   } catch (error) {
@@ -231,7 +228,7 @@ export async function publishContent(org, site, path, token) {
 
     const publishUrl = `${CORS_PROXY}?url=https://admin.hlx.page/live/${org}/${site}/main${cleanPath}`;
 
-    const response = await daFetch(publishUrl, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const response = await daFetch(publishUrl, { method: 'POST' });
 
     if (!response.ok) {
       const errorText = await response.text();
