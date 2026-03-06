@@ -1,7 +1,11 @@
 /* eslint-disable import/no-unresolved, no-console, no-restricted-syntax */
 /* eslint-disable no-continue, no-await-in-loop, prefer-destructuring */
 
+const WORKER_URL = 'https://publish-requests.aem-poc-lab.workers.dev';
+const CI_WORKER_URL = 'https://publish-requests-ci.aem-poc-lab.workers.dev';
 const LOCAL_WORKER_URL = 'http://localhost:8787';
+
+const CORS_PROXY = 'https://da-etc.adobeaem.workers.dev/cors';
 
 const { getDaAdmin } = await import('https://da.live/nx/public/utils/constants.js');
 const DA_ADMIN = getDaAdmin();
@@ -12,42 +16,20 @@ const { daFetch } = await import('https://da.live/nx/utils/daFetch.js');
 // DA sheet path for requests (read/written via Source API)
 const REQUESTS_SHEET_PATH = '/.da/publish-workflow-requests.json';
 
-// Config is read from the root site/org config via DA Config API
-// The publish-workflow-config, publish-workflow-groups-to-email, and
-// publish-workflow-settings tabs live inside the root config at
-// GET /config/{org}/{site}/
-// See: https://docs.da.live/developers/api/config#get-config
-
-let cachedWorkerUrl = null;
-
 /**
- * Extract the workerUrl value from the publish-workflow-settings config tab.
- * @param {Object} config - The full config object from DA Config API
- * @returns {string|null} The worker URL or null if not configured
- */
-function extractWorkerUrl(config) {
-  const settings = config?.['publish-workflow-settings']?.data || [];
-  const entry = settings.find((r) => (r.key || r.Key) === 'workerUrl');
-  return entry?.value || entry?.Value || null;
-}
-
-/**
- * Get the Worker URL (resolved from publish-workflow-settings config tab).
+ * Get the Worker URL.
  * Falls back to localhost:8787 for local development.
  * @returns {string} Worker URL
  */
 function getWorkerUrl() {
   const { hostname } = window.location;
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return cachedWorkerUrl || LOCAL_WORKER_URL;
+    return LOCAL_WORKER_URL;
   }
-  if (!cachedWorkerUrl) {
-    throw new Error(
-      'Worker URL not configured. Please add a "publish-workflow-settings" tab '
-      + 'with a "workerUrl" key-value pair to the DA config.',
-    );
+  if (new URLSearchParams(window.location.search).get('env') === 'ci') {
+    return CI_WORKER_URL;
   }
-  return cachedWorkerUrl;
+  return WORKER_URL;
 }
 
 /**
@@ -178,7 +160,6 @@ async function fetchWorkflowConfig(org, site, token) {
   if (siteResp.ok) {
     const config = await siteResp.json();
     if (config['publish-workflow-config']) {
-      cachedWorkerUrl = extractWorkerUrl(config) || cachedWorkerUrl;
       return config;
     }
   }
@@ -189,12 +170,50 @@ async function fetchWorkflowConfig(org, site, token) {
   if (orgResp.ok) {
     const config = await orgResp.json();
     if (config['publish-workflow-config']) {
-      cachedWorkerUrl = extractWorkerUrl(config) || cachedWorkerUrl;
       return config;
     }
   }
 
   return null;
+}
+
+/**
+ * Fetch site config from admin.hlx.page (CDN config, etc.) via CORS proxy.
+ * GET https://admin.hlx.page/sidekick/${org}/${site}/main/config.json
+ * @param {string} org - Organization
+ * @param {string} site - Site (repo)
+ * @param {string} token - Authorization token
+ * @returns {Promise<Object|null>} Site config or null on failure
+ */
+export async function fetchSiteConfig(org, site) {
+  try {
+    const configUrl = `https://admin.hlx.page/sidekick/${org}/${site}/main/config.json`;
+    const url = `${CORS_PROXY}?url=${encodeURIComponent(configUrl)}`;
+    const response = await daFetch(url);
+    if (!response.ok) return null;
+    return response.json();
+  } catch (error) {
+    console.warn('Failed to fetch site config from admin.hlx.page:', error);
+    return null;
+  }
+}
+
+/**
+ * Resolve the live host from site config.
+ * Uses cdn.live.host (supports $owner, $repo placeholders) or falls back to default.
+ * @param {string} org - Organization (owner)
+ * @param {string} site - Site (repo)
+ * @param {Object|null} config - Site config from fetchSiteConfig
+ * @returns {string} Live host (e.g. main--repo--org.aem.live)
+ */
+export function getLiveHostFromConfig(org, site, config) {
+  const liveHost = config?.host;
+  if (liveHost) {
+    return liveHost
+      .replace(/\$owner/g, org)
+      .replace(/\$repo/g, site);
+  }
+  return `main--${site}--${org}.aem.live`;
 }
 
 /**
@@ -206,14 +225,14 @@ async function fetchWorkflowConfig(org, site, token) {
  * @param {string} token - Authorization token
  * @returns {Promise<Object>} Result
  */
-export async function publishContent(org, site, path, token) {
+export async function publishContent(org, site, path) {
   try {
     // Ensure path starts with /
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
-    const publishUrl = `https://da-etc.adobeaem.workers.dev/cors?url=https://admin.hlx.page/live/${org}/${site}/main${cleanPath}`;
+    const publishUrl = `${CORS_PROXY}?url=https://admin.hlx.page/live/${org}/${site}/main${cleanPath}`;
 
-    const response = await daFetch(publishUrl, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const response = await daFetch(publishUrl, { method: 'POST' });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -545,7 +564,7 @@ export async function bulkPublishContent(org, site, paths) {
     // Normalize paths — ensure each starts with /
     const cleanPaths = paths.map((p) => (p.startsWith('/') ? p : `/${p}`));
 
-    const bulkUrl = `https://da-etc.adobeaem.workers.dev/cors?url=https://admin.hlx.page/live/${org}/${site}/main/*`;
+    const bulkUrl = `${CORS_PROXY}?url=https://admin.hlx.page/live/${org}/${site}/main/*`;
 
     const response = await daFetch(bulkUrl, {
       method: 'POST',
@@ -588,7 +607,7 @@ export async function bulkPublishContent(org, site, paths) {
  * @returns {Promise<Object>} Final job status
  */
 export async function pollJobStatus(jobSelfUrl, maxWaitMs = 60000, intervalMs = 2000) {
-  const jobUrl = `https://da-etc.adobeaem.workers.dev/cors?url=${encodeURIComponent(jobSelfUrl)}/details`;
+  const jobUrl = `${CORS_PROXY}?url=${encodeURIComponent(jobSelfUrl)}/details`;
   const startTime = Date.now();
 
   while (Date.now() - startTime < maxWaitMs) {
