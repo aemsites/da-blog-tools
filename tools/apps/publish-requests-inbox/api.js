@@ -181,7 +181,7 @@ async function fetchWorkflowConfig(org, site, token) {
  * @param {string} token - Authorization token
  * @returns {Promise<Object|null>} Site config or null on failure
  */
-export async function fetchSiteConfig(org, site, token) {
+export async function fetchSiteConfig(org, site) {
   try {
     const configUrl = `https://admin.hlx.page/sidekick/${org}/${site}/main/config.json`;
     const url = `${CORS_PROXY}?url=${encodeURIComponent(configUrl)}`;
@@ -221,7 +221,7 @@ export function getLiveHostFromConfig(org, site, config) {
  * @param {string} token - Authorization token
  * @returns {Promise<Object>} Result
  */
-export async function publishContent(org, site, path, token) {
+export async function publishContent(org, site, path) {
   try {
     // Ensure path starts with /
     const cleanPath = path.startsWith('/') ? path : `/${path}`;

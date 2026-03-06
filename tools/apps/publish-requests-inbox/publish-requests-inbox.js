@@ -181,7 +181,7 @@ class PublishRequestsApp extends LitElement {
 
     // Fetch CDN config from admin.hlx.page to resolve live host (custom domains, etc.)
     try {
-      const config = await fetchSiteConfig(this._org, this._site, this.token);
+      const config = await fetchSiteConfig(this._org, this._site);
       this._liveHost = getLiveHostFromConfig(this._org, this._site, config);
     } catch {
       this._liveHost = null; // fall back to default in liveUrl getter
@@ -362,7 +362,7 @@ class PublishRequestsApp extends LitElement {
 
     try {
       // Publish the content via Helix Admin API
-      const result = await publishContent(this._org, this._site, this._path, this.token);
+      const result = await publishContent(this._org, this._site, this._path);
 
       if (result.success) {
         // Remove the pending request from the requests sheet
