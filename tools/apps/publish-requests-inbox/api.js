@@ -5,6 +5,8 @@ const WORKER_URL = 'https://publish-requests.aem-poc-lab.workers.dev';
 const CI_WORKER_URL = 'https://publish-requests-ci.aem-poc-lab.workers.dev';
 const LOCAL_WORKER_URL = 'http://localhost:8787';
 
+const CORS_PROXY = 'https://da-etc.adobeaem.workers.dev/cors';
+
 const { getDaAdmin } = await import('https://da.live/nx/public/utils/constants.js');
 const DA_ADMIN = getDaAdmin();
 
@@ -176,6 +178,45 @@ async function fetchWorkflowConfig(org, site, token) {
 }
 
 /**
+ * Fetch site config from admin.hlx.page (CDN config, etc.) via CORS proxy.
+ * GET https://admin.hlx.page/sidekick/${org}/${site}/main/config.json
+ * @param {string} org - Organization
+ * @param {string} site - Site (repo)
+ * @param {string} token - Authorization token
+ * @returns {Promise<Object|null>} Site config or null on failure
+ */
+export async function fetchSiteConfig(org, site) {
+  try {
+    const configUrl = `https://admin.hlx.page/sidekick/${org}/${site}/main/config.json`;
+    const url = `${CORS_PROXY}?url=${encodeURIComponent(configUrl)}`;
+    const response = await daFetch(url);
+    if (!response.ok) return null;
+    return response.json();
+  } catch (error) {
+    console.warn('Failed to fetch site config from admin.hlx.page:', error);
+    return null;
+  }
+}
+
+/**
+ * Resolve the live host from site config.
+ * Uses cdn.live.host (supports $owner, $repo placeholders) or falls back to default.
+ * @param {string} org - Organization (owner)
+ * @param {string} site - Site (repo)
+ * @param {Object|null} config - Site config from fetchSiteConfig
+ * @returns {string} Live host (e.g. main--repo--org.aem.live)
+ */
+export function getLiveHostFromConfig(org, site, config) {
+  const liveHost = config?.host;
+  if (liveHost) {
+    return liveHost
+      .replace(/\$owner/g, org)
+      .replace(/\$repo/g, site);
+  }
+  return `main--${site}--${org}.aem.live`;
+}
+
+/**
  * Publish content via Helix Admin API
  * POST https://admin.hlx.page/live/{org}/{site}/main/{path}
  * @param {string} org - Organization
@@ -184,14 +225,14 @@ async function fetchWorkflowConfig(org, site, token) {
  * @param {string} token - Authorization token
  * @returns {Promise<Object>} Result
  */
-export async function publishContent(org, site, path, token) {
+export async function publishContent(org, site, path) {
   try {
     // Ensure path starts with /
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
-    const publishUrl = `https://da-etc.adobeaem.workers.dev/cors?url=https://admin.hlx.page/live/${org}/${site}/main${cleanPath}`;
+    const publishUrl = `${CORS_PROXY}?url=https://admin.hlx.page/live/${org}/${site}/main${cleanPath}`;
 
-    const response = await daFetch(publishUrl, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const response = await daFetch(publishUrl, { method: 'POST' });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -523,7 +564,7 @@ export async function bulkPublishContent(org, site, paths) {
     // Normalize paths — ensure each starts with /
     const cleanPaths = paths.map((p) => (p.startsWith('/') ? p : `/${p}`));
 
-    const bulkUrl = `https://da-etc.adobeaem.workers.dev/cors?url=https://admin.hlx.page/live/${org}/${site}/main/*`;
+    const bulkUrl = `${CORS_PROXY}?url=https://admin.hlx.page/live/${org}/${site}/main/*`;
 
     const response = await daFetch(bulkUrl, {
       method: 'POST',
@@ -566,7 +607,7 @@ export async function bulkPublishContent(org, site, paths) {
  * @returns {Promise<Object>} Final job status
  */
 export async function pollJobStatus(jobSelfUrl, maxWaitMs = 60000, intervalMs = 2000) {
-  const jobUrl = `https://da-etc.adobeaem.workers.dev/cors?url=${encodeURIComponent(jobSelfUrl)}/details`;
+  const jobUrl = `${CORS_PROXY}?url=${encodeURIComponent(jobSelfUrl)}/details`;
   const startTime = Date.now();
 
   while (Date.now() - startTime < maxWaitMs) {
