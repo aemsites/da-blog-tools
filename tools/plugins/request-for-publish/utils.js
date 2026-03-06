@@ -2,6 +2,7 @@
 /* eslint-disable no-continue, prefer-destructuring */
 
 const WORKER_URL = 'https://publish-requests.aem-poc-lab.workers.dev';
+const CI_WORKER_URL = 'https://publish-requests-ci.aem-poc-lab.workers.dev';
 const LOCAL_WORKER_URL = 'http://localhost:8787';
 
 const { getDaAdmin } = await import('https://da.live/nx/public/utils/constants.js');
@@ -19,6 +20,9 @@ function getWorkerUrl() {
   const { hostname } = window.location;
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return LOCAL_WORKER_URL;
+  }
+  if (new URLSearchParams(window.location.search).get('env') === 'ci') {
+    return CI_WORKER_URL;
   }
   return WORKER_URL;
 }
