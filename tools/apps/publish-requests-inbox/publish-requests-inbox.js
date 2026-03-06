@@ -106,9 +106,7 @@ class PublishRequestsApp extends LitElement {
   }
 
   get liveUrl() {
-    // Use CDN config live host when available, else default main--{site}--{org}.aem.live
-    const host = this._liveHost || `main--${this._site}--${this._org}.aem.live`;
-    return `https://${host}${this._path}`;
+    return `https://${this._liveHost}${this._path}`;
   }
 
   get diffUrl() {
