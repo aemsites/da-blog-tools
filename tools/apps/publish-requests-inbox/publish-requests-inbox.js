@@ -366,9 +366,11 @@ class PublishRequestsApp extends LitElement {
         // Remove the pending request from the requests sheet
         await removePublishRequest(this._org, this._site, this._path, this.token);
 
+        this._state = 'approved';
+
         // Notify the author that their content has been published
         if (this._authorEmail) {
-          notifyPublished(
+          const notifyResult = await notifyPublished(
             {
               org: this._org,
               site: this._site,
@@ -376,11 +378,13 @@ class PublishRequestsApp extends LitElement {
               approverEmail: this._userEmail,
             },
             this.token,
-          ).catch((err) => console.warn('Failed to send publish notification:', err));
+          );
+          this._message = notifyResult.success
+            ? { type: 'success', text: 'Content published successfully!' }
+            : { type: 'info', text: `Content published. Author notification failed: ${notifyResult.error}` };
+        } else {
+          this._message = { type: 'success', text: 'Content published successfully!' };
         }
-
-        this._state = 'approved';
-        this._message = { type: 'success', text: 'Content published successfully!' };
       } else {
         this._message = { type: 'error', text: result.error };
       }
@@ -446,10 +450,12 @@ class PublishRequestsApp extends LitElement {
     if (result.success) {
       await removePublishRequest(this._org, this._site, request.path, this.token);
 
+      this._pendingRequests = this._pendingRequests.filter((r) => r.path !== request.path);
+
       // Notify the author that their content has been published
       const authorEmail = request.requester || request.authorEmail;
       if (authorEmail) {
-        notifyPublished(
+        const notifyResult = await notifyPublished(
           {
             org: this._org,
             site: this._site,
@@ -457,11 +463,13 @@ class PublishRequestsApp extends LitElement {
             approverEmail: this._userEmail,
           },
           this.token,
-        ).catch((err) => console.warn('Failed to send publish notification:', err));
+        );
+        this._message = notifyResult.success
+          ? { type: 'success', text: `Published: ${request.path}` }
+          : { type: 'info', text: `Published: ${request.path}. Author notification failed: ${notifyResult.error}` };
+      } else {
+        this._message = { type: 'success', text: `Published: ${request.path}` };
       }
-
-      this._pendingRequests = this._pendingRequests.filter((r) => r.path !== request.path);
-      this._message = { type: 'success', text: `Published: ${request.path}` };
     } else {
       this._message = { type: 'error', text: `Failed to publish ${request.path}: ${result.error}` };
     }
@@ -519,6 +527,7 @@ class PublishRequestsApp extends LitElement {
       if (failedResources.length > 0) {
         const failedPaths = failedResources.map((r) => r.path);
         const succeededPaths = allPaths.filter((p) => !failedPaths.includes(p));
+        let partialNotifyError = null;
 
         // Remove only succeeded requests from the sheet in one write
         if (succeededPaths.length > 0) {
@@ -530,7 +539,7 @@ class PublishRequestsApp extends LitElement {
             .filter((r) => succeededSet.has(r.path))
             .map((r) => ({ path: r.path, authorEmail: r.requester || r.authorEmail }));
           if (succeededEntries.length > 0) {
-            notifyPublished(
+            const notifyResult = await notifyPublished(
               {
                 org: this._org,
                 site: this._site,
@@ -538,7 +547,8 @@ class PublishRequestsApp extends LitElement {
                 approverEmail: this._userEmail,
               },
               this.token,
-            ).catch((err) => console.warn('Failed to send publish notifications:', err));
+            );
+            if (!notifyResult.success) partialNotifyError = notifyResult.error;
           }
         }
 
@@ -548,7 +558,7 @@ class PublishRequestsApp extends LitElement {
         this._approveAllProcessing = false;
         this._message = {
           type: 'error',
-          text: `Published ${succeededPaths.length} of ${totalCount}. Failed: ${failedPaths.join(', ')}`,
+          text: `Published ${succeededPaths.length} of ${totalCount}. Failed: ${failedPaths.join(', ')}${partialNotifyError ? ` Author notification failed: ${partialNotifyError}` : ''}`,
         };
         return;
       }
@@ -560,8 +570,9 @@ class PublishRequestsApp extends LitElement {
     // Notify all authors that their content has been published
     const publishedEntries = this._pendingRequests
       .map((r) => ({ path: r.path, authorEmail: r.requester || r.authorEmail }));
+    let bulkNotifyError = null;
     if (publishedEntries.length > 0) {
-      notifyPublished(
+      const notifyResult = await notifyPublished(
         {
           org: this._org,
           site: this._site,
@@ -569,12 +580,15 @@ class PublishRequestsApp extends LitElement {
           approverEmail: this._userEmail,
         },
         this.token,
-      ).catch((err) => console.warn('Failed to send publish notifications:', err));
+      );
+      if (!notifyResult.success) bulkNotifyError = notifyResult.error;
     }
 
     this._pendingRequests = [];
     this._approveAllProcessing = false;
-    this._message = { type: 'success', text: `All ${totalCount} requests published successfully!` };
+    this._message = bulkNotifyError
+      ? { type: 'info', text: `All ${totalCount} requests published. Author notification failed: ${bulkNotifyError}` }
+      : { type: 'success', text: `All ${totalCount} requests published successfully!` };
   }
 
   // ======== My-requests action handlers ========
