@@ -6,10 +6,18 @@
 // Import SDK for Document Authoring
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
-// Base URL for Document Authoring source
-const DA_SOURCE = 'https://admin.da.live/source';
-const CRON_TAB_PATH = '.helix/crontab.json';
-const AEM_PREVIEW_REQUEST_URL = 'https://admin.hlx.page/preview';
+import {
+  fetchSnapshots,
+  fetchManifest,
+  saveManifest,
+  previewPage,
+  addToSnapshot,
+  reviewSnapshot,
+  updateScheduledPublish,
+  getScheduledPublishes,
+  deleteSnapshotPaths,
+  deleteSnapshot,
+} from './snapshot-utils.js';
 
 // Combine message handling into a single utility
 const messageUtils = {
@@ -26,401 +34,206 @@ const messageUtils = {
 };
 
 /**
- * Shows existing schedules for the current path in the feedback container
- * @param {string} path - Current page path to check schedules for
- * @param {Object} json - Crontab data object
- * @param {Array} json.data - Array of schedule entries
+ * Generates a unique snapshot ID for scheduled publish
+ * @param {string} path - Page path
+ * @param {Date} scheduleDate - Scheduled date
+ * @returns {string}
  */
-function displaySchedules(path, json) {
-  if (!json?.data?.length) {
-    messageUtils.show(`No scheduling data available for ${path}`, true);
-    return;
-  }
-
-  const schedules = json.data.filter((row) => row.command.includes(path));
-  if (!schedules.length) {
-    messageUtils.show(`No scheduling data available for ${path}`, true);
-    return;
-  }
-
-  const scheduleList = schedules
-    .map((row) => `${row.command.split(' ')[0]}ing ${row.when}`)
-    .join('\r\n');
-  messageUtils.show(`Schedules for ${path}:\r\n${scheduleList}`);
+function generateSnapshotId(path, scheduleDate) {
+  const pathSlug = path.replace(/^\/|\/$/g, '').replace(/[/.]/g, '-') || 'page';
+  const timestamp = scheduleDate.getTime();
+  return `da-schedule-${pathSlug}-${timestamp}`;
 }
 
 /**
- * Previews the crontab file
- * @param {string} url - API endpoint URL
- * @param {Object} opts - Request options
- * @param {string} opts.method - HTTP method (POST)
- * @returns {Promise<void>}
+ * Schedules a publish via the AEM Snapshot API
+ * @param {string} org - Organization
+ * @param {string} site - Site/repo
+ * @param {string} path - Page path
+ * @param {Date} scheduleDate - When to publish
+ * @param {string} token - Auth token
+ * @returns {Promise<boolean>}
  */
-async function previewCronTab(url, opts) {
-  const newOpts = { ...opts, method: 'POST' };
-  const previewReqUrl = url.replace(DA_SOURCE, AEM_PREVIEW_REQUEST_URL).replace(CRON_TAB_PATH, `main/${CRON_TAB_PATH}`);
-  try {
-    const resp = await fetch(previewReqUrl, newOpts);
-    if (!resp.ok) {
-      messageUtils.show('Failed to activate schedule , please check console for more details', true);
-      return false;
-    }
-    return true;
-  } finally {
-    messageUtils.setLoading(false);
-  }
-}
+async function schedulePublishViaSnapshot(org, site, path, scheduleDate, token) {
+  const snapshotId = generateSnapshotId(path, scheduleDate);
 
-/**
- * Sends updated scheduling data to the server
- * @param {string} url - API endpoint URL
- * @param {Object} opts - Request options including body and method
- * @param {FormData} opts.body - Form data containing updated schedule
- * @param {string} opts.method - HTTP method (POST)
- * @returns {Promise<Object|null>} Parsed JSON response or null if failed
- */
-async function setSchedules(url, opts) {
-  // Send request
-  try {
-    const resp = await fetch(url, opts);
-    if (!resp.ok) {
-      throw new Error(`Failed to set schedules: ${resp.status}`);
-    }
-    return resp.json();
-  } catch (error) {
-    console.error(error.message);
-    messageUtils.show('Failed to save schedule, please check console for more details', true);
-    return null;
-  }
-}
+  // 1. Create snapshot with empty manifest
+  const createResult = await saveManifest(org, site, snapshotId, {
+    title: `Scheduled publish: ${path}`,
+    description: `Auto-created by Scheduler for ${path} at ${scheduleDate.toISOString()}`,
+    resources: [],
+    metadata: {
+      scheduledPublish: scheduleDate.toISOString(),
+    },
+  }, token);
 
-// Add the cleanupPastSchedules function near the top with other utility functions
-function cleanupPastSchedules(json) {
-  if (!json?.data?.length) return json;
-
-  const now = new Date();
-  const cleanedData = json.data.filter((schedule) => {
-    const match = schedule.when.match(/at (\d+:\d+\s*(?:AM|PM)) on the (\d+)(?:st|nd|rd|th) day of (\w+) in (\d+)/i);
-    if (!match) return true;
-
-    const [, timeStr, day, month, year] = match;
-    const monthIndex = new Date(`${month} 1, 2000`).getMonth();
-
-    const [hours, minutes] = timeStr.match(/(\d+):(\d+)/).slice(1);
-    let hour = parseInt(hours, 10);
-    const minute = parseInt(minutes, 10);
-    if (timeStr.toUpperCase().includes('PM') && hour < 12) hour += 12;
-    if (timeStr.toUpperCase().includes('AM') && hour === 12) hour = 0;
-
-    const scheduleDate = new Date(Date.UTC(
-      parseInt(year, 10),
-      monthIndex,
-      parseInt(day, 10),
-      hour,
-      minute,
-    ));
-
-    return scheduleDate > now;
-  });
-
-  return { ...json, data: cleanedData };
-}
-
-/**
- * Fetches current scheduling data from the server
- * @param {string} url - API endpoint URL
- * @param {Object} opts - Request options
- * @param {string} opts.method - HTTP method (GET)
- * @param {Object} opts.headers - Request headers including auth token
- * @returns {Promise<Object|null>} Parsed JSON response or null if failed
- */
-async function getSchedules(url, opts) {
-  try {
-    const resp = await fetch(url, opts);
-    if (!resp.ok) {
-      throw new Error(`Failed to fetch schedules: ${resp.status}`);
-    }
-    const json = await resp.json();
-
-    // Clean up past schedules before returning
-    const cleanedJson = cleanupPastSchedules(json);
-
-    // If schedules were removed, update the crontab
-    if (cleanedJson.data.length < json.data.length) {
-      const body = new FormData();
-      body.append('data', new Blob([JSON.stringify(cleanedJson)], { type: 'application/json' }));
-
-      // Update crontab with cleaned data
-      await setSchedules(url, { ...opts, body, method: 'POST' });
-
-      // Preview the changes
-      await previewCronTab(url, opts);
-    }
-
-    return cleanedJson;
-  } catch (error) {
-    console.error(error.message);
-    messageUtils.show('Failed to fetch, please check console for more details', true);
-    return null;
-  }
-}
-
-// Update the createCronExpression function
-function createCronExpression(localDate) {
-  const utcDate = new Date(localDate.toUTCString());
-  const day = utcDate.getUTCDate();
-  const suffix = ['th', 'st', 'nd', 'rd'][(day % 10 > 3 || day < 21) ? 0 : day % 10];
-
-  // Format time separately
-  const timeFormatter = new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'UTC',
-  });
-
-  // Format month separately
-  const monthFormatter = new Intl.DateTimeFormat('en-US', {
-    month: 'long',
-    timeZone: 'UTC',
-  });
-
-  return `at ${timeFormatter.format(utcDate)} on the ${day}${suffix} day of ${
-    monthFormatter.format(utcDate)
-  } in ${utcDate.getUTCFullYear()}`;
-}
-
-/**
- * Processes a schedule command by updating the crontab
- * @param {string} url - API endpoint URL
- * @param {Object} opts - Request options
- * @param {string} command - Command type ('preview' or 'publish')
- * @param {string} pagePath - Path of page to schedule
- * @param {string} cronExpression - Schedule expression
- * @returns {Promise<boolean>} True if successful, false otherwise
- */
-async function processCommand(url, opts, command, pagePath, cronExpression) {
-  if (!cronExpression?.trim()) return false;
-
-  const json = await getSchedules(url, opts);
-  if (!json) {
-    messageUtils.show(`Please make sure ${CRON_TAB_PATH} is present and is accessible`, true);
+  if (createResult.error) {
+    messageUtils.show(`Failed to create snapshot: ${createResult.error}`, true);
     return false;
   }
 
-  const existingCommand = `${command} ${pagePath}`;
-
-  json.data = [
-    ...json.data.filter((row) => row.command !== existingCommand),
-    { when: cronExpression.trim(), command: existingCommand },
-  ];
-
-  const body = new FormData();
-  body.append('data', new Blob([JSON.stringify(json)], { type: 'application/json' }));
-
-  const newJson = await setSchedules(url, { ...opts, body, method: 'POST' });
-  if (!newJson) return false;
-
-  // Only clear message and show schedules if preview is successful
-  const previewSuccess = await previewCronTab(url, opts);
-  if (previewSuccess) {
-    messageUtils.show('');
-    displaySchedules(pagePath, await getSchedules(url, opts));
-    return true;
+  // 2. Preview the page (required before adding to snapshot)
+  const previewResp = await previewPage(org, site, path);
+  if (!previewResp.ok) {
+    messageUtils.show(`Failed to preview page: ${previewResp.status}. Ensure the page is saved and try again.`, true);
+    return false;
   }
-  return false;
+
+  // 3. Add the page path to the snapshot
+  const addResp = await addToSnapshot(org, site, snapshotId, [path], token);
+  if (!addResp.ok) {
+    messageUtils.show(`Failed to add page to snapshot: ${addResp.status}`, true);
+    return false;
+  }
+
+  // 4. Lock the snapshot (request review) so it's ready for publish
+  const reviewResult = await reviewSnapshot(org, site, snapshotId, 'request', token);
+  if (reviewResult.error && reviewResult.status !== 409) {
+    messageUtils.show(`Failed to lock snapshot: ${reviewResult.error}`, true);
+    return false;
+  }
+  // 409 = already locked (e.g. retry) - desired state, continue
+
+  // 5. Register with helix-snapshot-scheduler (metadata.scheduledPublish set in step 1)
+  const scheduleResult = await updateScheduledPublish(org, site, snapshotId, token);
+  if (scheduleResult.status !== 200) {
+    const msg = scheduleResult.text || scheduleResult.status;
+    messageUtils.show(`Failed to register schedule: ${msg}`, true);
+    return false;
+  }
+
+  return true;
 }
 
-// Update showCurrentSchedule function's date parsing logic:
-function showCurrentSchedule(path, json) {
-  const schedules = json.data.filter((row) => row.command.includes(path));
+/**
+ * Shows current schedules (from snapshot scheduler) for the site
+ * @param {string} _path - Current page path (unused; we show all site schedules)
+ * @param {Array} schedules - Array of { snapshotId, scheduledTime }
+ */
+function showCurrentSchedule(_path, schedules) {
   const content = document.querySelector('.schedule-content');
 
-  if (schedules.length === 0) {
+  if (!schedules || schedules.length === 0) {
     content.textContent = 'No active schedules found';
-  } else {
-    content.innerHTML = '';
-    schedules.forEach((schedule) => {
-      const row = document.createElement('div');
-      row.className = 'schedule-row';
-
-      const action = document.createElement('div');
-      action.className = 'schedule-action';
-      const actionText = schedule.command.split(' ')[0];
-      action.textContent = actionText.charAt(0).toUpperCase() + actionText.slice(1);
-
-      const time = document.createElement('div');
-      time.className = 'schedule-time';
-
-      // Convert UTC schedule time to local time for display
-      const whenParts = schedule.when.match(/at (.*?) on the/);
-      if (whenParts) {
-        const utcTimeStr = whenParts[1];
-        const utcDateStr = schedule.when.match(/the (\d+).*? day of (.*?) in (\d+)/);
-        if (utcDateStr) {
-          const [, day, month, year] = utcDateStr;
-          // Create a proper date string that JavaScript can parse
-          const monthIndex = new Date(`${month} 1, 2000`).getMonth(); // Get month index (0-11)
-          const utcDate = new Date(Date.UTC(
-            year,
-            monthIndex,
-            day,
-            ...utcTimeStr.match(/(\d+):(\d+)/).slice(1).map(Number),
-          ));
-
-          const timeFormatter = new Intl.DateTimeFormat('en-US', {
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true,
-          });
-          const dateFormatter = new Intl.DateTimeFormat('en-US', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-          });
-
-          const formattedTime = timeFormatter.format(utcDate);
-          const formattedDate = dateFormatter.format(utcDate);
-          time.textContent = `at ${formattedTime} on ${formattedDate}`;
-        } else {
-          time.textContent = schedule.when;
-        }
-      } else {
-        time.textContent = schedule.when;
-      }
-
-      row.append(action, time);
-      content.appendChild(row);
-    });
+    return;
   }
+
+  content.innerHTML = '';
+  schedules.forEach((schedule) => {
+    const row = document.createElement('div');
+    row.className = 'schedule-row';
+
+    const scheduleDate = new Date(schedule.scheduledTime);
+    const timeFormatter = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+    const dateFormatter = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    row.textContent = `Publish at ${timeFormatter.format(scheduleDate)} on ${dateFormatter.format(scheduleDate)}`;
+    content.appendChild(row);
+  });
 }
 
-// Add validation function for future date/time
-function isDateTimeInFuture(dateStr, timeStr) {
-  const selectedDateTime = new Date(`${dateStr}T${timeStr}`);
+/**
+ * Deletes scheduler-created snapshots whose scheduled publish time has passed
+ */
+async function cleanupOldScheduledSnapshots(org, site, token) {
+  const snapshotsResult = await fetchSnapshots(org, site, token);
+  if (snapshotsResult.error || !snapshotsResult.snapshots?.length) return;
+
   const now = new Date();
-  return selectedDateTime > now;
+  const toDelete = snapshotsResult.snapshots.filter((name) => name.startsWith('da-schedule-'));
+
+  await Promise.all(toDelete.map(async (snapshotId) => {
+    const manifestResult = await fetchManifest(org, site, snapshotId, token);
+    if (manifestResult.error) return;
+
+    const scheduledPublish = manifestResult.manifest?.metadata?.scheduledPublish;
+    if (!scheduledPublish || new Date(scheduledPublish) > now) return;
+
+    try {
+      const reviewResult = await reviewSnapshot(org, site, snapshotId, 'reject', token);
+      const isBadStatus = reviewResult.error
+        && reviewResult.status !== 400
+        && reviewResult.status !== 409;
+      if (isBadStatus) return;
+
+      const deletePathsResult = await deleteSnapshotPaths(org, site, snapshotId, ['/*'], token);
+      if (deletePathsResult.some((r) => !r.ok)) return;
+      await deleteSnapshot(org, site, snapshotId, token);
+    } catch {
+      // Snapshot may already be deleted by scheduler
+    }
+  }));
 }
 
 /**
  * Initializes the scheduler interface
- * @returns {Promise<void>}
  */
 async function init() {
   const { context, token } = await DA_SDK;
+  const { org, repo: site } = context; // DA uses "repo", AEM snapshot API uses "site"
+
+  await cleanupOldScheduledSnapshots(org, site, token);
 
   // Set page path
   const pageInput = document.getElementById('page-path');
   pageInput.value = context.path;
 
-  // Handle custom button
-  const customButton = document.querySelector('.custom-button');
-  const cronExpressionContainer = document.querySelector('.cron-expression-container');
-  const customInput = document.querySelector('.custom-input');
-  const dateInput = document.querySelector('#date-input');
-  const timeInput = document.querySelector('#time-input');
-
-  // Set current date and time as default values
+  const datetimeInput = document.getElementById('datetime-input');
   const now = new Date();
-  const [dateValue] = now.toISOString().split('T');
-  dateInput.value = dateValue;
-  timeInput.value = now.toTimeString().slice(0, 5);
+  const pad = (n) => String(n).padStart(2, '0');
+  datetimeInput.value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
-  customButton.addEventListener('click', () => {
-    const isCustom = !cronExpressionContainer.classList.contains('custom-mode');
-    cronExpressionContainer.classList.toggle('custom-mode');
-
-    // Clear any existing empty states
-    [dateInput, timeInput, customInput].forEach((input) => {
-      input.classList.remove('input-empty');
-    });
-
-    if (isCustom) {
-      customInput.remove();
-      cronExpressionContainer.insertBefore(customInput, customButton);
-    } else {
-      customInput.remove();
-      const whenGroup = document.querySelector('.input-group:has(#date-input)');
-      whenGroup.appendChild(customInput);
-    }
-  });
-
-  // Handle docs button
-  const docsButton = document.querySelector('.docs-button');
-  docsButton.addEventListener('click', () => {
-    window.open('https://www.aem.live/docs/scheduling', '_blank');
-  });
-  const url = `${DA_SOURCE}/${context.org}/${context.repo}/${CRON_TAB_PATH}`;
-  const opts = {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  };
-  // Handle schedule button
   const scheduleButton = document.querySelector('.schedule-button');
   scheduleButton.addEventListener('click', async (e) => {
     e.preventDefault();
 
-    const action = document.querySelector('.action-select').value;
-    const isCustomMode = cronExpressionContainer.classList.contains('custom-mode');
+    datetimeInput.classList.remove('input-empty');
 
-    // Clear previous empty states
-    [dateInput, timeInput, customInput].forEach((input) => {
-      input.classList.remove('input-empty');
-    });
-
-    // Check for empty inputs and future date/time based on mode
-    if (isCustomMode) {
-      if (!customInput.value) {
-        customInput.classList.add('input-empty');
-        return;
-      }
-    } else {
-      let hasError = false;
-      if (!dateInput.value) {
-        dateInput.classList.add('input-empty');
-        hasError = true;
-      }
-      if (!timeInput.value) {
-        timeInput.classList.add('input-empty');
-        hasError = true;
-      }
-      if (hasError) return;
-
-      // Validate if date/time is in the future
-      if (!isDateTimeInFuture(dateInput.value, timeInput.value)) {
-        dateInput.classList.add('input-empty');
-        timeInput.classList.add('input-empty');
-        messageUtils.show('Please select a future date and time', true);
-        return;
-      }
+    if (!datetimeInput.value) {
+      datetimeInput.classList.add('input-empty');
+      messageUtils.show('Please select a date and time', true);
+      return;
     }
 
-    let cronExpression;
-    if (isCustomMode) {
-      cronExpression = customInput.value;
-    } else {
-      const localDate = new Date(`${dateInput.value}T${timeInput.value}`);
-      cronExpression = createCronExpression(localDate);
+    const scheduleDate = new Date(datetimeInput.value);
+    if (scheduleDate <= new Date()) {
+      datetimeInput.classList.add('input-empty');
+      messageUtils.show('Please select a future date and time', true);
+      return;
     }
 
-    messageUtils.show('Scheduling page...');
-    const success = await processCommand(url, opts, action, context.path, cronExpression);
+    // Snapshot scheduler requires at least 5 minutes from now
+    const minSchedule = new Date(Date.now() + 5 * 60 * 1000);
+    if (scheduleDate < minSchedule) {
+      datetimeInput.classList.add('input-empty');
+      messageUtils.show('Scheduled publish must be at least 5 minutes from now', true);
+      return;
+    }
+
+    messageUtils.show('Scheduling publish...');
+    messageUtils.setLoading(true);
+
+    const success = await schedulePublishViaSnapshot(org, site, context.path, scheduleDate, token);
+
+    messageUtils.setLoading(false);
     if (success) {
       messageUtils.show('');
-      // Fetch and update current schedules after successful scheduling
-      const json = await getSchedules(url, opts);
-      if (json && json.data) {
-        showCurrentSchedule(context.path, json);
-      }
+      const schedules = await getScheduledPublishes(org, site, token);
+      showCurrentSchedule(context.path, schedules);
     }
   });
 
-  // Check existing schedules
-  const json = await getSchedules(url, opts);
-  if (json && json.data) {
-    showCurrentSchedule(context.path, json);
-  }
+  // Load and display existing schedules
+  const schedules = await getScheduledPublishes(org, site, token);
+  showCurrentSchedule(context.path, schedules);
 }
 
 init();
