@@ -71,7 +71,6 @@ function getOpts(token, method = 'GET', body = null) {
 
 /**
  * Create the requests sheet file if it does not exist.
- * Uses POST to create per DA Source API (https://docs.da.live/developers/api/source).
  * @param {string} org - Organization
  * @param {string} site - Site
  * @param {string} token - Authorization token
