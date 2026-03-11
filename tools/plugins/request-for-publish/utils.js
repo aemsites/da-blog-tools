@@ -6,6 +6,7 @@ const CI_WORKER_URL = 'https://publish-requests-ci.aem-poc-lab.workers.dev';
 const LOCAL_WORKER_URL = 'http://localhost:8787';
 
 const { getDaAdmin } = await import('https://da.live/nx/public/utils/constants.js');
+const { daFetch } = await import('https://da.live/nx/utils/daFetch.js');
 const DA_ADMIN = getDaAdmin();
 
 // DA sheet path for requests (read/written via Source API)
@@ -326,6 +327,30 @@ async function addRequestToDASheet(org, site, requestData, token) {
   } catch (error) {
     console.error('Error adding request to DA sheet:', error);
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Preview content via the AEM Admin API so the .aem.page preview is up to date
+ * before the publish request notification is sent to approvers.
+ * POST /preview/{org}/{site}/main/{path}
+ * @param {string} org - Organization
+ * @param {string} site - Site
+ * @param {string} path - Content path (e.g. /drafts/rama/my-page)
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+export async function previewContent(org, site, path) {
+  try {
+    const pathForUrl = path.startsWith('/') ? path : `/${path}`;
+    const url = `https://admin.hlx.page/preview/${org}/${site}/main${pathForUrl}`;
+    const resp = await daFetch(url, { method: 'POST' });
+    if (!resp.ok) {
+      return { success: false, error: `Preview failed (${resp.status})` };
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Error previewing content:', error);
+    return { success: false, error: error.message || 'Preview failed' };
   }
 }
 
