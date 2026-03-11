@@ -3,11 +3,13 @@
  * @see https://www.aem.live/docs/admin.html#tag/snapshot
  */
 
+/* eslint-disable import/no-unresolved */
+const { daFetch } = await import('https://da.live/nx/utils/daFetch.js');
+/* eslint-enable import/no-unresolved */
+
 const AEM_ORIGIN = 'https://admin.hlx.page';
 const SNAPSHOT_SCHEDULER_API = 'https://helix-snapshot-scheduler-ci.adobeaem.workers.dev';
 const CORS_PROXY = 'https://da-etc.adobeaem.workers.dev/cors';
-
-const { daFetch } = await import('https://da.live/nx/utils/daFetch.js');
 
 /**
  * @param {string} org - Organization name
@@ -165,8 +167,7 @@ export async function isRegisteredForSnapshotScheduler(org, site) {
   try {
     const resp = await fetch(`${SNAPSHOT_SCHEDULER_API}/register/${org}/${site}`);
     return resp.status === 200;
-  } catch (error) {
-    console.error('Error checking snapshot scheduler registration', error);
+  } catch {
     return false;
   }
 }
@@ -211,14 +212,13 @@ export async function getScheduledPublishes(org, site, token) {
     if (!resp.ok) return [];
     const data = await resp.json();
     const orgSiteKey = `${org}--${site}`;
-    // API returns { "org--site": { snapshotId: { scheduledPublish: "ISO8601", ... } } } or { snapshotId: "ISO8601" }
-    const scheduleObj = data[orgSiteKey] ?? (typeof data === 'object' && data !== null && !Array.isArray(data) ? data : {});
+    const fallback = typeof data === 'object' && data !== null && !Array.isArray(data) ? data : {};
+    const scheduleObj = data[orgSiteKey] ?? fallback;
     return Object.entries(scheduleObj).flatMap(([snapshotId, v]) => {
       const scheduledTime = typeof v === 'string' ? v : v?.scheduledPublish;
       return scheduledTime ? [{ snapshotId, scheduledTime }] : [];
     });
-  } catch (error) {
-    console.error('Error fetching scheduled publishes', error);
+  } catch {
     return [];
   }
 }

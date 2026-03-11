@@ -94,10 +94,11 @@ async function schedulePublishViaSnapshot(org, site, path, scheduleDate, token) 
   }
   // 409 = already locked (e.g. retry) - desired state, continue
 
-  // 5. Register with helix-snapshot-scheduler (metadata.scheduledPublish is already in manifest from step 1)
+  // 5. Register with helix-snapshot-scheduler (metadata.scheduledPublish set in step 1)
   const scheduleResult = await updateScheduledPublish(org, site, snapshotId, token);
   if (scheduleResult.status !== 200) {
-    messageUtils.show(`Failed to register schedule: ${scheduleResult.text || scheduleResult.status}`, true);
+    const msg = scheduleResult.text || scheduleResult.status;
+    messageUtils.show(`Failed to register schedule: ${msg}`, true);
     return false;
   }
 
@@ -149,27 +150,27 @@ async function cleanupOldScheduledSnapshots(org, site, token) {
   const now = new Date();
   const toDelete = snapshotsResult.snapshots.filter((name) => name.startsWith('da-schedule-'));
 
-  for (const snapshotId of toDelete) {
+  await Promise.all(toDelete.map(async (snapshotId) => {
     const manifestResult = await fetchManifest(org, site, snapshotId, token);
-    if (manifestResult.error) continue;
+    if (manifestResult.error) return;
 
     const scheduledPublish = manifestResult.manifest?.metadata?.scheduledPublish;
-    if (!scheduledPublish || new Date(scheduledPublish) > now) continue;
+    if (!scheduledPublish || new Date(scheduledPublish) > now) return;
 
     try {
-      // Unlock first (reject). If 400/409, snapshot may already be approved/unlocked by scheduler
       const reviewResult = await reviewSnapshot(org, site, snapshotId, 'reject', token);
-      if (reviewResult.error && reviewResult.status !== 400 && reviewResult.status !== 409) {
-        console.error(`Failed to unlock snapshot ${snapshotId}:`, reviewResult.error);
-        continue;
-      }
+      const isBadStatus = reviewResult.error
+        && reviewResult.status !== 400
+        && reviewResult.status !== 409;
+      if (isBadStatus) return;
+
       const deletePathsResult = await deleteSnapshotPaths(org, site, snapshotId, ['/*'], token);
-      if (deletePathsResult.some((r) => !r.ok)) continue;
+      if (deletePathsResult.some((r) => !r.ok)) return;
       await deleteSnapshot(org, site, snapshotId, token);
-    } catch (err) {
-      console.error(`Failed to delete old snapshot ${snapshotId}:`, err);
+    } catch {
+      // Snapshot may already be deleted by scheduler
     }
-  }
+  }));
 }
 
 /**
@@ -177,9 +178,7 @@ async function cleanupOldScheduledSnapshots(org, site, token) {
  */
 async function init() {
   const { context, token } = await DA_SDK;
-
-  const org = context.org;
-  const site = context.repo; // DA uses "repo", AEM snapshot API uses "site"
+  const { org, repo: site } = context; // DA uses "repo", AEM snapshot API uses "site"
 
   await cleanupOldScheduledSnapshots(org, site, token);
 
