@@ -175,6 +175,10 @@ The `publish-workflow-settings` tab holds key-value pairs that control optional 
 
 Tracks pending publish requests with columns: `requester`, `approver`, `path`, `status`
 
+**Access requirements:** All authors must have **write access** to `/{org}/{site}/.da/publish-workflow-requests.json` for the Request Publish workflow to work. The plugin reads this sheet to check for existing pending requests and writes new entries on submission.
+
+Configure access in the DA config at `/config/{org}/` (or `/config/{org}/{site}/` if using site-level config). Grant the IMS group that contains your authors **write access** to the `/{org}/{site}/.da/publish-workflow-requests.json` sheet. Without this permission, authors will not be able to submit publish requests.
+
 ## Plugin Modes
 
 ### Fullsize Dialog Mode (Primary)
