@@ -1,15 +1,33 @@
 # Scheduler Plugin
 
-The Scheduler plugin allows you to schedule page actions (preview, publish, unpublish) in AEM Document Authoring (DA) Edge Delivery Services. This tool provides both a user-friendly date/time picker interface and support for custom cron expressions.
+The Scheduler plugin allows you to schedule page publish actions in AEM Document Authoring (DA) Edge Delivery Services using the [AEM Snapshot API](https://www.aem.live/docs/admin.html#tag/snapshot). It uses the same APIs as the [snapshot-admin](https://main--helix-website--adobe.aem.page/tools/snapshot-admin/) tool.
 
 ## Features
 
-- **Multiple Actions**: Schedule preview, publish, or unpublish actions
-- **Flexible Scheduling**: Use date/time picker or custom cron expressions
-- **Active Schedule Display**: View all currently scheduled actions for the current page
-- **Automatic Cleanup**: Past schedules are automatically removed
+- **Schedule Publish**: Schedule when to publish the current page via AEM snapshots
+- **Flexible Scheduling**: Use date/time picker
+- **Active Schedule Display**: View all scheduled publishes for the site
+- **Snapshot Integration**: Creates snapshots, adds the page, locks for review, and registers with the helix-snapshot-scheduler
+- **Cleanup on Startup**: Automatically deletes old scheduled snapshots (whose publish time has passed) when the plugin opens
 - **Real-time Feedback**: Status messages and loading indicators
 - **Accessibility**: Full keyboard navigation and screen reader support
+
+## Prerequisites
+
+- Your org/site must be registered for the [helix-snapshot-scheduler](https://helix-snapshot-scheduler-ci.adobeaem.workers.dev) (done separately; this plugin does not perform registration)
+
+## Required Permissions
+
+Users must have the following AEM Admin API permissions to schedule a snapshot:
+
+| Permission      | Purpose                                                           |
+|-----------------|-------------------------------------------------------------------|
+| `preview:write` | Create snapshots, add content, and lock for review                |
+| `live:write`    | Unlock snapshots during cleanup; used by the scheduler to publish|
+
+The [helix-snapshot-scheduler](https://github.com/adobe/helix-snapshot-scheduler) validates that users have access to the AEM Snapshot List API (`GET /snapshot/{org}/{site}/main`) before allowing scheduling.
+
+The **author** role typically includes `preview:write`; the **publish** role includes `live:write`. Ensure users have both to use the scheduler.
 
 ## Setup
 
@@ -34,8 +52,8 @@ The scheduler automatically uses your DA project's library configuration (Site C
 - **icon**: `https://da.live/blocks/edit/img/S2_icon_Calendar_20_N.svg`
 - **experience**: dialog
 
-#### Cron setup [reference](https://www.aem.live/docs/scheduling)
-- **Crontab Path**: `.helix/crontab.json` (create this)
+#### Snapshot Scheduler
+- Your site must be registered at `https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/register/{org}/{site}`
 
 ## Usage
 
@@ -45,63 +63,32 @@ The scheduler automatically uses your DA project's library configuration (Site C
 2. **Direct URL**: Navigate to `{your-da-url}/tools/scheduler/scheduler.html`
 3. **Local Development**: Run `aem up` and access via localhost
 
-### Scheduling a Page Action
+### Scheduling a Page Publish
 
-#### Step 1: Select Action
-Choose from three available actions:
-- **Preview**: Creates a preview version of the page
-- **Publish**: Publishes the page to production
-- **Unpublish**: Removes the page from production
+#### Step 1: Set Schedule Time
+1. Use the date/time picker to select when to publish
+2. The scheduled time must be at least 5 minutes in the future
 
-#### Step 2: Set Schedule Time
+#### Step 2: Schedule
+Click the "Schedule" button. The plugin will:
+1. Create a new snapshot for this scheduled publish
+2. Add the current page to the snapshot
+3. Lock the snapshot for review
+4. Register the publish time with the helix-snapshot-scheduler
 
-**Option A: Date/Time Picker (Recommended)**
-1. Select a date using the date picker
-2. Select a time using the time picker
-3. The system automatically converts to UTC and creates the appropriate cron expression
-
-**Option B: Custom Cron Expression**
-1. Click the "Custom" button to switch to custom mode
-2. Enter a cron expression in the format: `at {time} on the {day}{suffix} day of {month} in {year}`
-   - Example: `at 2:30 PM on the 15th day of December in 2024`
-
-#### Step 3: Schedule
-Click the "Schedule" button to create the scheduled action.
+At the scheduled time, the snapshot will be automatically published to production.
 
 ### Viewing Active Schedules
 
-The scheduler displays all active schedules for the current page in the "Active Schedules" section. Each schedule shows:
-- **Action**: Preview, Publish, or Unpublish
+The scheduler displays all scheduled publishes for the site in the "Active Schedules" section. Each schedule shows:
+- **Action**: Publish
 - **Time**: Localized display of the scheduled time
 
 ### Managing Schedules
 
-- **Automatic Cleanup**: Past schedules are automatically removed
 - **Real-time Updates**: The active schedules list updates after each new schedule
 - **Error Handling**: Failed schedules show error messages with details
-
-## Cron Expression Format
-
-The scheduler uses a custom cron expression format:
-
-```
-at {time} on the {day}{suffix} day of {month} in {year}
-```
-
-### Examples:
-- `at 2:30 PM on the 15th day of December in 2024`
-- `at 9:00 AM on the 1st day of January in 2025`
-- `at 11:45 PM on the 31st day of March in 2024`
-
-### Time Format:
-- 12-hour format with AM/PM
-- Hours: 1-12
-- Minutes: 00-59
-
-### Date Format:
-- Day: 1-31 with appropriate suffix (st, nd, rd, th)
-- Month: Full month name
-- Year: 4-digit year
+- **Snapshot Admin**: Use the [snapshot-admin](https://main--helix-website--adobe.aem.page/tools/snapshot-admin/) tool to view or cancel snapshots
 
 ## Technical Details
 
@@ -111,23 +98,24 @@ tools/scheduler/
 ├── scheduler.html      # Main interface
 ├── scheduler.js        # Core functionality
 ├── scheduler.css       # Styling
+├── snapshot-utils.js   # AEM Snapshot API utilities (same as snapshot-admin)
 └── README.md          # This documentation
 ```
 
 ### Key Functions
 
 - **`init()`**: Initializes the scheduler interface
-- **`processCommand()`**: Handles schedule creation
-- **`getSchedules()`**: Fetches current schedules
-- **`setSchedules()`**: Saves new schedules
-- **`cleanupPastSchedules()`**: Removes expired schedules
-- **`createCronExpression()`**: Converts date/time to cron format
+- **`schedulePublishViaSnapshot()`**: Creates snapshot, adds page, locks, and registers schedule
+- **`showCurrentSchedule()`**: Displays scheduled publishes from helix-snapshot-scheduler
 
-### API Endpoints
+### API Endpoints (AEM Snapshot API)
 
-- **GET** `{DA_SOURCE}/{org}/{repo}/.helix/crontab.json` - Fetch schedules
-- **POST** `{DA_SOURCE}/{org}/{repo}/.helix/crontab.json` - Save schedules
-- **POST** `https://admin.hlx.page/preview/main/.helix/crontab.json` - Preview changes
+- **GET** `https://admin.hlx.page/snapshot/{org}/{site}/main` - List snapshots
+- **GET** `https://admin.hlx.page/snapshot/{org}/{site}/main/{snapshotId}` - Get manifest
+- **POST** `https://admin.hlx.page/snapshot/{org}/{site}/main/{snapshotId}` - Create/update manifest
+- **POST** `https://admin.hlx.page/snapshot/{org}/{site}/main/{snapshotId}/*` - Add resources
+- **POST** `https://admin.hlx.page/snapshot/{org}/{site}/main/{snapshotId}?review=request` - Lock snapshot
+- **POST** `https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/schedule` - Register scheduled publish
 
 ## Troubleshooting
 
@@ -156,11 +144,9 @@ Enable browser developer tools to see detailed error messages and API responses 
 
 ## Best Practices
 
-1. **Test with Preview**: Always test your scheduling with preview actions before publishing
-2. **Future Dates Only**: The system only accepts future dates and times
-3. **UTC Awareness**: All times are stored in UTC but displayed in local time
-4. **Regular Cleanup**: The system automatically removes past schedules
-5. **Documentation**: Use the "Read Documentation" button for official AEM scheduling docs
+1. **Future Dates Only**: The system only accepts dates at least 5 minutes in the future
+2. **Snapshot Admin**: Use the snapshot-admin tool to manage or cancel snapshots
+3. **Documentation**: See the [AEM Snapshot API docs](https://www.aem.live/docs/admin.html#tag/snapshot)
 
 ## Support
 
@@ -172,5 +158,6 @@ For additional help:
 ## Security
 
 - All requests are authenticated using DA SDK tokens
+- Users require `preview:write` and `live:write` permissions (see [Required Permissions](#required-permissions))
 - Schedules are scoped to specific page paths
 - No sensitive data is stored in the browser
