@@ -34,7 +34,6 @@ The **author** role typically includes `preview:write`; the **publish** role inc
 ### 1. Prerequisites
 
 - AEM Document Authoring (DA) Edge Delivery Services project
-- AEM CLI installed (for local dev: `sudo npm install -g @adobe/aem-cli`)
 
 ### 2. Installation
 
@@ -52,8 +51,9 @@ The scheduler automatically uses your DA project's library configuration (Site C
 - **icon**: `https://da.live/blocks/edit/img/S2_icon_Calendar_20_N.svg`
 - **experience**: dialog
 
-#### Snapshot Scheduler
-- Your site must be registered at `https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/register/{org}/{site}`
+#### Helix Snapshot Scheduler
+- Your org/site must be registered for scheduled publishing (see [Prerequisites](#prerequisites))
+- Registration is done separately via the helix-snapshot-scheduler service
 
 ## Usage
 
@@ -61,7 +61,6 @@ The scheduler automatically uses your DA project's library configuration (Site C
 
 1. **Via Sidekick**: The scheduler can be accessed through the AEM Sidekick interface
 2. **Direct URL**: Navigate to `{your-da-url}/tools/scheduler/scheduler.html`
-3. **Local Development**: Run `aem up` and access via localhost
 
 ### Scheduling a Page Publish
 
@@ -72,9 +71,12 @@ The scheduler automatically uses your DA project's library configuration (Site C
 #### Step 2: Schedule
 Click the "Schedule" button. The plugin will:
 1. Create a new snapshot for this scheduled publish
-2. Add the current page to the snapshot
-3. Lock the snapshot for review
-4. Register the publish time with the helix-snapshot-scheduler
+2. Preview the current page (fetches latest content from source)
+3. Add the page to the snapshot
+4. Lock the snapshot for review
+5. Register with the helix-snapshot-scheduler
+
+**Note**: The page must exist in your content source and be previewable before scheduling.
 
 At the scheduled time, the snapshot will be automatically published to production.
 
@@ -104,39 +106,48 @@ tools/scheduler/
 
 ### Key Functions
 
-- **`init()`**: Initializes the scheduler interface
-- **`schedulePublishViaSnapshot()`**: Creates snapshot, adds page, locks, and registers schedule
+- **`init()`**: Initializes the scheduler interface and cleans up old snapshots
+- **`schedulePublishViaSnapshot()`**: Creates snapshot, previews page, adds to snapshot, locks, and registers
 - **`showCurrentSchedule()`**: Displays scheduled publishes from helix-snapshot-scheduler
+- **`cleanupOldScheduledSnapshots()`**: Removes snapshots whose publish time has passed
 
-### API Endpoints (AEM Snapshot API)
+### API Endpoints
 
-- **GET** `https://admin.hlx.page/snapshot/{org}/{site}/main` - List snapshots
-- **GET** `https://admin.hlx.page/snapshot/{org}/{site}/main/{snapshotId}` - Get manifest
-- **POST** `https://admin.hlx.page/snapshot/{org}/{site}/main/{snapshotId}` - Create/update manifest
-- **POST** `https://admin.hlx.page/snapshot/{org}/{site}/main/{snapshotId}/*` - Add resources
-- **POST** `https://admin.hlx.page/snapshot/{org}/{site}/main/{snapshotId}?review=request` - Lock snapshot
-- **POST** `https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/schedule` - Register scheduled publish
+**AEM Admin API** (admin.hlx.page):
+- **POST** `/preview/{org}/{site}/main{path}` - Preview page (required before adding to snapshot)
+- **GET** `/snapshot/{org}/{site}/main` - List snapshots
+- **GET** `/snapshot/{org}/{site}/main/{snapshotId}` - Get manifest
+- **POST** `/snapshot/{org}/{site}/main/{snapshotId}` - Create/update manifest
+- **POST** `/snapshot/{org}/{site}/main/{snapshotId}/*` - Add resources to snapshot
+- **POST** `/snapshot/{org}/{site}/main/{snapshotId}?review=request` - Lock snapshot
+- **POST** `/snapshot/{org}/{site}/main/{snapshotId}?review=reject` - Unlock snapshot
+- **DELETE** `/snapshot/{org}/{site}/main/{snapshotId}/*` - Delete snapshot resources
+- **DELETE** `/snapshot/{org}/{site}/main/{snapshotId}` - Delete snapshot
+
+**Helix Snapshot Scheduler** (helix-snapshot-scheduler-ci.adobeaem.workers.dev):
+- **POST** `/schedule` - Register scheduled publish (body: `{ org, site, snapshotId }`)
+- **GET** `/schedule/{org}/{site}` - Get scheduled publishes
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **"Failed to save schedule"**
-   - Check your DA authentication
-   - Verify repository permissions
+1. **"Failed to register schedule"**
+   - Ensure your org/site is registered with the helix-snapshot-scheduler
+   - Check your DA authentication and permissions
    - Check browser console for detailed errors
 
-2. **"Please select a future date and time"**
+2. **"Failed to preview page"**
+   - Ensure the page is saved in your content source
+   - Use the Preview button in DA to preview the page first, then try again
+
+3. **"Please select a future date and time"**
    - Ensure the selected date/time is in the future
-   - Check your system clock
+   - Scheduled time must be at least 5 minutes from now
 
-3. **"No scheduling data available"**
-   - This is normal for pages without active schedules
+4. **"No active schedules found"**
+   - This is normal when no schedules exist for the site
    - Create a new schedule to see it appear
-
-4. **Custom cron expression errors**
-   - Verify the format matches the expected pattern
-   - Check for typos in month names or time format
 
 ### Debug Mode
 
@@ -151,13 +162,13 @@ Enable browser developer tools to see detailed error messages and API responses 
 ## Support
 
 For additional help:
-- Check the [AEM Documentation](https://www.aem.live/docs/scheduling)
+- [AEM Snapshot API documentation](https://www.aem.live/docs/admin.html#tag/snapshot)
 - Review browser console for error details
-- Ensure your DA project is properly configured
+- Ensure your DA project is properly configured and org/site is registered for the snapshot scheduler
 
 ## Security
 
 - All requests are authenticated using DA SDK tokens
 - Users require `preview:write` and `live:write` permissions (see [Required Permissions](#required-permissions))
-- Schedules are scoped to specific page paths
+- Schedules are stored per snapshot and displayed per site
 - No sensitive data is stored in the browser
