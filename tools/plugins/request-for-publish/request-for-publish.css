@@ -20,7 +20,7 @@
   --s2-green: #009851;
   --s2-red: #f73b26;
   --s2-red-200: #fde8e6;
-  --s2-red-500: #990033;
+  --s2-red-500: #903;
   --s2-red-600: #730026;
   --s2-red-1200: #670800;
   --s2-gray-50: #f7f7f7;
@@ -144,6 +144,14 @@
   margin-bottom: var(--spacing-300);
 }
 
+/* fix 4: .form-container h3 must precede .result-container.success h3 */
+.form-container h3 {
+  margin: 0 0 var(--spacing-75) 0;
+  font-size: var(--s2-font-size-300);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
 .result-container h3 {
   margin: 0 0 var(--spacing-200) 0;
   font-size: var(--s2-heading-size-400);
@@ -173,17 +181,6 @@
   margin-top: var(--spacing-300) !important;
   font-size: 13px;
   color: var(--color-text-muted);
-}
-
-.my-pending-requests-link a {
-  color: var(--color-link);
-  text-decoration: none;
-  font-weight: 700;
-}
-
-.my-pending-requests-link a:hover {
-  color: var(--color-link-hover);
-  text-decoration: underline;
 }
 
 /* ========== Info Card ========== */
@@ -223,13 +220,16 @@
   word-break: break-all;
 }
 
-.info-row a {
+/* fix 2: combine to ensure lower-specificity selectors precede higher ones */
+.info-row a,
+.my-pending-requests-link a {
   color: var(--color-link);
   text-decoration: none;
   font-weight: 700;
 }
 
-.info-row a:hover {
+.info-row a:hover,
+.my-pending-requests-link a:hover {
   color: var(--color-link-hover);
   text-decoration: underline;
 }
@@ -244,11 +244,6 @@
   align-items: center;
   gap: var(--spacing-100);
   margin-bottom: var(--spacing-100);
-}
-
-.diff-header .open-diff-link {
-  margin-left: auto;
-  margin-top: 0;
 }
 
 .diff-icon {
@@ -267,6 +262,7 @@
   color: var(--color-text-muted);
 }
 
+/* fix 3: general selector before the scoped .diff-header override */
 .open-diff-link {
   display: inline-flex;
   align-items: center;
@@ -281,6 +277,11 @@
 .open-diff-link:hover {
   color: var(--color-link-hover);
   text-decoration: underline;
+}
+
+.diff-header .open-diff-link {
+  margin-left: auto;
+  margin-top: 0;
 }
 
 /* ========== Approvers Section ========== */
@@ -337,13 +338,6 @@
   padding: var(--spacing-400);
 }
 
-.form-container h3 {
-  margin: 0 0 var(--spacing-75) 0;
-  font-size: var(--s2-font-size-300);
-  font-weight: 700;
-  color: var(--color-text);
-}
-
 .form-subtitle {
   color: var(--color-text-muted);
   font-size: var(--s2-font-size-100);
@@ -387,16 +381,17 @@
   color: var(--color-text);
 }
 
+/* fix 7: textarea-specific rules before the :focus override */
+.form-group textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
 .form-group input[type="email"]:focus,
 .form-group textarea:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(59, 99, 251, 0.15);
-}
-
-.form-group textarea {
-  resize: vertical;
-  min-height: 80px;
+  box-shadow: 0 0 0 3px rgb(59 99 251 / 15%);
 }
 
 .form-group .email-display {
@@ -432,13 +427,14 @@ button {
   text-decoration: none;
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-}
-
+/* fix 8: :disabled before :hover:not(:disabled) */
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
 }
 
 .btn-large {
@@ -460,14 +456,15 @@ button {
   text-decoration: none;
 }
 
-.btn-secondary:hover:not(:disabled) {
-  background: var(--color-bg-light);
-  border-color: var(--s2-gray-700);
-}
-
+/* fix 9: :disabled before :hover:not(:disabled) */
 .btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-bg-light);
+  border-color: var(--s2-gray-700);
 }
 
 .btn-withdraw {
