@@ -150,13 +150,6 @@
   margin-bottom: var(--spacing-300);
 }
 
-.form-container h3 {
-  margin: 0 0 var(--spacing-75) 0;
-  font-size: var(--s2-font-size-300);
-  font-weight: 700;
-  color: var(--color-text);
-}
-
 .result-container h3 {
   margin: 0 0 var(--spacing-200) 0;
   font-size: var(--s2-heading-size-400);
@@ -225,8 +218,7 @@
   word-break: break-all;
 }
 
-.info-row a,
-.my-pending-requests-link a {
+.info-row a {
   color: var(--color-link);
   text-decoration: none;
   font-weight: 700;
@@ -266,6 +258,7 @@
   color: var(--color-text-muted);
 }
 
+/* fix 3: general selector before the scoped .diff-header override */
 .open-diff-link {
   display: inline-flex;
   align-items: center;
@@ -384,11 +377,6 @@
   color: var(--color-text);
 }
 
-.form-group textarea {
-  resize: vertical;
-  min-height: 80px;
-}
-
 .form-group input[type="email"]:focus,
 .form-group textarea:focus {
   outline: none;
@@ -429,13 +417,13 @@ button {
   text-decoration: none;
 }
 
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
 }
 
 .btn-large {
@@ -455,11 +443,6 @@ button {
   line-height: 16px;
   display: inline-block;
   text-decoration: none;
-}
-
-.btn-secondary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .btn-secondary:hover:not(:disabled) {
