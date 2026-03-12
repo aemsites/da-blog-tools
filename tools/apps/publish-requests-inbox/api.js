@@ -363,9 +363,9 @@ export async function getApproversForPath(org, site, path, token) {
   const groupsData = config['publish-workflow-groups-to-email']?.data || [];
 
   // 'approvals.cc.can-approve' controls whether CC recipients are authorized to
-  // view and approve requests. Defaults to true; set to 'false' to restrict
-  // approval rights to the Approvers column only.
-  const ccCanApprove = extractSetting(config, 'approvals.cc.can-approve')?.toLowerCase() !== 'false';
+  // view and approve requests. Defaults to false (opt-in); set to 'true' to
+  // grant CC recipients the same approval rights as Approvers.
+  const ccCanApprove = extractSetting(config, 'approvals.cc.can-approve')?.toLowerCase() === 'true';
 
   // Find the best (most specific) matching rule for this path
   const rule = findBestMatchingRule(path, rules);
@@ -568,10 +568,10 @@ export async function getAllPendingRequestsForUser(org, site, userEmail, token) 
   const rules = config['publish-workflow-config']?.data || config.data || [];
   const groupsData = config['publish-workflow-groups-to-email']?.data || [];
   const normalizedUser = userEmail.toLowerCase();
-  const ccCanApprove = extractSetting(config, 'approvals.cc.can-approve')?.toLowerCase() !== 'false';
+  const ccCanApprove = extractSetting(config, 'approvals.cc.can-approve')?.toLowerCase() === 'true';
 
   // Filter to requests this user can approve — optionally checks CC column too
-  // based on the 'approvals.cc.can-approve' workflow setting (defaults to true).
+  // based on the 'approvals.cc.can-approve' workflow setting (defaults to false).
   return pendingRequests.filter((request) => {
     const rule = findBestMatchingRule(request.path, rules);
     if (!rule) return false;
