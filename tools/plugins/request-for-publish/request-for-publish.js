@@ -4,6 +4,7 @@ import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { LitElement, html, nothing } from 'da-lit';
 import {
   resolveWorkflowConfig,
+  previewContent,
   submitPublishRequest,
   resendPublishRequest,
   withdrawPublishRequest,
@@ -48,6 +49,7 @@ class RequestForPublishPlugin extends LitElement {
     _isWithdrawing: { state: true },
     _commentsRequired: { state: true },
     _commentsMinLength: { state: true },
+    _submitPhase: { state: true },
   };
 
   constructor() {
@@ -65,6 +67,7 @@ class RequestForPublishPlugin extends LitElement {
     this._isWithdrawing = false;
     this._commentsRequired = false;
     this._commentsMinLength = 10;
+    this._submitPhase = '';
   }
 
   connectedCallback() {
@@ -91,6 +94,12 @@ class RequestForPublishPlugin extends LitElement {
     // https://tools.aem.live/tools/page-status/diff.html?org={org}&site={site}&path={path}&embed=true
     const { org, repo: site } = this.context;
     return `https://tools.aem.live/tools/page-status/diff.html?org=${encodeURIComponent(org)}&site=${encodeURIComponent(site)}&path=${encodeURIComponent(this.contentPath)}`;
+  }
+
+  get _submitButtonLabel() {
+    if (this._submitPhase === 'previewing') return 'Previewing content...';
+    if (this._submitPhase === 'submitting') return 'Submitting request...';
+    return 'Request Publish';
   }
 
   get requesterPendingRequestsUrl() {
@@ -161,6 +170,11 @@ class RequestForPublishPlugin extends LitElement {
 
     const { org, repo: site } = this.context;
 
+    // Preview content first so .aem.page is up to date for approvers
+    this._submitPhase = 'previewing';
+    await previewContent(org, site, this.contentPath);
+
+    this._submitPhase = 'submitting';
     const result = await submitPublishRequest(
       {
         org,
@@ -176,6 +190,7 @@ class RequestForPublishPlugin extends LitElement {
     );
 
     this._isSubmitting = false;
+    this._submitPhase = '';
 
     if (result.success) {
       this._message = { type: 'success', text: 'Publish request sent! Approvers have been notified.' };
@@ -418,7 +433,7 @@ class RequestForPublishPlugin extends LitElement {
 
           <div class="form-actions">
             <button type="submit" class="btn-primary btn-large" ?disabled=${this._isSubmitting}>
-              ${this._isSubmitting ? 'Submitting...' : 'Request Publish'}
+              ${this._submitButtonLabel}
             </button>
           </div>
         </form>
