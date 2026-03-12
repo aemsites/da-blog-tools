@@ -133,6 +133,12 @@
   color: var(--s2-red-1200);
 }
 
+.message.warning {
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  color: #7a5500;
+}
+
 /* ========== Result / Status States ========== */
 .result-container {
   padding: var(--spacing-400);
