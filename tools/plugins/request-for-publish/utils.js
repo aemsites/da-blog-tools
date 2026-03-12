@@ -11,6 +11,15 @@ const DA_ADMIN = getDaAdmin();
 // DA sheet path for requests (read/written via Source API)
 const REQUESTS_SHEET_PATH = '/.da/publish-workflow-requests.json';
 
+/** Empty requests sheet structure for initial creation */
+const EMPTY_REQUESTS_SHEET = {
+  total: 0,
+  data: [],
+  offset: 0,
+  limit: 0,
+  ':type': 'sheet',
+};
+
 /**
  * Extract a setting value.
  * @param {Object} config - The full config object from DA Config API
@@ -58,6 +67,52 @@ function getOpts(token, method = 'GET', body = null) {
     opts.body = JSON.stringify(body);
   }
   return opts;
+}
+
+/**
+ * Create the requests sheet file if it does not exist.
+ * @param {string} org - Organization
+ * @param {string} site - Site
+ * @param {string} token - Authorization token
+ * @returns {Promise<Object>} The empty sheet object
+ */
+async function createRequestsSheet(org, site, token) {
+  const sheetUrl = `${DA_ADMIN}/source/${org}/${site}${REQUESTS_SHEET_PATH}`;
+  const blob = new Blob([JSON.stringify(EMPTY_REQUESTS_SHEET)], {
+    type: 'application/json',
+  });
+  const formData = new FormData();
+  formData.append('data', blob);
+
+  const resp = await fetch(sheetUrl, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to create requests sheet: ${resp.status}`);
+  }
+  return EMPTY_REQUESTS_SHEET;
+}
+
+/**
+ * Fetch the requests sheet, creating it if it does not exist (404).
+ * @param {string} org - Organization
+ * @param {string} site - Site
+ * @param {string} token - Authorization token
+ * @returns {Promise<Object|null>} The sheet data or null on non-404 error
+ */
+async function getOrCreateRequestsSheet(org, site, token) {
+  const sheetUrl = `${DA_ADMIN}/source/${org}/${site}${REQUESTS_SHEET_PATH}`;
+  const opts = getOpts(token, 'GET');
+  const resp = await fetch(sheetUrl, opts);
+  if (resp.ok) {
+    return resp.json();
+  }
+  if (resp.status === 404) {
+    return createRequestsSheet(org, site, token);
+  }
+  return null;
 }
 
 /**
@@ -282,13 +337,11 @@ async function addRequestToDASheet(org, site, requestData, token) {
   try {
     const sheetUrl = `${DA_ADMIN}/source/${org}/${site}${REQUESTS_SHEET_PATH}`;
 
-    // 1. Read the current sheet
-    const readOpts = getOpts(token, 'GET');
-    const readResp = await fetch(sheetUrl, readOpts);
-    if (!readResp.ok) {
-      throw new Error(`Failed to read requests sheet: ${readResp.status}`);
+    // 1. Read the current sheet (create if it doesn't exist)
+    const sheet = await getOrCreateRequestsSheet(org, site, token);
+    if (!sheet) {
+      throw new Error('Failed to read or create requests sheet');
     }
-    const sheet = await readResp.json();
 
     // 2. Append the new request row (single-sheet format)
     const requests = sheet.data || [];
@@ -422,6 +475,9 @@ export async function withdrawPublishRequest(org, site, path, requesterEmail, to
     const readOpts = getOpts(token, 'GET');
     const resp = await fetch(sheetUrl, readOpts);
     if (!resp.ok) {
+      if (resp.status === 404) {
+        return { success: true, message: 'No requests sheet found' };
+      }
       throw new Error(`Failed to read requests sheet: ${resp.status}`);
     }
 
@@ -485,12 +541,8 @@ export async function withdrawPublishRequest(org, site, path, requesterEmail, to
  */
 export async function checkExistingRequest(org, site, path, requesterEmail, token) {
   try {
-    const sheetUrl = `${DA_ADMIN}/source/${org}/${site}${REQUESTS_SHEET_PATH}`;
-    const opts = getOpts(token, 'GET');
-    const resp = await fetch(sheetUrl, opts);
-    if (!resp.ok) return null;
-
-    const sheet = await resp.json();
+    const sheet = await getOrCreateRequestsSheet(org, site, token);
+    if (!sheet) return null;
     const requests = sheet.data || [];
 
     return requests.find(
