@@ -107,6 +107,18 @@ function findBestMatchingRule(path, rules) {
 }
 
 /**
+ * Extract a value from the publish-workflow-settings tab of the config.
+ * @param {Object} config - Full config object from DA Config API
+ * @param {string} key - Setting key to look up
+ * @returns {string|null} Setting value or null if not found
+ */
+function extractSetting(config, key) {
+  const settings = config?.['publish-workflow-settings']?.data || [];
+  const entry = settings.find((r) => (r.key || r.Key) === key);
+  return entry?.value || entry?.Value || null;
+}
+
+/**
  * Resolve approvers list by expanding distribution list (DL) groups to individual
  * emails using the publish-workflow-groups-to-email mapping from the config sheet.
  * @param {string[]} approversList - Raw approver entries (may include DL names)
@@ -328,14 +340,15 @@ export async function notifyPublished(data, token) {
 }
 
 /**
- * Get the list of resolved approvers for a given content path.
- * Reads the config sheet and resolves DL groups to individual emails
- * using the groups-to-email tab.
+ * Get the list of resolved approvers and CC recipients for a given content path.
+ * Both columns are included because CC recipients who receive the approval email
+ * should be able to view and approve the request. DL groups in either column are
+ * expanded via the groups-to-email tab.
  * @param {string} org - Organization
  * @param {string} site - Site
  * @param {string} path - Content path
  * @param {string} token - Authorization token
- * @returns {Promise<string[]>} Array of resolved approver emails (empty if none found)
+ * @returns {Promise<string[]>} Deduplicated array of authorized emails (empty if none found)
  */
 export async function getApproversForPath(org, site, path, token) {
   const config = await fetchWorkflowConfig(org, site, token);
@@ -349,6 +362,11 @@ export async function getApproversForPath(org, site, path, token) {
   const rules = config['publish-workflow-config']?.data || config.data || [];
   const groupsData = config['publish-workflow-groups-to-email']?.data || [];
 
+  // 'approvals.cc.can-approve' controls whether CC recipients are authorized to
+  // view and approve requests. Defaults to false (opt-in); set to 'true' to
+  // grant CC recipients the same approval rights as Approvers.
+  const ccCanApprove = extractSetting(config, 'approvals.cc.can-approve')?.toLowerCase() === 'true';
+
   // Find the best (most specific) matching rule for this path
   const rule = findBestMatchingRule(path, rules);
   if (rule) {
@@ -356,7 +374,24 @@ export async function getApproversForPath(org, site, path, token) {
     if (typeof approvers === 'string') {
       approvers = approvers.split(',').map((a) => a.trim()).filter(Boolean);
     }
-    return resolveApproversWithGroups(approvers, groupsData);
+    const resolvedApprovers = resolveApproversWithGroups(approvers, groupsData);
+
+    if (!ccCanApprove) return resolvedApprovers;
+
+    let cc = rule.CC || rule.cc || [];
+    if (typeof cc === 'string') {
+      cc = cc.split(',').map((c) => c.trim()).filter(Boolean);
+    }
+    const resolvedCC = cc.length > 0 ? resolveApproversWithGroups(cc, groupsData) : [];
+
+    // Merge approvers and CC recipients, deduplicated (case-insensitive)
+    const seen = new Set();
+    return [...resolvedApprovers, ...resolvedCC].filter((email) => {
+      const lower = email.toLowerCase();
+      if (seen.has(lower)) return false;
+      seen.add(lower);
+      return true;
+    });
   }
 
   return [];
@@ -533,8 +568,10 @@ export async function getAllPendingRequestsForUser(org, site, userEmail, token) 
   const rules = config['publish-workflow-config']?.data || config.data || [];
   const groupsData = config['publish-workflow-groups-to-email']?.data || [];
   const normalizedUser = userEmail.toLowerCase();
+  const ccCanApprove = extractSetting(config, 'approvals.cc.can-approve')?.toLowerCase() === 'true';
 
-  // Filter to only requests this user can approve (using best-match rule per path)
+  // Filter to requests this user can approve — optionally checks CC column too
+  // based on the 'approvals.cc.can-approve' workflow setting (defaults to false).
   return pendingRequests.filter((request) => {
     const rule = findBestMatchingRule(request.path, rules);
     if (!rule) return false;
@@ -543,8 +580,16 @@ export async function getAllPendingRequestsForUser(org, site, userEmail, token) 
     if (typeof approvers === 'string') {
       approvers = approvers.split(',').map((a) => a.trim()).filter(Boolean);
     }
-    const resolved = resolveApproversWithGroups(approvers, groupsData);
-    return resolved.some((a) => a.toLowerCase() === normalizedUser);
+    const resolvedApprovers = resolveApproversWithGroups(approvers, groupsData);
+
+    if (!ccCanApprove) return resolvedApprovers.some((a) => a.toLowerCase() === normalizedUser);
+
+    let cc = rule.CC || rule.cc || [];
+    if (typeof cc === 'string') {
+      cc = cc.split(',').map((c) => c.trim()).filter(Boolean);
+    }
+    const resolvedCC = cc.length > 0 ? resolveApproversWithGroups(cc, groupsData) : [];
+    return [...resolvedApprovers, ...resolvedCC].some((a) => a.toLowerCase() === normalizedUser);
   });
 }
 
