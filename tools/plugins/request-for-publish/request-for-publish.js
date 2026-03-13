@@ -178,8 +178,12 @@ class RequestForPublishPlugin extends LitElement {
     this._isSubmitting = false;
 
     if (result.success) {
-      this._message = { type: 'success', text: 'Publish request sent! Approvers have been notified.' };
       this._submitted = true;
+      if (result.sheetWriteError) {
+        this._message = { type: 'warning', text: 'An email was sent to approvers, but your request could not be logged because you do not have write access. Please reach out to your site administrator for help.' };
+      } else {
+        this._message = { type: 'success', text: 'Publish request sent! Approvers have been notified.' };
+      }
     } else {
       this._message = { type: 'error', text: result.message };
     }
@@ -324,6 +328,7 @@ class RequestForPublishPlugin extends LitElement {
             ${this._cc.map((email) => html`<li>${email}</li>`)}
           </ul>
         ` : nothing}
+        ${this.renderMessage()}
         <p class="result-note">You will receive an email when your request is approved or rejected.</p>
         <p class="my-pending-requests-link">
           <a target="_blank" rel="noopener" href="${this.requesterPendingRequestsUrl}">View all my pending publish requests ↗</a>

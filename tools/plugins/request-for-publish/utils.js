@@ -407,6 +407,12 @@ export async function submitPublishRequest(requestData, token) {
     const sheetResult = await addRequestToDASheet(org, site, requestData, token);
     if (!sheetResult.success) {
       console.warn('Request sent but failed to update DA sheet:', sheetResult.error);
+      return {
+        success: true,
+        sheetWriteError: true,
+        message: result.message || 'Publish request sent to approvers',
+        approvers: result.approvers,
+      };
     }
 
     return {
