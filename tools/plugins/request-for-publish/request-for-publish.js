@@ -83,7 +83,8 @@ class RequestForPublishPlugin extends LitElement {
   get previewUrl() {
     // Build AEM preview URL: https://main--<site>--<org>.aem.page/<path>
     const { org, repo: site } = this.context;
-    return `https://main--${site}--${org}.aem.page${this.contentPath}`;
+    const path = this.contentPath?.replace(/\/index$/, '') || '';
+    return `https://main--${site}--${org}.aem.page${path}`;
   }
 
   get diffUrl() {

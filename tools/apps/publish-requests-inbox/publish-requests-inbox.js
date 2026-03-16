@@ -106,7 +106,8 @@ class PublishRequestsApp extends LitElement {
   }
 
   get liveUrl() {
-    return `https://${this._liveHost}${this._path}`;
+    const path = this._path?.replace(/\/index$/, '') || '';
+    return `https://${this._liveHost}${path}`;
   }
 
   get diffUrl() {
@@ -125,7 +126,8 @@ class PublishRequestsApp extends LitElement {
     params.set('path', request.path);
     if (request.requester) params.set('author', request.requester);
     // Build preview URL for the request path
-    const previewUrl = `https://main--${this._site}--${this._org}.aem.page${request.path}`;
+    const path = request.path?.replace(/\/index$/, '') || '';
+    const previewUrl = `https://main--${this._site}--${this._org}.aem.page${path}`;
     params.set('preview', previewUrl);
     return `${this.appBaseUrl}?${params.toString()}`;
   }
@@ -834,7 +836,8 @@ class PublishRequestsApp extends LitElement {
   }
 
   renderMyRequestItem(request) {
-    const previewUrl = `https://main--${this._site}--${this._org}.aem.page${request.path}`;
+    const path = request.path?.replace(/\/index$/, '') || '';
+    const previewUrl = `https://main--${this._site}--${this._org}.aem.page${path}`;
     const action = this._myRequestActions.get(request.path);
     const isBusy = !!action;
 

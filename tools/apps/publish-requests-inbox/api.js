@@ -766,7 +766,8 @@ export async function resendPublishRequest(org, site, path, requesterEmail, toke
       return { success: false, error: 'No approvers found for this content path.' };
     }
 
-    const previewUrl = `https://main--${site}--${org}.aem.page${path}`;
+    const pagePath = path?.replace(/\/index$/, '') || '';
+    const previewUrl = `https://main--${site}--${org}.aem.page${pagePath}`;
 
     const opts = getOpts(token, 'POST', {
       org,
