@@ -1,4 +1,4 @@
-# Request for Plugin
+# Request for Publish Plugin
 
 A DA (Document Authoring) plugin that enables content authors to submit publish requests for approval. This plugin is the **author-facing** side of the publish workflow, appearing as a dialog within the DA editing environment.
 
@@ -23,7 +23,7 @@ When an author finishes editing content and wants to publish it, they open this 
 1. The plugin loads and fetches the current user's email from Adobe IMS
 2. The content path is derived from the DA SDK context (`/{org}/{site}{path}` → strips org/site prefix)
 3. It reads the workflow config via the DA Config API (`/config/{org}/{site}/`, falling back to `/config/{org}/`) — if the `publish-workflow-config` tab is not found at either level, an error message is displayed and the form is not shown
-4. Distribution list (DL) groups in the Approvers and CC fields are resolved to individual emails using the `groups-to-email` tab
+4. Distribution list (DL) groups in the Approvers and CC fields are resolved to individual emails using the `publish-workflow-groups-to-email` tab
 5. It checks the requests sheet (`/.da/publish-workflow-requests.json`) for any existing pending request by this user for this path
 6. If a pending request exists, it shows a "Request Pending" state instead of the form
 7. Otherwise, the submission form is rendered with pre-filled details
@@ -38,7 +38,7 @@ DA Config API → /config/{org}/{site}/ → publish-workflow-config tab
 
 Each rule has a **Pattern** (e.g., `/drafts/*`, `/*`), **Approvers** (comma-separated emails or DL names), and an optional **CC** column (comma-separated emails or DL names). If no rule matches the path, an error is shown.
 
-When an approver or CC entry matches a group in the `groups-to-email` tab, it is expanded to individual email addresses. CC recipients that overlap with approvers are automatically deduplicated by the worker to avoid sending duplicate emails.
+When an approver or CC entry matches a group in the `publish-workflow-groups-to-email` tab, it is expanded to individual email addresses. CC recipients that overlap with approvers are automatically deduplicated by the worker to avoid sending duplicate emails.
 
 #### Pattern Matching (Specificity-Based)
 
@@ -56,7 +56,7 @@ When multiple rules could match a given content path, the plugin selects the **m
 | `/drafts/*` | `user2@example.com` | `dl-leads@example.com` |
 | `/*` | `dl-reviewers@example.com` | `ops-team@example.com` |
 
-**groups-to-email tab:**
+**publish-workflow-groups-to-email tab:**
 | group | email |
 |-------|-------|
 | `dl-reviewers@example.com` | `reviewer1@example.com` |
@@ -74,15 +74,17 @@ If no matching rule is found, an error message is shown prompting the user to ad
 2. Author optionally reviews the content diff via the AEM Page Status diff tool link
 3. Author adds a note for the reviewers (optional by default; can be made mandatory with a minimum length via `publish-workflow-settings`)
 4. Author clicks **"Request Publish"**
-5. The plugin sends the request to the Cloudflare Worker (`/api/request-publish`), which triggers email notifications to all resolved approvers with CC recipients copied
-6. On success, it writes a new entry to `/.da/publish-workflow-requests.json` with status `pending`
-7. A success confirmation is shown listing the notified approvers and CC'd recipients
+5. The plugin first refreshes the preview of your content so that when approvers receive the notification and open the preview link, they see your latest changes. The button will briefly show the request state before the confirmation appears
+6. The plugin sends the request to the Cloudflare Worker (`/api/request-publish`), which triggers email notifications to all resolved approvers with CC recipients copied
+7. On success, it writes a new entry to `/.da/publish-workflow-requests.json` with status `pending`
+8. A success confirmation is shown listing the notified approvers and CC'd recipients
 
 ## Use Cases Handled
 
 ### 1. Submit a New Publish Request
 
 The primary use case. The author sees the content path, preview URL, resolved approvers and CC recipients (with DLs expanded), and a content diff link. They add a description/note (optional by default; mandatory when `request.comments.required` is `true` in `publish-workflow-settings`) and submit. This:
+- Previews the content via the AEM Admin API so the `.aem.page` preview is refreshed before approvers receive the notification
 - Sends the request via the Cloudflare Worker which emails the approvers (with CC recipients copied) with a review link
 - Records the pending request in the DA requests sheet (requester, approver, path, status)
 - Shows a success confirmation with the list of notified approvers and CC'd recipients
@@ -163,6 +165,7 @@ The `publish-workflow-settings` tab holds key-value pairs that control optional 
 |-----|-------|-------------|
 | `request.comments.required` | `true` or `false` | When `true`, the description field ("Please provide a description of your website content changes...") becomes mandatory. Default: `false`. |
 | `request.comments.length` | number | Minimum character length for the description when comments are required. Fallback: `10` if missing or invalid. |
+| `approvals.cc.can-approve` | `true` or `false` | When `true`, CC recipients are authorized to view and approve requests (same rights as Approvers). Default: `false` — only Approvers can approve. |
 
 **Example:**
 
@@ -170,6 +173,7 @@ The `publish-workflow-settings` tab holds key-value pairs that control optional 
 |-----|-------|
 | `request.comments.required` | `true` |
 | `request.comments.length` | `25` |
+| `approvals.cc.can-approve` | `true` |
 
 ### `/.da/publish-workflow-requests.json` (DA Source API)
 
