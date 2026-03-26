@@ -380,10 +380,8 @@
 }
 
 .detail-value.comment {
-  background: white;
   padding: var(--spacing-200);
   border-radius: var(--s2-radius-100);
-  border: 1px solid var(--color-border);
   font-style: italic;
   margin: 0;
 }
@@ -809,6 +807,16 @@ button,
   font-size: 12px;
   color: var(--color-text-muted);
   margin-top: var(--spacing-75);
+}
+
+.inbox-item-comment {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: var(--spacing-75);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inbox-item-actions {

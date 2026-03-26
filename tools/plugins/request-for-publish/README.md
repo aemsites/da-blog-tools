@@ -75,7 +75,7 @@ If no matching rule is found, an error message is shown prompting the user to ad
 3. Author adds a note for the reviewers (optional by default; can be made mandatory with a minimum length via `publish-workflow-settings`)
 4. Author clicks **"Request Publish"**
 5. The plugin sends the request to the Cloudflare Worker (`/api/request-publish`), which triggers email notifications to all resolved approvers with CC recipients copied
-6. On success, it writes a new entry to `/.da/publish-workflow-requests.json` with status `pending`
+6. On success, it writes a new entry to `/.da/publish-workflow-requests.json` with status `pending`, including the author's comment
 7. A success confirmation is shown listing the notified approvers and CC'd recipients
 
 ## Use Cases Handled
@@ -84,7 +84,7 @@ If no matching rule is found, an error message is shown prompting the user to ad
 
 The primary use case. The author sees the content path, preview URL, resolved approvers and CC recipients (with DLs expanded), and a content diff link. They add a description/note (optional by default; mandatory when `request.comments.required` is `true` in `publish-workflow-settings`) and submit. This:
 - Sends the request via the Cloudflare Worker which emails the approvers (with CC recipients copied) with a review link
-- Records the pending request in the DA requests sheet (requester, approver, path, status)
+- Records the pending request in the DA requests sheet (requester, approver, path, comment, status)
 - Shows a success confirmation with the list of notified approvers and CC'd recipients
 
 ### 2. Existing Pending Request Detection
@@ -173,7 +173,7 @@ The `publish-workflow-settings` tab holds key-value pairs that control optional 
 
 ### `/.da/publish-workflow-requests.json` (DA Source API)
 
-Tracks pending publish requests with columns: `requester`, `approver`, `path`, `status`
+Tracks pending publish requests with columns: `requester`, `approver`, `path`, `comment`, `status`, `created`
 
 **Access requirements:** All authors must have **write access** to `/{org}/{site}/.da/publish-workflow-requests.json` for the Request Publish workflow to work. The plugin reads this sheet to check for existing pending requests and writes new entries on submission.
 
