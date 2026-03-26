@@ -271,6 +271,11 @@ class PublishRequestsApp extends LitElement {
       this._authorEmail = pendingRequest.requester;
     }
 
+    // Use comment from sheet if not provided via URL params
+    if (!this._comment && pendingRequest.comment) {
+      this._comment = pendingRequest.comment;
+    }
+
     // Check if the current user is an authorized approver for this content path
     if (this._userEmail) {
       try {
@@ -777,6 +782,9 @@ class PublishRequestsApp extends LitElement {
           <div class="inbox-item-meta">
             Requested by: ${request.requester || 'Unknown'}
           </div>
+          ${request.comment
+            ? html`<div class="inbox-item-comment">"${request.comment}"</div>`
+            : nothing}
         </div>
         <div class="inbox-item-actions">
           <a href="${diffUrl}" target="_blank" rel="noopener" class="btn-sm btn-diff">Diff ↗</a>
@@ -848,6 +856,9 @@ class PublishRequestsApp extends LitElement {
           <div class="inbox-item-meta">
             Status: <strong>Pending Approval</strong>
           </div>
+          ${request.comment
+            ? html`<div class="inbox-item-comment">"${request.comment}"</div>`
+            : nothing}
         </div>
         <div class="inbox-item-actions">
           <a href="${previewUrl}" target="_blank" rel="noopener" class="btn-sm btn-review-link">Preview ↗</a>
