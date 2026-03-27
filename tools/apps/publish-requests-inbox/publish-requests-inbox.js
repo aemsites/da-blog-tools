@@ -1107,7 +1107,7 @@ class PublishRequestsApp extends LitElement {
               </div>
               <button
                 type="submit"
-                class="negative"
+                class="primary"
                 ?disabled=${this._isProcessing || this._needsEmail}
               >
                 ${this._isProcessing ? 'Sending...' : 'Reject Request'}
