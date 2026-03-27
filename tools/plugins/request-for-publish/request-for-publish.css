@@ -333,6 +333,11 @@
   outline-color: var(--pw-accent);
 }
 
+.accent:hover {
+  background: var(--pw-accent-hover);
+  border-color: var(--pw-accent-hover);
+}
+
 .pw-btn-full {
   width: 100%;
   padding: var(--spacing-100) var(--spacing-400);

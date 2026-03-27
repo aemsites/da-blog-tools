@@ -239,8 +239,8 @@ export async function fetchAccentSettings(org, site, token) {
   const config = await fetchWorkflowConfig(org, site, token);
   if (!config) return { accentColor: null, accentColorHover: null };
   return {
-    accentColor: extractSetting(config, 'accent-color'),
-    accentColorHover: extractSetting(config, 'accent-color-hover'),
+    accentColor: extractSetting(config, 'theme.accent-color'),
+    accentColorHover: extractSetting(config, 'theme.accent-color-hover'),
   };
 }
 

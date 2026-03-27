@@ -276,8 +276,8 @@ export async function resolveWorkflowConfig(path, org, site, token) {
   const commentsMinLength = parseInt(commentsLengthSetting, 10) || 10;
 
   // Per-customer accent color overrides
-  const accentColor = extractSetting(config, 'accent-color');
-  const accentColorHover = extractSetting(config, 'accent-color-hover');
+  const accentColor = extractSetting(config, 'theme.accent-color');
+  const accentColorHover = extractSetting(config, 'theme.accent-color-hover');
 
   // Multi-sheet format: tabs are 'publish-workflow-config' and 'publish-workflow-groups-to-email'
   const rules = config['publish-workflow-config']?.data || config.data || config.rules || [];

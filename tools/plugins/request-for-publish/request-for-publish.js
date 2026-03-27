@@ -76,7 +76,7 @@ class RequestForPublishPlugin extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this.shadowRoot.adoptedStyleSheets = [styles, buttons].filter(Boolean);
+    this.shadowRoot.adoptedStyleSheets = [buttons, styles].filter(Boolean);
     this.init();
   }
 
