@@ -1,3 +1,5 @@
+const NX_BASE = 'https://da.live/nx';
+
 const loadStyle = (() => {
   const styles = {};
 
@@ -19,5 +21,9 @@ const loadStyle = (() => {
     return styles[path];
   };
 })();
+
+export function loadButtons() {
+  return loadStyle(`${NX_BASE}/styles/buttons.css`);
+}
 
 export default loadStyle;
