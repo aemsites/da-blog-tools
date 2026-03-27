@@ -334,67 +334,17 @@
   margin-top: var(--spacing-400);
 }
 
-/* ========== Buttons ========== */
-button {
-  cursor: pointer;
-  font-family: var(--body-font-family);
-  transition: all 0.2s ease;
-}
-
-.btn-primary {
+/* ========== Button overrides (nexter buttons.css provides base styling) ========== */
+.accent {
   background: var(--pw-accent);
-  color: white;
-  border: none;
-  padding: var(--spacing-200) var(--spacing-400);
-  border-radius: var(--s2-radius-300);
-  font-weight: 700;
-  font-size: 15px;
-  line-height: 16px;
-  display: inline-block;
-  text-decoration: none;
+  border-color: var(--pw-accent);
+  outline-color: var(--pw-accent);
 }
 
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--pw-accent-hover);
-}
-
-.btn-large {
+.pw-btn-full {
   width: 100%;
-  padding: 14px var(--spacing-400);
+  padding: 10px var(--spacing-400);
   font-size: var(--s2-font-size-200);
-}
-
-.btn-secondary {
-  background: white;
-  color: var(--s2-gray-800);
-  border: 1px solid var(--s2-gray-200);
-  padding: var(--spacing-200) var(--spacing-400);
-  border-radius: var(--s2-radius-300);
-  font-weight: 700;
-  font-size: 15px;
-  line-height: 16px;
-  display: inline-block;
-  text-decoration: none;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: var(--s2-gray-50);
-  border-color: var(--s2-gray-700);
-}
-
-.btn-withdraw {
-  color: var(--s2-red);
-  border-color: var(--s2-red);
-}
-
-.btn-withdraw:hover:not(:disabled) {
-  background: #fce8e6;
-  border-color: var(--s2-red);
 }
 
 /* Existing request action buttons layout */

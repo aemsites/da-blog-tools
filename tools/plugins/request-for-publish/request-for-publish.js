@@ -24,9 +24,13 @@ function sampleRUM(checkpoint, data = {}) {
 
 // Application styles - load with error handling
 let styles = null;
+let buttons = null;
 try {
-  const loadStyle = (await import('../../scripts/utils/styles.js')).default;
-  styles = await loadStyle(import.meta.url);
+  const { default: loadStyle, loadButtons } = await import('../../scripts/utils/styles.js');
+  [styles, buttons] = await Promise.all([
+    loadStyle(import.meta.url),
+    loadButtons(),
+  ]);
 } catch (e) {
   console.warn('Failed to load styles:', e);
 }
@@ -72,9 +76,7 @@ class RequestForPublishPlugin extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    if (styles) {
-      this.shadowRoot.adoptedStyleSheets = [styles];
-    }
+    this.shadowRoot.adoptedStyleSheets = [styles, buttons].filter(Boolean);
     this.init();
   }
 
@@ -309,14 +311,14 @@ class RequestForPublishPlugin extends LitElement {
 
         <div class="form-actions">
           <button
-            class="btn-primary"
+            class="accent"
             @click=${this.handleResend}
             ?disabled=${actionDisabled}
           >
             ${this._isResending ? 'Resending...' : 'Resend Publish Request'}
           </button>
           <button
-            class="btn-secondary btn-withdraw"
+            class="primary"
             @click=${this.handleWithdraw}
             ?disabled=${actionDisabled}
           >
@@ -438,7 +440,7 @@ class RequestForPublishPlugin extends LitElement {
           </div>
 
           <div class="form-actions">
-            <button type="submit" class="btn-primary btn-large" ?disabled=${this._isSubmitting}>
+            <button type="submit" class="accent pw-btn-full" ?disabled=${this._isSubmitting}>
               ${this._submitButtonLabel}
             </button>
           </div>
