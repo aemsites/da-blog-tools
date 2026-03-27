@@ -417,13 +417,13 @@ button {
   text-decoration: none;
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-}
-
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
 }
 
 .btn-large {
