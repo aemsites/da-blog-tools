@@ -125,6 +125,13 @@ class RequestForPublishPlugin extends LitElement {
     this._commentsRequired = result.commentsRequired || false;
     this._commentsMinLength = result.commentsMinLength ?? 10;
 
+    if (result.accentColor) {
+      this.style.setProperty('--pw-accent', result.accentColor);
+    }
+    if (result.accentColorHover) {
+      this.style.setProperty('--pw-accent-hover', result.accentColorHover);
+    }
+
     // Show error if config is missing or no matching rule found
     if (result.error) {
       this._message = { type: 'error', text: result.error };

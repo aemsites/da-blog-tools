@@ -18,6 +18,7 @@ import {
   resendPublishRequest,
   fetchSiteConfig,
   getLiveHostFromConfig,
+  fetchAccentSettings,
 } from './api.js';
 
 // Super Lite components
@@ -187,12 +188,21 @@ class PublishRequestsApp extends LitElement {
       return;
     }
 
-    // Fetch CDN config from admin.hlx.page to resolve live host (custom domains, etc.)
+    // Fetch CDN config and accent settings in parallel
     try {
-      const config = await fetchSiteConfig(this._org, this._site);
-      this._liveHost = getLiveHostFromConfig(this._org, this._site, config);
+      const [siteConfig, accentSettings] = await Promise.all([
+        fetchSiteConfig(this._org, this._site),
+        fetchAccentSettings(this._org, this._site, this.token),
+      ]);
+      this._liveHost = getLiveHostFromConfig(this._org, this._site, siteConfig);
+      if (accentSettings.accentColor) {
+        this.style.setProperty('--pw-accent', accentSettings.accentColor);
+      }
+      if (accentSettings.accentColorHover) {
+        this.style.setProperty('--pw-accent-hover', accentSettings.accentColorHover);
+      }
     } catch {
-      this._liveHost = null; // fall back to default in liveUrl getter
+      this._liveHost = null;
     }
 
     // Sample RUM enhancer if the RUM script is loaded

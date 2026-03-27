@@ -229,6 +229,22 @@ export function getLiveHostFromConfig(org, site, config) {
 }
 
 /**
+ * Fetch per-customer accent color overrides from workflow settings.
+ * @param {string} org - Organization
+ * @param {string} site - Site
+ * @param {string} token - Authorization token
+ * @returns {Promise<{accentColor: string|null, accentColorHover: string|null}>}
+ */
+export async function fetchAccentSettings(org, site, token) {
+  const config = await fetchWorkflowConfig(org, site, token);
+  if (!config) return { accentColor: null, accentColorHover: null };
+  return {
+    accentColor: extractSetting(config, 'accent-color'),
+    accentColorHover: extractSetting(config, 'accent-color-hover'),
+  };
+}
+
+/**
  * Publish content via Helix Admin API
  * POST https://admin.hlx.page/live/{org}/{site}/main/{path}
  * @param {string} org - Organization

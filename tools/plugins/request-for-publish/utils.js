@@ -275,6 +275,10 @@ export async function resolveWorkflowConfig(path, org, site, token) {
   const commentsLengthSetting = extractSetting(config, 'request.comments.length');
   const commentsMinLength = parseInt(commentsLengthSetting, 10) || 10;
 
+  // Per-customer accent color overrides
+  const accentColor = extractSetting(config, 'accent-color');
+  const accentColorHover = extractSetting(config, 'accent-color-hover');
+
   // Multi-sheet format: tabs are 'publish-workflow-config' and 'publish-workflow-groups-to-email'
   const rules = config['publish-workflow-config']?.data || config.data || config.rules || [];
   const groupsData = config['publish-workflow-groups-to-email']?.data || [];
@@ -309,6 +313,8 @@ export async function resolveWorkflowConfig(path, org, site, token) {
       source: 'config',
       commentsRequired,
       commentsMinLength,
+      accentColor,
+      accentColorHover,
       digiops: rule.DigiOps || rule.digiops || config.digiops || '',
     };
   }
@@ -321,6 +327,8 @@ export async function resolveWorkflowConfig(path, org, site, token) {
     source: 'no-match',
     commentsRequired,
     commentsMinLength,
+    accentColor,
+    accentColorHover,
     error: `No approver rule found matching path "${path}". Please add a matching pattern to the "publish-workflow-config" tab.`,
   };
 }
