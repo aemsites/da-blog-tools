@@ -113,6 +113,7 @@
 .my-pending-requests-link a {
   color: var(--pw-accent);
   text-decoration: none;
+  font-weight: 700;
 }
 
 /* ========== Info Card ========== */

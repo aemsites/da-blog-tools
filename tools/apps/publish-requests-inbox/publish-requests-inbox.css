@@ -223,6 +223,7 @@
 .info-row a {
   color: var(--pw-accent);
   word-break: break-all;
+  font-weight: 700;
 }
 
 .info-row a:hover {
@@ -312,6 +313,7 @@
 .detail-value.link {
   color: var(--pw-accent);
   text-decoration: none;
+  font-weight: 700;
 }
 
 .detail-value.link:hover {
