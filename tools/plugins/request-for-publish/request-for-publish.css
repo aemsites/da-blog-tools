@@ -211,8 +211,8 @@
 
 /* ========== Approvers Section ========== */
 .approvers-section {
-  background: var(--s2-blue-200);
-  border: 1px solid var(--s2-gray-200);
+  background: color-mix(in srgb, var(--pw-accent) 10%, white);
+  border: 1px solid color-mix(in srgb, var(--pw-accent) 20%, var(--s2-gray-200));
   border-left: 4px solid var(--pw-accent);
   border-radius: var(--s2-radius-75);
   padding: var(--spacing-300);
@@ -310,7 +310,7 @@
 .form-group textarea:focus {
   outline: none;
   border-color: var(--pw-accent);
-  box-shadow: 0 0 0 3px rgb(59 99 251 / 15%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pw-accent) 15%, transparent);
 }
 
 .form-group .email-display {
