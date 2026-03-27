@@ -342,7 +342,7 @@
   border-color: var(--pw-accent-hover);
 }
 
-.accent:disabled {
+button.accent:disabled {
   background: var(--pw-accent);
   border-color: var(--pw-accent);
   color: white;

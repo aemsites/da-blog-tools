@@ -517,7 +517,8 @@ code.detail-value {
   border-color: var(--pw-accent-hover);
 }
 
-.accent:disabled {
+button.accent:disabled,
+a.accent:disabled {
   background: var(--pw-accent);
   border-color: var(--pw-accent);
   color: white;
@@ -525,7 +526,7 @@ code.detail-value {
   cursor: not-allowed;
 }
 
-.negative:disabled {
+button.negative:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
