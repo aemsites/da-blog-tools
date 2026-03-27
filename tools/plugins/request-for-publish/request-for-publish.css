@@ -58,9 +58,9 @@
 }
 
 .message.info {
-  background: var(--s2-blue-200);
-  border: 1px solid var(--s2-blue-700);
-  color: var(--s2-blue-1200);
+  background: color-mix(in srgb, var(--pw-accent) 7%, white);
+  border: 1px solid color-mix(in srgb, var(--pw-accent) 30%, var(--s2-gray-200));
+  color: var(--s2-gray-800);
 }
 
 .message.warning {
@@ -108,7 +108,11 @@
 .my-pending-requests-link {
   margin-top: var(--spacing-300) !important;
   font-size: var(--s2-font-size-100);
-  color: var(--s2-gray-700);
+}
+
+.my-pending-requests-link a {
+  color: var(--pw-accent);
+  text-decoration: none;
 }
 
 /* ========== Info Card ========== */
@@ -149,14 +153,14 @@
 }
 
 .info-row a {
-  color: var(--s2-blue-800);
+  color: var(--pw-accent);
   text-decoration: none;
   font-weight: 700;
 }
 
 .info-row a:hover,
 .my-pending-requests-link a:hover {
-  color: var(--s2-blue-1000);
+  color: var(--pw-accent-hover);
   text-decoration: underline;
 }
 
@@ -194,13 +198,13 @@
   gap: var(--spacing-75);
   margin-top: var(--spacing-100);
   font-size: var(--s2-font-size-100);
-  color: var(--s2-blue-800);
+  color: var(--pw-accent);
   text-decoration: none;
   font-weight: 700;
 }
 
 .open-diff-link:hover {
-  color: var(--s2-blue-1000);
+  color: var(--pw-accent-hover);
   text-decoration: underline;
 }
 
