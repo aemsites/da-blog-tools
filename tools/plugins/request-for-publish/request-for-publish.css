@@ -333,9 +333,17 @@
   outline-color: var(--pw-accent);
 }
 
-.accent:hover {
+.accent:hover:not(:disabled) {
   background: var(--pw-accent-hover);
   border-color: var(--pw-accent-hover);
+}
+
+.accent:disabled {
+  background: var(--pw-accent);
+  border-color: var(--pw-accent);
+  color: white;
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .pw-btn-full {

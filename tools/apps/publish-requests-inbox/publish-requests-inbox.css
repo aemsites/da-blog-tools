@@ -56,7 +56,7 @@
 .site-select-form .form-group input:focus {
   outline: none;
   border-color: var(--pw-accent);
-  box-shadow: 0 0 0 3px rgb(59 99 251 / 15%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pw-accent) 15%, transparent);
 }
 
 .site-select-form .form-group input::placeholder {
@@ -502,7 +502,7 @@ code.detail-value {
 .form-group textarea:focus {
   outline: none;
   border-color: var(--pw-accent);
-  box-shadow: 0 0 0 3px rgb(59 99 251 / 15%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pw-accent) 15%, transparent);
 }
 
 /* ========== Button Overrides (base from buttons.css) ========== */
@@ -515,6 +515,14 @@ code.detail-value {
 .accent:hover:not(:disabled) {
   background: var(--pw-accent-hover);
   border-color: var(--pw-accent-hover);
+}
+
+.accent:disabled {
+  background: var(--pw-accent);
+  border-color: var(--pw-accent);
+  color: white;
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .pw-btn-full {
