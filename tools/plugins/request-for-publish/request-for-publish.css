@@ -52,9 +52,9 @@
 }
 
 .message.error {
-  background: var(--s2-red-200);
+  background: #fde8e6;
   border: 1px solid var(--s2-red);
-  color: var(--s2-red-1200);
+  color: #670800;
 }
 
 .message.info {
