@@ -541,7 +541,7 @@ code.detail-value {
 .reject-toggle {
   cursor: pointer;
   font-size: var(--s2-font-size-100);
-  color: var(--s2-red);
+  color: var(--s2-gray-700);
   padding: var(--spacing-100) 0;
   user-select: none;
 }
