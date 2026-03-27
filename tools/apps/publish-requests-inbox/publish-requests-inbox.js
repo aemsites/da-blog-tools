@@ -872,27 +872,27 @@ class PublishRequestsApp extends LitElement {
         <div class="inbox-item-info">
           <div class="inbox-item-path">${request.path}</div>
           <div class="inbox-item-meta">
-            Status: <strong>Pending Approval</strong>
+            <span class="status-badge pending">Pending Approval</span>
           </div>
           ${request.comment
             ? html`<div class="inbox-item-comment">"${request.comment}"</div>`
             : nothing}
         </div>
         <div class="inbox-item-actions">
-          <a href="${previewUrl}" target="_blank" rel="noopener" class="action pw-action-sm">Preview ↗</a>
+          <a href="${previewUrl}" target="_blank" rel="noopener" class="accent pw-action-sm">Preview ↗</a>
           <button
             class="action pw-action-sm"
             @click=${() => this.handleMyRequestResend(request)}
             ?disabled=${isBusy}
           >
-            ${action === 'resending' ? 'Resending...' : 'Resend Request'}
+            ${action === 'resending' ? 'Resending...' : 'Resend'}
           </button>
           <button
-            class="action pw-action-sm"
+            class="negative pw-action-sm"
             @click=${() => this.handleMyRequestWithdraw(request)}
             ?disabled=${isBusy}
           >
-            ${action === 'withdrawing' ? 'Withdrawing...' : 'Withdraw Request'}
+            ${action === 'withdrawing' ? 'Withdrawing...' : 'Withdraw'}
           </button>
         </div>
       </div>
