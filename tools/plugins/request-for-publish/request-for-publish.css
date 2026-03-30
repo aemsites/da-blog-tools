@@ -185,8 +185,8 @@
 
 /* ========== Approvers Section ========== */
 .approvers-section {
-  background: var(--s2-gray-50);
-  border-left: 3px solid var(--s2-gray-300);
+  background: color-mix(in srgb, var(--pw-accent) 5%, white);
+  border-left: 3px solid color-mix(in srgb, var(--pw-accent) 30%, var(--s2-gray-200));
   border-radius: var(--s2-radius-75);
   padding: var(--spacing-200) var(--spacing-300);
   margin-bottom: var(--spacing-300);
