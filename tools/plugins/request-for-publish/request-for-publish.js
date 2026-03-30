@@ -54,6 +54,7 @@ class RequestForPublishPlugin extends LitElement {
     _existingRequest: { state: true },
     _isResending: { state: true },
     _isWithdrawing: { state: true },
+    _withdrawn: { state: true },
     _commentsRequired: { state: true },
     _commentsMinLength: { state: true },
     _submitPhase: { state: true },
@@ -72,6 +73,7 @@ class RequestForPublishPlugin extends LitElement {
     this._existingRequest = null;
     this._isResending = false;
     this._isWithdrawing = false;
+    this._withdrawn = false;
     this._commentsRequired = false;
     this._commentsMinLength = 10;
     this._submitPhase = '';
@@ -261,7 +263,7 @@ class RequestForPublishPlugin extends LitElement {
 
     if (result.success) {
       this._existingRequest = null;
-      this._message = { type: 'success', text: 'Publish request withdrawn successfully.' };
+      this._withdrawn = true;
     } else {
       this._message = { type: 'error', text: result.error || 'Failed to withdraw request.' };
     }
@@ -335,6 +337,16 @@ class RequestForPublishPlugin extends LitElement {
         </div>
 
         <p class="result-note">If your content owner is away please contact <a href="mailto:digiops@westernsydney.edu.au">digiops@westernsydney.edu.au</a> for assistance with content approvals.</p>
+      </div>
+    `;
+  }
+
+  renderWithdrawn() {
+    return html`
+      <div class="result-container success">
+        <h3>Request Withdrawn</h3>
+        <p>Your publish request for <strong>${this.contentPath}</strong> has been withdrawn successfully.</p>
+        <p class="result-note">You can submit a new publish request at any time.</p>
       </div>
     `;
   }
@@ -459,6 +471,10 @@ class RequestForPublishPlugin extends LitElement {
   render() {
     if (this._isLoading) {
       return this.renderLoading();
+    }
+
+    if (this._withdrawn) {
+      return this.renderWithdrawn();
     }
 
     if (this._submitted) {
