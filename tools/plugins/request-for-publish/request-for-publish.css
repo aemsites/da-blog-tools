@@ -185,7 +185,10 @@
 
 /* ========== Approvers Section ========== */
 .approvers-section {
-  padding: var(--spacing-200) 0;
+  background: var(--s2-gray-50);
+  border-left: 3px solid var(--s2-gray-300);
+  border-radius: var(--s2-radius-75);
+  padding: var(--spacing-200) var(--spacing-300);
   margin-bottom: var(--spacing-300);
 }
 
@@ -293,6 +296,8 @@
 }
 
 .form-actions {
+  display: flex;
+  justify-content: flex-end;
   margin-top: var(--spacing-400);
 }
 
@@ -314,12 +319,6 @@ button.accent:disabled {
   color: white;
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.pw-btn-full {
-  width: 100%;
-  padding: var(--spacing-100) var(--spacing-400);
-  font-size: var(--s2-font-size-200);
 }
 
 /* Existing request action buttons layout */

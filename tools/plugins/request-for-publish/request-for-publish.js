@@ -459,7 +459,7 @@ class RequestForPublishPlugin extends LitElement {
           </div>
 
           <div class="form-actions">
-            <button type="submit" class="accent pw-btn-full" ?disabled=${this._isSubmitting}>
+            <button type="submit" class="accent" ?disabled=${this._isSubmitting}>
               ${this._submitButtonLabel}
             </button>
           </div>

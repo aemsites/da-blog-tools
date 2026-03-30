@@ -384,7 +384,10 @@ code.detail-value {
 
 /* ========== Approvers Section ========== */
 .approvers-section {
-  padding: var(--spacing-200) 0;
+  background: var(--s2-gray-50);
+  border-left: 3px solid var(--s2-gray-300);
+  border-radius: var(--s2-radius-75);
+  padding: var(--spacing-200) var(--spacing-300);
   margin-bottom: var(--spacing-300);
 }
 
@@ -488,11 +491,6 @@ button.negative:disabled {
   cursor: not-allowed;
 }
 
-.pw-btn-full {
-  width: 100%;
-  padding: var(--spacing-100) var(--spacing-400);
-  font-size: var(--s2-font-size-200);
-}
 
 .pw-action-sm {
   padding: var(--spacing-75) var(--spacing-200);

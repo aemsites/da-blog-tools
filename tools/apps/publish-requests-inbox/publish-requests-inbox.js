@@ -726,7 +726,7 @@ class PublishRequestsApp extends LitElement {
 
           <button
             type="submit"
-            class="accent pw-btn-full"
+            class="accent"
             ?disabled=${this._siteSelectLoading}
           >
             ${this._siteSelectLoading ? 'Loading...' : 'View Publish Requests'}
@@ -1089,7 +1089,7 @@ class PublishRequestsApp extends LitElement {
 
           <div class="decision-buttons">
             <button
-              class="accent pw-btn-full"
+              class="accent"
               @click=${this.handleApprove}
               ?disabled=${this._isProcessing || this._needsEmail}
             >
