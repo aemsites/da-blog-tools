@@ -146,10 +146,6 @@
   margin-bottom: var(--spacing-100);
 }
 
-.diff-icon {
-  font-size: var(--s2-font-size-300);
-}
-
 .diff-title {
   font-weight: 700;
   font-size: var(--s2-font-size-100);
@@ -197,10 +193,6 @@
   align-items: center;
   gap: var(--spacing-100);
   margin-bottom: var(--spacing-200);
-}
-
-.approvers-icon {
-  font-size: var(--s2-font-size-300);
 }
 
 .approvers-title {

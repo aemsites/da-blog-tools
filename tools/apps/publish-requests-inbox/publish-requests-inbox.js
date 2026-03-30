@@ -1079,7 +1079,6 @@ class PublishRequestsApp extends LitElement {
           ${this._needsEmail
             ? html`
                 <div class="warning-banner">
-                  <span class="warning-icon"></span>
                   <span>Unable to determine your email from session. Please log in to DA first.</span>
                 </div>
               `

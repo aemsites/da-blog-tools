@@ -422,7 +422,6 @@ class RequestForPublishPlugin extends LitElement {
 
         <div class="approvers-section">
           <div class="approvers-header">
-            <span class="approvers-icon"></span>
             <span class="approvers-title">Will be reviewed by:</span>
           </div>
           <ul class="approvers-list">
@@ -430,7 +429,6 @@ class RequestForPublishPlugin extends LitElement {
           </ul>
           ${this._cc.length > 0 ? html`
             <div class="approvers-header" style="margin-top: 8px;">
-              <span class="approvers-icon"></span>
               <span class="approvers-title">CC:</span>
             </div>
             <ul class="approvers-list">

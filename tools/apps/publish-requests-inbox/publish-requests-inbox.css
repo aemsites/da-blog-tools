@@ -39,6 +39,7 @@
 .site-select-form {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: var(--spacing-300);
 }
 
@@ -364,10 +365,6 @@ code.detail-value {
   color: #8d6e00;
 }
 
-.warning-icon {
-  font-size: var(--s2-font-size-300);
-}
-
 .reviewer-info {
   font-size: var(--s2-font-size-100);
   color: var(--s2-gray-700);
@@ -379,6 +376,7 @@ code.detail-value {
 }
 
 .decision-buttons {
+  display: flex;
   margin-bottom: var(--spacing-400);
 }
 
@@ -396,10 +394,6 @@ code.detail-value {
   align-items: center;
   gap: var(--spacing-100);
   margin-bottom: var(--spacing-200);
-}
-
-.approvers-icon {
-  font-size: var(--s2-font-size-300);
 }
 
 .approvers-title {
@@ -603,13 +597,12 @@ button.negative:disabled {
 .inbox-list {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-200);
 }
 
 .inbox-item {
   padding: var(--spacing-200) 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--spacing-300);
   border-bottom: 1px solid var(--s2-gray-200);
