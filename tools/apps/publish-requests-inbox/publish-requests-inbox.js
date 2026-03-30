@@ -24,14 +24,17 @@ import {
 // Super Lite components
 import 'https://da.live/nx/public/sl/components.js';
 
-// Application styles - load with error handling
+// Application styles — use NX getStyle (same utility as OOTB DA apps)
+const NX = 'https://da.live/nx';
+let sl = null;
 let styles = null;
 let buttons = null;
 try {
-  const { default: loadStyle, loadButtons } = await import('../../scripts/utils/styles.js');
-  [styles, buttons] = await Promise.all([
-    loadStyle(import.meta.url),
-    loadButtons(),
+  const { default: getStyle } = await import(`${NX}/utils/styles.js`);
+  [sl, styles, buttons] = await Promise.all([
+    getStyle(`${NX}/public/sl/styles.css`),
+    getStyle(import.meta.url),
+    getStyle(`${NX}/styles/buttons.css`),
   ]);
 } catch (e) {
   console.warn('Failed to load styles:', e);
@@ -98,7 +101,7 @@ class PublishRequestsApp extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this.shadowRoot.adoptedStyleSheets = [buttons, styles].filter(Boolean);
+    this.shadowRoot.adoptedStyleSheets = [sl, buttons, styles].filter(Boolean);
     this.init();
   }
 
@@ -664,7 +667,6 @@ class PublishRequestsApp extends LitElement {
   renderLoading() {
     return html`
       <div class="loading-container">
-        <div class="loading-spinner"></div>
         <p>Loading...</p>
       </div>
     `;
@@ -761,7 +763,6 @@ class PublishRequestsApp extends LitElement {
   renderInboxEmpty() {
     return html`
       <div class="inbox-empty">
-        <div class="inbox-empty-icon"></div>
         <h2>No Pending Requests</h2>
         <p>You have no publish requests waiting for your approval.</p>
       </div>
@@ -846,7 +847,6 @@ class PublishRequestsApp extends LitElement {
   renderMyRequestsEmpty() {
     return html`
       <div class="inbox-empty">
-        <div class="inbox-empty-icon"></div>
         <h2>No Pending Requests</h2>
         <p>You have no pending publish requests awaiting approval.</p>
       </div>
@@ -904,7 +904,6 @@ class PublishRequestsApp extends LitElement {
   renderUnauthorized() {
     return html`
       <div class="error-container">
-        <div class="error-icon"></div>
         <h2>Not Authorized</h2>
         ${this.renderMessage()}
         <div class="info-card">
@@ -928,7 +927,6 @@ class PublishRequestsApp extends LitElement {
   renderNoRequest() {
     return html`
       <div class="error-container">
-        <div class="error-icon"></div>
         <h2>No Pending Request</h2>
         ${this.renderMessage()}
         <div class="info-card">
@@ -951,7 +949,6 @@ class PublishRequestsApp extends LitElement {
   renderError() {
     return html`
       <div class="error-container">
-        <div class="error-icon"></div>
         <h2>Error</h2>
         ${this.renderMessage()}
         <p class="error-help">
@@ -965,7 +962,6 @@ class PublishRequestsApp extends LitElement {
   renderApproved() {
     return html`
       <div class="result-container approved">
-        <div class="result-icon"></div>
         <h2>Published!</h2>
         <p>The content has been published successfully.</p>
 
@@ -993,7 +989,6 @@ class PublishRequestsApp extends LitElement {
   renderRejected() {
     return html`
       <div class="result-container rejected">
-        <div class="result-icon"></div>
         <h2>Request Rejected</h2>
         ${this.renderMessage()}
 

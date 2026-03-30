@@ -22,14 +22,17 @@ function sampleRUM(checkpoint, data = {}) {
   } catch { /* noop */ }
 }
 
-// Application styles - load with error handling
+// Application styles — use NX getStyle (same utility as OOTB DA apps)
+const NX = 'https://da.live/nx';
+let sl = null;
 let styles = null;
 let buttons = null;
 try {
-  const { default: loadStyle, loadButtons } = await import('../../scripts/utils/styles.js');
-  [styles, buttons] = await Promise.all([
-    loadStyle(import.meta.url),
-    loadButtons(),
+  const { default: getStyle } = await import(`${NX}/utils/styles.js`);
+  [sl, styles, buttons] = await Promise.all([
+    getStyle(`${NX}/public/sl/styles.css`),
+    getStyle(import.meta.url),
+    getStyle(`${NX}/styles/buttons.css`),
   ]);
 } catch (e) {
   console.warn('Failed to load styles:', e);
@@ -76,7 +79,7 @@ class RequestForPublishPlugin extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this.shadowRoot.adoptedStyleSheets = [buttons, styles].filter(Boolean);
+    this.shadowRoot.adoptedStyleSheets = [sl, buttons, styles].filter(Boolean);
     this.init();
   }
 
@@ -281,7 +284,6 @@ class RequestForPublishPlugin extends LitElement {
   renderLoading() {
     return html`
       <div class="loading-container">
-        <div class="loading-spinner"></div>
         <p>Loading...</p>
       </div>
     `;
@@ -296,7 +298,6 @@ class RequestForPublishPlugin extends LitElement {
     const actionDisabled = this._isResending || this._isWithdrawing;
     return html`
       <div class="result-container pending">
-        <div class="result-icon"></div>
         <h3>Request Pending</h3>
         <p>You already have a pending publish request for this content. Please wait while your request is reviewed.</p>
         <div class="info-card">
@@ -341,7 +342,6 @@ class RequestForPublishPlugin extends LitElement {
   renderSubmitted() {
     return html`
       <div class="result-container success">
-        <div class="result-icon"></div>
         <h3>Request Sent!</h3>
         <p>Your publish request has been sent to the following approvers:</p>
         <ul class="approvers-list">
