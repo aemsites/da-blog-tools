@@ -352,6 +352,7 @@ async function addRequestToDASheet(org, site, requestData, token) {
         ? requestData.approvers.join(',')
         : requestData.approvers || '',
       path: requestData.path || '',
+      comment: requestData.comment || '',
       status: 'pending',
       created: new Date().toISOString(),
     });

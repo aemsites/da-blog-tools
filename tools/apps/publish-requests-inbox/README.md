@@ -95,7 +95,7 @@ For path `/about`, only `/*` matches, so `dl-reviewers@example.com` is resolved 
 
 ### 1. View All Pending Approvals (Inbox)
 
-The landing page when no `path` is specified. Displays a list of all pending publish requests that the logged-in user is authorized to approve. Each item shows the content path, requester, and action buttons (Diff, Review, Approve).
+The landing page when no `path` is specified. Displays a list of all pending publish requests that the logged-in user is authorized to approve. Each item shows the content path, requester, the author's comment (if provided), and action buttons (Diff, Review, Approve).
 
 ### 2. Approve All Pending Requests (Bulk Publish)
 
@@ -127,7 +127,7 @@ Each inbox item has an individual **"Approve"** button that publishes just that 
 
 ### 5. Review & Approve a Single Request
 
-The full review page for a specific request. The approver sees the content path, author, optional note, preview link, and a content diff link. They can click **"Approve & Publish"** to publish the content. A publish notification email is sent to the author upon success.
+The full review page for a specific request. The approver sees the content path, author, author's comment (loaded from the requests sheet or URL params), preview link, and a content diff link. They can click **"Approve & Publish"** to publish the content. A publish notification email is sent to the author upon success.
 
 ### 6. Reject a Publish Request
 
@@ -188,7 +188,7 @@ If the `publish-workflow-config` tab is not found at either level, the app shows
 
 ### `/.da/publish-workflow-requests.json` (DA Source API)
 
-Tracks pending publish requests with columns: `requester`, `approver`, `path`, `status`
+Tracks pending publish requests with columns: `requester`, `approver`, `path`, `comment`, `status`, `created`
 
 ## States
 
