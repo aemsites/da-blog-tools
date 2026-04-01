@@ -22,11 +22,18 @@ function sampleRUM(checkpoint, data = {}) {
   } catch { /* noop */ }
 }
 
-// Application styles - load with error handling
+// Application styles — use NX getStyle (same utility as OOTB DA apps)
+const NX = 'https://da.live/nx';
+let sl = null;
 let styles = null;
+let buttons = null;
 try {
-  const loadStyle = (await import('../../scripts/utils/styles.js')).default;
-  styles = await loadStyle(import.meta.url);
+  const { default: getStyle } = await import(`${NX}/utils/styles.js`);
+  [sl, styles, buttons] = await Promise.all([
+    getStyle(`${NX}/public/sl/styles.css`),
+    getStyle(import.meta.url),
+    getStyle(`${NX}/styles/buttons.css`),
+  ]);
 } catch (e) {
   console.warn('Failed to load styles:', e);
 }
@@ -47,6 +54,7 @@ class RequestForPublishPlugin extends LitElement {
     _existingRequest: { state: true },
     _isResending: { state: true },
     _isWithdrawing: { state: true },
+    _withdrawn: { state: true },
     _commentsRequired: { state: true },
     _commentsMinLength: { state: true },
     _submitPhase: { state: true },
@@ -65,6 +73,7 @@ class RequestForPublishPlugin extends LitElement {
     this._existingRequest = null;
     this._isResending = false;
     this._isWithdrawing = false;
+    this._withdrawn = false;
     this._commentsRequired = false;
     this._commentsMinLength = 10;
     this._submitPhase = '';
@@ -72,9 +81,7 @@ class RequestForPublishPlugin extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    if (styles) {
-      this.shadowRoot.adoptedStyleSheets = [styles];
-    }
+    this.shadowRoot.adoptedStyleSheets = [sl, buttons, styles].filter(Boolean);
     this.init();
   }
 
@@ -122,6 +129,13 @@ class RequestForPublishPlugin extends LitElement {
     this._approversSource = result.source || 'unknown';
     this._commentsRequired = result.commentsRequired || false;
     this._commentsMinLength = result.commentsMinLength ?? 10;
+
+    if (result.accentColor) {
+      this.style.setProperty('--pw-accent', result.accentColor);
+    }
+    if (result.accentColorHover) {
+      this.style.setProperty('--pw-accent-hover', result.accentColorHover);
+    }
 
     // Show error if config is missing or no matching rule found
     if (result.error) {
@@ -249,7 +263,7 @@ class RequestForPublishPlugin extends LitElement {
 
     if (result.success) {
       this._existingRequest = null;
-      this._message = { type: 'success', text: 'Publish request withdrawn successfully.' };
+      this._withdrawn = true;
     } else {
       this._message = { type: 'error', text: result.error || 'Failed to withdraw request.' };
     }
@@ -272,7 +286,6 @@ class RequestForPublishPlugin extends LitElement {
   renderLoading() {
     return html`
       <div class="loading-container">
-        <div class="loading-spinner"></div>
         <p>Loading...</p>
       </div>
     `;
@@ -287,7 +300,6 @@ class RequestForPublishPlugin extends LitElement {
     const actionDisabled = this._isResending || this._isWithdrawing;
     return html`
       <div class="result-container pending">
-        <div class="result-icon"></div>
         <h3>Request Pending</h3>
         <p>You already have a pending publish request for this content. Please wait while your request is reviewed.</p>
         <div class="info-card">
@@ -309,14 +321,14 @@ class RequestForPublishPlugin extends LitElement {
 
         <div class="form-actions">
           <button
-            class="btn-primary"
+            class="accent"
             @click=${this.handleResend}
             ?disabled=${actionDisabled}
           >
             ${this._isResending ? 'Resending...' : 'Resend Publish Request'}
           </button>
           <button
-            class="btn-secondary btn-withdraw"
+            class="primary"
             @click=${this.handleWithdraw}
             ?disabled=${actionDisabled}
           >
@@ -329,10 +341,19 @@ class RequestForPublishPlugin extends LitElement {
     `;
   }
 
+  renderWithdrawn() {
+    return html`
+      <div class="result-container success">
+        <h3>Request Withdrawn</h3>
+        <p>Your publish request for <strong>${this.contentPath}</strong> has been withdrawn successfully.</p>
+        <p class="result-note">You can submit a new publish request at any time.</p>
+      </div>
+    `;
+  }
+
   renderSubmitted() {
     return html`
       <div class="result-container success">
-        <div class="result-icon"></div>
         <h3>Request Sent!</h3>
         <p>Your publish request has been sent to the following approvers:</p>
         <ul class="approvers-list">
@@ -401,7 +422,6 @@ class RequestForPublishPlugin extends LitElement {
 
         <div class="approvers-section">
           <div class="approvers-header">
-            <span class="approvers-icon"></span>
             <span class="approvers-title">Will be reviewed by:</span>
           </div>
           <ul class="approvers-list">
@@ -409,7 +429,6 @@ class RequestForPublishPlugin extends LitElement {
           </ul>
           ${this._cc.length > 0 ? html`
             <div class="approvers-header" style="margin-top: 8px;">
-              <span class="approvers-icon"></span>
               <span class="approvers-title">CC:</span>
             </div>
             <ul class="approvers-list">
@@ -438,7 +457,7 @@ class RequestForPublishPlugin extends LitElement {
           </div>
 
           <div class="form-actions">
-            <button type="submit" class="btn-primary btn-large" ?disabled=${this._isSubmitting}>
+            <button type="submit" class="accent" ?disabled=${this._isSubmitting}>
               ${this._submitButtonLabel}
             </button>
           </div>
@@ -450,6 +469,10 @@ class RequestForPublishPlugin extends LitElement {
   render() {
     if (this._isLoading) {
       return this.renderLoading();
+    }
+
+    if (this._withdrawn) {
+      return this.renderWithdrawn();
     }
 
     if (this._submitted) {

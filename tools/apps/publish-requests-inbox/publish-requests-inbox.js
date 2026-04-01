@@ -18,13 +18,27 @@ import {
   resendPublishRequest,
   fetchSiteConfig,
   getLiveHostFromConfig,
+  fetchAccentSettings,
 } from './api.js';
 
 // Super Lite components
 import 'https://da.live/nx/public/sl/components.js';
 
-// Application styles
-import loadStyle from '../../scripts/utils/styles.js';
+// Application styles — use NX getStyle (same utility as OOTB DA apps)
+const NX = 'https://da.live/nx';
+let sl = null;
+let styles = null;
+let buttons = null;
+try {
+  const { default: getStyle } = await import(`${NX}/utils/styles.js`);
+  [sl, styles, buttons] = await Promise.all([
+    getStyle(`${NX}/public/sl/styles.css`),
+    getStyle(import.meta.url),
+    getStyle(`${NX}/styles/buttons.css`),
+  ]);
+} catch (e) {
+  console.warn('Failed to load styles:', e);
+}
 
 // RUM helper – safely fires a checkpoint if the RUM script is loaded
 function sampleRUM(checkpoint, data = {}) {
@@ -32,8 +46,6 @@ function sampleRUM(checkpoint, data = {}) {
     window.hlx?.rum?.sampleRUM?.(checkpoint, data);
   } catch { /* noop */ }
 }
-
-const styles = await loadStyle(import.meta.url);
 
 class PublishRequestsApp extends LitElement {
   static properties = {
@@ -89,7 +101,7 @@ class PublishRequestsApp extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this.shadowRoot.adoptedStyleSheets = [styles];
+    this.shadowRoot.adoptedStyleSheets = [sl, buttons, styles].filter(Boolean);
     this.init();
   }
 
@@ -179,12 +191,21 @@ class PublishRequestsApp extends LitElement {
       return;
     }
 
-    // Fetch CDN config from admin.hlx.page to resolve live host (custom domains, etc.)
+    // Fetch CDN config and accent settings in parallel
     try {
-      const config = await fetchSiteConfig(this._org, this._site);
-      this._liveHost = getLiveHostFromConfig(this._org, this._site, config);
+      const [siteConfig, accentSettings] = await Promise.all([
+        fetchSiteConfig(this._org, this._site),
+        fetchAccentSettings(this._org, this._site, this.token),
+      ]);
+      this._liveHost = getLiveHostFromConfig(this._org, this._site, siteConfig);
+      if (accentSettings.accentColor) {
+        this.style.setProperty('--pw-accent', accentSettings.accentColor);
+      }
+      if (accentSettings.accentColorHover) {
+        this.style.setProperty('--pw-accent-hover', accentSettings.accentColorHover);
+      }
     } catch {
-      this._liveHost = null; // fall back to default in liveUrl getter
+      this._liveHost = null;
     }
 
     // Sample RUM enhancer if the RUM script is loaded
@@ -646,7 +667,6 @@ class PublishRequestsApp extends LitElement {
   renderLoading() {
     return html`
       <div class="loading-container">
-        <div class="loading-spinner"></div>
         <p>Loading...</p>
       </div>
     `;
@@ -706,7 +726,7 @@ class PublishRequestsApp extends LitElement {
 
           <button
             type="submit"
-            class="btn-primary btn-large"
+            class="accent"
             ?disabled=${this._siteSelectLoading}
           >
             ${this._siteSelectLoading ? 'Loading...' : 'View Publish Requests'}
@@ -743,7 +763,6 @@ class PublishRequestsApp extends LitElement {
   renderInboxEmpty() {
     return html`
       <div class="inbox-empty">
-        <div class="inbox-empty-icon"></div>
         <h2>No Pending Requests</h2>
         <p>You have no publish requests waiting for your approval.</p>
       </div>
@@ -754,7 +773,7 @@ class PublishRequestsApp extends LitElement {
     return html`
       <div class="inbox-actions-bar">
         <button
-          class="btn-approve-all"
+          class="accent"
           @click=${this.handleApproveAll}
           ?disabled=${this._approveAllProcessing}
         >
@@ -787,10 +806,10 @@ class PublishRequestsApp extends LitElement {
             : nothing}
         </div>
         <div class="inbox-item-actions">
-          <a href="${diffUrl}" target="_blank" rel="noopener" class="btn-sm btn-diff">Diff ↗</a>
-          <a href="${reviewUrl}" class="btn-sm btn-review-link" @click=${(e) => this.navigateTop(reviewUrl, e)}>Review</a>
+          <a href="${diffUrl}" target="_blank" rel="noopener" class="action pw-action-sm">Diff ↗</a>
+          <a href="${reviewUrl}" class="action pw-action-sm" @click=${(e) => this.navigateTop(reviewUrl, e)}>Review</a>
           <button
-            class="btn-sm btn-approve-sm"
+            class="accent pw-action-sm"
             @click=${() => this.handleInboxApprove(request)}
             ?disabled=${isProcessing || this._approveAllProcessing}
           >
@@ -828,7 +847,6 @@ class PublishRequestsApp extends LitElement {
   renderMyRequestsEmpty() {
     return html`
       <div class="inbox-empty">
-        <div class="inbox-empty-icon"></div>
         <h2>No Pending Requests</h2>
         <p>You have no pending publish requests awaiting approval.</p>
       </div>
@@ -854,27 +872,27 @@ class PublishRequestsApp extends LitElement {
         <div class="inbox-item-info">
           <div class="inbox-item-path">${request.path}</div>
           <div class="inbox-item-meta">
-            Status: <strong>Pending Approval</strong>
+            <span class="status-badge pending">Pending Approval</span>
           </div>
           ${request.comment
             ? html`<div class="inbox-item-comment">"${request.comment}"</div>`
             : nothing}
         </div>
         <div class="inbox-item-actions">
-          <a href="${previewUrl}" target="_blank" rel="noopener" class="btn-sm btn-review-link">Preview ↗</a>
+          <a href="${previewUrl}" target="_blank" rel="noopener" class="accent pw-action-sm">Preview ↗</a>
           <button
-            class="btn-sm btn-resend-sm"
+            class="action pw-action-sm"
             @click=${() => this.handleMyRequestResend(request)}
             ?disabled=${isBusy}
           >
-            ${action === 'resending' ? 'Resending...' : 'Resend Request'}
+            ${action === 'resending' ? 'Resending...' : 'Resend'}
           </button>
           <button
-            class="btn-sm btn-withdraw-sm"
+            class="negative pw-action-sm"
             @click=${() => this.handleMyRequestWithdraw(request)}
             ?disabled=${isBusy}
           >
-            ${action === 'withdrawing' ? 'Withdrawing...' : 'Withdraw Request'}
+            ${action === 'withdrawing' ? 'Withdrawing...' : 'Withdraw'}
           </button>
         </div>
       </div>
@@ -886,7 +904,6 @@ class PublishRequestsApp extends LitElement {
   renderUnauthorized() {
     return html`
       <div class="error-container">
-        <div class="error-icon"></div>
         <h2>Not Authorized</h2>
         ${this.renderMessage()}
         <div class="info-card">
@@ -910,7 +927,6 @@ class PublishRequestsApp extends LitElement {
   renderNoRequest() {
     return html`
       <div class="error-container">
-        <div class="error-icon"></div>
         <h2>No Pending Request</h2>
         ${this.renderMessage()}
         <div class="info-card">
@@ -933,7 +949,6 @@ class PublishRequestsApp extends LitElement {
   renderError() {
     return html`
       <div class="error-container">
-        <div class="error-icon"></div>
         <h2>Error</h2>
         ${this.renderMessage()}
         <p class="error-help">
@@ -947,7 +962,6 @@ class PublishRequestsApp extends LitElement {
   renderApproved() {
     return html`
       <div class="result-container approved">
-        <div class="result-icon"></div>
         <h2>Published!</h2>
         <p>The content has been published successfully.</p>
 
@@ -963,7 +977,7 @@ class PublishRequestsApp extends LitElement {
         </div>
 
         <div class="result-actions">
-          <a href="${this.liveUrl}" target="_blank" rel="noopener" class="btn-primary">
+          <a href="${this.liveUrl}" target="_blank" rel="noopener" class="accent">
             View Published Content
           </a>
           <a href="${this.getInboxUrl()}" class="back-link" @click=${(e) => this.navigateTop(this.getInboxUrl(), e)}>Back to Inbox</a>
@@ -975,7 +989,6 @@ class PublishRequestsApp extends LitElement {
   renderRejected() {
     return html`
       <div class="result-container rejected">
-        <div class="result-icon"></div>
         <h2>Request Rejected</h2>
         ${this.renderMessage()}
 
@@ -1066,7 +1079,6 @@ class PublishRequestsApp extends LitElement {
           ${this._needsEmail
             ? html`
                 <div class="warning-banner">
-                  <span class="warning-icon"></span>
                   <span>Unable to determine your email from session. Please log in to DA first.</span>
                 </div>
               `
@@ -1076,7 +1088,7 @@ class PublishRequestsApp extends LitElement {
 
           <div class="decision-buttons">
             <button
-              class="btn-approve"
+              class="accent"
               @click=${this.handleApprove}
               ?disabled=${this._isProcessing || this._needsEmail}
             >
@@ -1099,7 +1111,7 @@ class PublishRequestsApp extends LitElement {
               </div>
               <button
                 type="submit"
-                class="btn-reject"
+                class="negative"
                 ?disabled=${this._isProcessing || this._needsEmail}
               >
                 ${this._isProcessing ? 'Sending...' : 'Reject Request'}
