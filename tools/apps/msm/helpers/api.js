@@ -5,21 +5,16 @@ const AEM_ADMIN = 'https://admin.hlx.page';
 const MAX_CONCURRENT = 5;
 
 let daFetchFn;
-let fetchDaConfigsFn;
 
-async function ensureDeps() {
+async function ensureDaFetch() {
   if (!daFetchFn) {
-    const utils = await import('https://da.live/nx/public/utils/daFetch.js');
-    daFetchFn = utils.daFetch;
-  }
-  if (!fetchDaConfigsFn) {
-    const utils = await import('https://da.live/nx/public/utils/utils.js');
-    fetchDaConfigsFn = utils.fetchDaConfigs;
+    const { daFetch: fn } = await import('https://da.live/nx/utils/daFetch.js');
+    daFetchFn = fn;
   }
 }
 
 async function daFetch(url, opts = {}) {
-  await ensureDeps();
+  await ensureDaFetch();
   return daFetchFn(url, opts);
 }
 
@@ -51,10 +46,17 @@ async function runWithConcurrency(tasks, limit = MAX_CONCURRENT) {
 
 const configCache = {};
 
+async function fetchOrgConfig(org) {
+  if (configCache[org]) return configCache[org];
+  const resp = await daFetch(`${DA_ORIGIN}/config/${org}/`);
+  if (!resp.ok) return null;
+  const json = await resp.json();
+  configCache[org] = json;
+  return json;
+}
+
 async function fetchOrgMsmRows(org) {
-  await ensureDeps();
-  const configs = await fetchDaConfigsFn({ org });
-  const orgConfig = configs?.[0];
+  const orgConfig = await fetchOrgConfig(org);
   return orgConfig?.msm?.data || [];
 }
 
@@ -104,12 +106,19 @@ export async function listFolder(org, site, path = '/') {
   const resp = await daFetch(url);
   if (!resp.ok) return [];
   const items = await resp.json();
-  return items.map((item) => ({
-    name: item.name,
-    path: item.path || `${cleanPath === '/' ? '' : cleanPath}/${item.name}`,
-    ext: item.ext || (item.name.includes('.') ? item.name.split('.').pop() : null),
-    isFolder: !item.ext && !item.name.includes('.'),
-  }));
+  const prefix = `/${org}/${site}`;
+  return items.map((item) => {
+    let itemPath = item.path || `${cleanPath === '/' ? '' : cleanPath}/${item.name}`;
+    if (itemPath.startsWith(prefix)) {
+      itemPath = itemPath.substring(prefix.length) || '/';
+    }
+    return {
+      name: item.name,
+      path: itemPath,
+      ext: item.ext || (item.name.includes('.') ? item.name.split('.').pop() : null),
+      isFolder: !item.ext && !item.name.includes('.'),
+    };
+  });
 }
 
 // ──────────────────────────────────────────────

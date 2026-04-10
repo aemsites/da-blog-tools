@@ -2,6 +2,7 @@
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { LitElement, html, nothing } from 'da-lit';
 import { fetchMsmConfig, checkPageOverrides } from './helpers/api.js';
+import 'https://da.live/nx/public/sl/components.js';
 import './helpers/column-browser.js';
 import './helpers/action-panel.js';
 
@@ -46,28 +47,18 @@ class MsmApp extends LitElement {
     this._pageOverrides = new Map();
     this._initError = '';
     this._role = 'base';
-
-    const org = this.context?.org;
-    const site = this.context?.repo;
-    if (org) {
-      this._org = org;
-      this._site = site || '';
-      this._state = 'loading';
-      this.loadConfig(org);
-    } else {
-      this._state = 'init';
-    }
+    this._state = 'init';
   }
 
   handleOrgSubmit(e) {
     e.preventDefault();
-    const orgInput = this.shadowRoot.querySelector('#org-input');
-    const siteInput = this.shadowRoot.querySelector('#site-input');
-    const org = (orgInput?.value || '').trim().replace(/^\/+/, '');
-    const site = (siteInput?.value || '').trim().replace(/^\/+/, '');
-    if (!org) return;
+    const input = this.shadowRoot.querySelector('#path-input');
+    const raw = (input?.value || '').trim();
+    const parts = raw.replace(/^\/+/, '').split('/').filter(Boolean);
+    if (!parts.length) return;
+    const [org, site] = parts;
     this._org = org;
-    this._site = site;
+    this._site = site || '';
     this._initError = '';
     this._state = 'loading';
     this.loadConfig(org);
@@ -76,6 +67,7 @@ class MsmApp extends LitElement {
   classifySite(config) {
     if (!this._site) {
       this._role = 'base';
+      this._baseSite = '';
       return;
     }
 
@@ -91,7 +83,16 @@ class MsmApp extends LitElement {
       return;
     }
 
+    const isBase = config.baseSites.find((bs) => bs.site === this._site);
+    if (isBase) {
+      this._role = 'base';
+      this._baseSite = this._site;
+      this._satellites = isBase.satellites;
+      return;
+    }
+
     this._role = 'base';
+    this._baseSite = '';
   }
 
   async loadConfig(org) {
@@ -155,94 +156,58 @@ class MsmApp extends LitElement {
     return this._selectedPages.length === 1;
   }
 
-  renderHeader() {
-    const org = this._org || '';
-    const site = this._role === 'satellite' ? this._site : (this._currentSite || '');
+  get _inputValue() {
+    if (!this._org) return '';
+    return this._site ? `/${this._org}/${this._site}` : `/${this._org}`;
+  }
+
+  renderToolbar() {
     return html`
-      <div class="msm-header">
+      <div class="msm-toolbar">
         <h1>MSM Actions</h1>
-        <div class="msm-header-meta">
-          ${site ? html`<span class="site-label">${org} / ${site}</span>` : nothing}
-          ${this._role === 'satellite' ? html`<span class="role-badge">Satellite</span>` : nothing}
+        <form class="msm-toolbar-form" @submit=${this.handleOrgSubmit}>
+          <sl-input
+            id="path-input"
+            type="text"
+            placeholder="/org/site"
+            autocomplete="off"
+            spellcheck="false"
+            value=${this._inputValue}
+            .error=${this._initError || nothing}
+          ></sl-input>
+          <sl-button @click=${this.handleOrgSubmit}>Load</sl-button>
+        </form>
+        ${this._role === 'satellite' ? html`<span class="role-badge">Satellite</span>` : nothing}
+      </div>
+    `;
+  }
+
+  renderContent() {
+    if (this._state === 'init') return nothing;
+
+    if (this._state === 'loading') {
+      return html`
+        <div class="msm-loading">
+          <div class="spinner"></div>
+          Loading MSM configuration\u2026
         </div>
-      </div>
-    `;
-  }
+      `;
+    }
 
-  renderLoading() {
-    return html`
-      <div class="msm-loading">
-        <div class="spinner"></div>
-        Loading MSM configuration\u2026
-      </div>
-    `;
-  }
-
-  renderInit() {
-    return html`
-      <div class="msm-init">
-        <div class="msm-init-card">
-          <h1>MSM Actions</h1>
-          <p>Enter your organization and, optionally, a site name.</p>
-          <form class="msm-init-form" @submit=${this.handleOrgSubmit}>
-            <div class="msm-init-fields">
-              <div class="msm-init-field">
-                <label for="org-input">Organization</label>
-                <input
-                  id="org-input"
-                  type="text"
-                  placeholder="e.g. aemsites"
-                  autocomplete="off"
-                  spellcheck="false"
-                  required
-                />
-              </div>
-              <div class="msm-init-field">
-                <label for="site-input">Site <span class="optional">(optional)</span></label>
-                <input
-                  id="site-input"
-                  type="text"
-                  placeholder="e.g. site-fr"
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-              </div>
-            </div>
-            <p class="msm-init-hint">
-              Leave site blank to manage all base sites.
-              Enter a satellite site name to preview and publish your content.
-            </p>
-            ${this._initError ? html`
-              <div class="msm-init-error" role="alert">${this._initError}</div>
-            ` : nothing}
-            <button type="submit" class="accent">Load</button>
-          </form>
+    if (this._state === 'no-config') {
+      return html`
+        <div class="msm-empty">
+          <p>No MSM base sites configured for <strong>${this._org}</strong>.</p>
         </div>
-      </div>
-    `;
-  }
-
-  renderEmpty() {
-    return html`
-      <div class="msm-empty">
-        <p>No MSM base sites configured for <strong>${this._org}</strong>.</p>
-        <button class="accent" @click=${() => { this._state = 'init'; }}>Try another org</button>
-      </div>
-    `;
-  }
-
-  render() {
-    if (this._state === 'init') return this.renderInit();
-    if (this._state === 'loading') return this.renderLoading();
-    if (this._state === 'no-config') return this.renderEmpty();
+      `;
+    }
 
     return html`
-      ${this.renderHeader()}
       <div class="msm-body">
         <msm-column-browser
           .org=${this._org}
           .role=${this._role}
-          .site=${this._role === 'satellite' ? this._site : ''}
+          .site=${this._role === 'satellite' ? this._site : this._baseSite || ''}
           .msmConfig=${this._msmConfig}
           @browse-selection=${this.handleBrowseSelection}
         ></msm-column-browser>
@@ -258,6 +223,13 @@ class MsmApp extends LitElement {
           ></msm-action-panel>
         ` : nothing}
       </div>
+    `;
+  }
+
+  render() {
+    return html`
+      ${this.renderToolbar()}
+      ${this.renderContent()}
     `;
   }
 }

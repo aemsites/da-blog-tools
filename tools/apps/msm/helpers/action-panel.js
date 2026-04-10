@@ -3,10 +3,16 @@ import { LitElement, html, nothing } from 'da-lit';
 import { executeBulkAction } from './api.js';
 
 const NX = 'https://da.live/nx';
+let sl;
 let sheet;
+let buttons;
 try {
   const { default: getStyle } = await import(`${NX}/utils/styles.js`);
-  sheet = await getStyle(import.meta.url);
+  [sl, sheet, buttons] = await Promise.all([
+    getStyle(`${NX}/public/sl/styles.css`),
+    getStyle(import.meta.url),
+    getStyle(`${NX}/styles/buttons.css`),
+  ]);
 } catch (e) {
   console.warn('Failed to load action-panel styles:', e);
 }
@@ -16,7 +22,7 @@ const CHECK_ICON = html`<svg class="picker-checkmark" viewBox="0 0 12 12" fill="
 const SPINNER_ICON = html`<svg class="result-icon pending" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 1a7 7 0 1 0 7 7" stroke-linecap="round"/></svg>`;
 const SUCCESS_ICON = html`<svg class="result-icon success" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,8 7,12 13,4"/></svg>`;
 const ERROR_ICON = html`<svg class="result-icon error" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`;
-const EDIT_ICON = html`<svg viewBox="0 0 16 16"><path d="M12.7 3.3a1 1 0 0 0-1.4 0L4 10.6V12h1.4l7.3-7.3a1 1 0 0 0 0-1.4z"/></svg>`;
+const EDIT_ICON = html`<svg viewBox="0 0 20 20"><path fill="currentColor" d="M18.16 15.62V4.12c0-1.24-1.01-2.25-2.25-2.25H4.41c-1.24 0-2.25 1.01-2.25 2.25v3.72c0 .41.34.75.75.75s.75-.34.75-.75v-3.72c0-.41.34-.75.75-.75h11.5c.41 0 .75.34.75.75v11.5c0 .41-.34.75-.75.75h-3.81c-.41 0-.75.34-.75.75s.34.75.75.75h3.81c1.24 0 2.25-1.01 2.25-2.25z"/><path fill="currentColor" d="M11.16 9.62v4.24c0 .41-.34.75-.75.75s-.75-.34-.75-.75v-2.43l-6.47 6.47c-.15.15-.34.22-.53.22s-.38-.07-.53-.22a.754.754 0 010-1.06l6.47-6.47H6.17c-.41 0-.75-.34-.75-.75s.34-.75.75-.75h4.24c.41 0 .75.34.75.75z"/></svg>`;
 
 const BASE_ACTION_OPTIONS = [
   {
@@ -75,6 +81,7 @@ class MsmActionPanel extends LitElement {
     _globalAction: { state: true },
     _globalSyncMode: { state: true },
     _pageActions: { state: true },
+    _pageSyncModes: { state: true },
     _selectedSats: { state: true },
     _singleSelectedSats: { state: true },
     _openPicker: { state: true },
@@ -83,14 +90,16 @@ class MsmActionPanel extends LitElement {
     _executing: { state: true },
     _taskStatuses: { state: true },
     _busy: { state: true },
+    _includedPages: { state: true },
   };
 
   connectedCallback() {
     super.connectedCallback();
-    if (sheet) this.shadowRoot.adoptedStyleSheets = [sheet];
+    this.shadowRoot.adoptedStyleSheets = [sl, sheet, buttons].filter(Boolean);
     this._globalAction = 'preview';
     this._globalSyncMode = 'merge';
     this._pageActions = new Map();
+    this._pageSyncModes = new Map();
     this._selectedSats = new Set(Object.keys(this.satellites || {}));
     this._singleSelectedSats = new Set(Object.keys(this.satellites || {}));
     this._openPicker = null;
@@ -99,6 +108,8 @@ class MsmActionPanel extends LitElement {
     this._executing = false;
     this._taskStatuses = new Map();
     this._busy = false;
+    this._includedPages = new Set(this.pages?.map((p) => p.path) || []);
+    this._lastPageKey = '';
     this._handleOutsideClick = this._handleOutsideClick.bind(this);
   }
 
@@ -116,7 +127,14 @@ class MsmActionPanel extends LitElement {
       this._executing = false;
       this._taskStatuses = new Map();
       this._pageActions = new Map();
+      this._pageSyncModes = new Map();
       this._expandedRows = new Set();
+
+      const newKey = this.pages?.map((p) => p.path).sort().join(',') || '';
+      if (newKey !== this._lastPageKey) {
+        this._lastPageKey = newKey;
+        this._includedPages = new Set(this.pages?.map((p) => p.path) || []);
+      }
     }
   }
 
@@ -183,6 +201,20 @@ class MsmActionPanel extends LitElement {
     this._pageActions = next;
   }
 
+  getPageSyncMode(pagePath) {
+    return this._pageSyncModes.get(pagePath) || this._globalSyncMode;
+  }
+
+  setPageSyncMode(pagePath, value) {
+    const next = new Map(this._pageSyncModes);
+    if (value === this._globalSyncMode) {
+      next.delete(pagePath);
+    } else {
+      next.set(pagePath, value);
+    }
+    this._pageSyncModes = next;
+  }
+
   // ── Expand/collapse rows ──
 
   toggleRow(pagePath) {
@@ -192,6 +224,27 @@ class MsmActionPanel extends LitElement {
     this._expandedRows = next;
   }
 
+  // ── Page include/exclude ──
+
+  togglePageInclude(pagePath) {
+    const next = new Set(this._includedPages);
+    if (next.has(pagePath)) next.delete(pagePath);
+    else next.add(pagePath);
+    this._includedPages = next;
+  }
+
+  toggleAllPages() {
+    if (this._includedPages.size === this.pages.length) {
+      this._includedPages = new Set();
+    } else {
+      this._includedPages = new Set(this.pages.map((p) => p.path));
+    }
+  }
+
+  get _activePages() {
+    return this.pages.filter((p) => this._includedPages.has(p.path));
+  }
+
   // ── Override helpers ──
 
   getPageOverrides(pagePath) {
@@ -199,7 +252,8 @@ class MsmActionPanel extends LitElement {
   }
 
   getOverrideSummary(pagePath) {
-    const ov = this.getPageOverrides(pagePath);
+    const ov = this.getPageOverrides(pagePath)
+      .filter((o) => this._selectedSats.has(o.site));
     if (!ov.length) return { inherited: 0, custom: 0 };
     const custom = ov.filter((o) => o.hasOverride).length;
     return { inherited: ov.length - custom, custom };
@@ -224,7 +278,7 @@ class MsmActionPanel extends LitElement {
   }
 
   buildExecutionSummary() {
-    const counts = this.pages.reduce((acc, page) => {
+    const counts = this._activePages.reduce((acc, page) => {
       const action = this.getPageAction(page.path);
       acc[action] = (acc[action] || 0) + 1;
       return acc;
@@ -246,10 +300,12 @@ class MsmActionPanel extends LitElement {
     this._busy = true;
     this._taskStatuses = new Map();
 
-    const actionGroups = this.pages.reduce((acc, page) => {
+    const actionGroups = this._activePages.reduce((acc, page) => {
       const action = this.getPageAction(page.path);
-      if (!acc.has(action)) acc.set(action, []);
-      acc.get(action).push(page);
+      const syncMode = action === 'sync' ? this.getPageSyncMode(page.path) : '';
+      const key = syncMode ? `${action}:${syncMode}` : action;
+      if (!acc.has(key)) acc.set(key, { action, syncMode, pages: [] });
+      acc.get(key).pages.push(page);
       return acc;
     }, new Map());
 
@@ -259,21 +315,21 @@ class MsmActionPanel extends LitElement {
       this._taskStatuses = next;
     };
 
-    const groupEntries = [...actionGroups.entries()]
-      .filter(([action]) => {
+    const groupEntries = [...actionGroups.values()]
+      .filter(({ action }) => {
         const filteredSats = this.getFilteredSatellites(action);
         return Object.keys(filteredSats).length > 0;
       });
 
-    await groupEntries.reduce((chain, [action, groupPages]) => chain.then(() => {
+    await groupEntries.reduce((chain, { action, syncMode, pages }) => chain.then(() => {
       const filteredSats = this.getFilteredSatellites(action);
       return executeBulkAction({
         org: this.org,
         baseSite: this.site,
-        pages: groupPages,
+        pages,
         satellites: filteredSats,
         action,
-        syncMode: action === 'sync' ? this._globalSyncMode : undefined,
+        syncMode: syncMode || undefined,
         onPageStatus: statusCallback,
       });
     }), Promise.resolve());
@@ -298,15 +354,18 @@ class MsmActionPanel extends LitElement {
     this.doExecuteSingle(page, action);
   }
 
-  async doExecuteSingle(page, action) {
+  async doExecuteSingle(page, action, satSet, syncMode) {
     this._confirmAction = null;
     this._executing = true;
     this._busy = true;
     this._taskStatuses = new Map();
 
+    const activeSats = satSet || this._singleSelectedSats;
     const sats = Object.entries(this.satellites || {})
-      .filter(([s]) => this._singleSelectedSats.has(s))
+      .filter(([s]) => activeSats.has(s))
       .reduce((acc, [s, info]) => { acc[s] = info; return acc; }, {});
+
+    const resolvedSyncMode = syncMode || this._globalSyncMode;
 
     await executeBulkAction({
       org: this.org,
@@ -315,7 +374,7 @@ class MsmActionPanel extends LitElement {
       satellites: sats,
       action,
       syncMode: action === 'sync' || action === 'sync-from-base'
-        ? this._globalSyncMode : undefined,
+        ? resolvedSyncMode : undefined,
       onPageStatus: (key, status, error) => {
         const next = new Map(this._taskStatuses);
         next.set(key, { status, error });
@@ -330,14 +389,15 @@ class MsmActionPanel extends LitElement {
     if (this._busy) return;
 
     const action = this.getPageAction(page.path);
+    const syncMode = this.getPageSyncMode(page.path);
     if (action === 'reset') {
       this._confirmAction = {
         message: `Resume inheritance for ${page.name}? This deletes local overrides.`,
-        onConfirm: () => this.doExecuteSingle(page, action),
+        onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
       };
       return;
     }
-    this.doExecuteSingle(page, action);
+    this.doExecuteSingle(page, action, this._selectedSats, syncMode);
   }
 
   // ── Status icon helper ──
@@ -374,7 +434,7 @@ class MsmActionPanel extends LitElement {
 
     return html`
       <div class="form-row">
-        <label>${label}</label>
+        ${label ? html`<label>${label}</label>` : nothing}
         <div class="picker-wrapper">
           <button class="picker-trigger ${isOpen ? 'open' : ''}"
             @click=${() => this.togglePicker(name)}
@@ -419,13 +479,14 @@ class MsmActionPanel extends LitElement {
   renderConfirm() {
     if (!this._confirmAction) return nothing;
     return html`
-      <div class="confirm-box">
+      <sl-dialog heading="Confirm action" open
+        @sl-request-close=${() => this.cancelConfirm()}>
         <p>${this._confirmAction.message}</p>
         <div class="confirm-actions">
-          <button class="btn" @click=${() => this.cancelConfirm()}>Cancel</button>
-          <button class="btn danger" @click=${() => this._confirmAction.onConfirm()}>Confirm</button>
+          <sl-button @click=${() => this.cancelConfirm()}>Cancel</sl-button>
+          <sl-button variant="negative" @click=${() => this._confirmAction.onConfirm()}>Confirm</sl-button>
         </div>
-      </div>
+      </sl-dialog>
     `;
   }
 
@@ -467,11 +528,11 @@ class MsmActionPanel extends LitElement {
           ${this._executing ? this.renderProgress() : nothing}
 
           <div class="form-actions">
-            <button class="btn primary"
+            <sl-button variant="primary"
               @click=${() => this.executeSinglePage()}
               ?disabled=${this._busy || this._singleSelectedSats.size === 0}>
               Apply
-            </button>
+            </sl-button>
           </div>
         </div>
       </div>
@@ -532,7 +593,7 @@ class MsmActionPanel extends LitElement {
     return html`
       <div class="panel">
         <div class="panel-header">
-          <h3 class="panel-title">${this.pages.length} pages selected</h3>
+          <h3 class="panel-title">${this._includedPages.size} of ${this.pages.length} pages selected</h3>
           <span class="panel-subtitle">${this.site}</span>
         </div>
         <div class="panel-body">
@@ -541,11 +602,11 @@ class MsmActionPanel extends LitElement {
           ${this.renderConfirm()}
           ${this._executing ? this.renderProgress() : this.renderPageTable()}
           <div class="form-actions">
-            <button class="btn primary"
+            <sl-button variant="primary"
               @click=${() => this.executeAll()}
-              ?disabled=${this._busy || this._selectedSats.size === 0}>
+              ?disabled=${this._busy || this._selectedSats.size === 0 || this._includedPages.size === 0}>
               Execute All
-            </button>
+            </sl-button>
           </div>
         </div>
       </div>
@@ -579,7 +640,11 @@ class MsmActionPanel extends LitElement {
     'Action for all',
     this._globalAction,
     this._actionOptions,
-    (v) => { this._globalAction = v; this._pageActions = new Map(); },
+    (v) => {
+      this._globalAction = v;
+      this._pageActions = new Map();
+      this._pageSyncModes = new Map();
+    },
   )}
         ${this._globalAction === 'sync' ? this.renderPicker(
     'globalSyncMode',
@@ -593,11 +658,25 @@ class MsmActionPanel extends LitElement {
   }
 
   renderPageTable() {
+    const allChecked = this._includedPages.size === this.pages.length;
+    const someChecked = this._includedPages.size > 0 && !allChecked;
     return html`
       <table class="page-table">
+        <colgroup>
+          <col style="width:36px">
+          <col style="width:30%">
+          ${this._isSatellite ? nothing : html`<col style="width:100px">`}
+          <col>
+          <col style="width:80px">
+        </colgroup>
         <thead>
           <tr>
-            ${this._isSatellite ? nothing : html`<th></th>`}
+            <th>
+              <input type="checkbox"
+                .checked=${allChecked}
+                .indeterminate=${someChecked}
+                @change=${() => this.toggleAllPages()} />
+            </th>
             <th>Page</th>
             ${this._isSatellite ? nothing : html`<th>Overrides</th>`}
             <th>Action</th>
@@ -619,16 +698,23 @@ class MsmActionPanel extends LitElement {
 
     return html`
       <tr>
-        ${this._isSatellite ? nothing : html`
-          <td>
-            <svg class="expand-toggle ${isExpanded ? 'expanded' : ''}"
-              viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"
-              @click=${() => this.toggleRow(page.path)}>
-              <polyline points="3,1 7,5 3,9"/>
-            </svg>
-          </td>
-        `}
-        <td><span class="page-name">${page.name}</span></td>
+        <td>
+          <input type="checkbox"
+            .checked=${this._includedPages.has(page.path)}
+            @change=${() => this.togglePageInclude(page.path)} />
+        </td>
+        <td>
+          <div class="page-name-cell"
+            @click=${() => this.toggleRow(page.path)}>
+            <span class="page-name">${page.name}</span>
+            ${this._isSatellite ? nothing : html`
+              <svg class="expand-toggle ${isExpanded ? 'expanded' : ''}"
+                viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
+                <polyline points="3,1 7,5 3,9"/>
+              </svg>
+            `}
+          </div>
+        </td>
         ${this._isSatellite ? nothing : html`
           <td>
             <span class="override-badge">
@@ -642,19 +728,30 @@ class MsmActionPanel extends LitElement {
           </td>
         `}
         <td>
-          ${this.renderPicker(
+          <div class="page-action-pickers">
+            ${this.renderPicker(
     `page-${page.path}`,
     '',
     action,
     this._actionOptions,
     (v) => this.setPageAction(page.path, v),
   )}
+            <div class="sync-picker-slot ${action !== 'sync' ? 'hidden' : ''}">
+              ${this.renderPicker(
+    `page-sync-${page.path}`,
+    '',
+    this.getPageSyncMode(page.path),
+    SYNC_OPTIONS,
+    (v) => this.setPageSyncMode(page.path, v),
+  )}
+            </div>
+          </div>
           ${hasCustomAction ? html`<span style="font-size:11px;color:var(--s2-orange-700)">custom</span>` : nothing}
         </td>
         <td>
           <div class="row-actions">
-            <button class="btn" @click=${() => this.executeRow(page)}
-              ?disabled=${this._busy}>Apply</button>
+            <sl-button @click=${() => this.executeRow(page)}
+              ?disabled=${this._busy}>Apply</sl-button>
           </div>
         </td>
       </tr>
@@ -663,13 +760,14 @@ class MsmActionPanel extends LitElement {
   }
 
   renderExpandedRow(page) {
-    const overrides = this.getPageOverrides(page.path);
+    const overrides = this.getPageOverrides(page.path)
+      .filter((o) => this._selectedSats.has(o.site));
     const inherited = overrides.filter((o) => !o.hasOverride);
     const custom = overrides.filter((o) => o.hasOverride);
 
     return html`
       <tr class="expand-row">
-        <td colspan="5">
+        <td colspan="${this._isSatellite ? 4 : 5}">
           <div class="expand-content">
             ${inherited.length ? html`
               <div class="expand-column">

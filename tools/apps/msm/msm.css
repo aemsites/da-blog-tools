@@ -1,146 +1,47 @@
 :host {
   display: block;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: var(--spacing-400);
+  max-width: var(--grid-container-width);
+  margin: var(--spacing-800) auto var(--spacing-800) auto;
   -webkit-font-smoothing: antialiased;
   font-family: var(--body-font-family);
   color: var(--s2-gray-800);
 }
 
-/* ===== Header ===== */
+/* ===== Toolbar ===== */
 
-.msm-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.msm-toolbar {
   margin-bottom: var(--spacing-400);
-  padding-bottom: var(--spacing-300);
-  border-bottom: 2px solid var(--s2-gray-200);
+  padding-bottom: var(--spacing-400);
 }
 
-.msm-header h1 {
-  margin: 0;
-  font-size: var(--s2-heading-size-700);
+.msm-toolbar h1 {
+  font-size: var(--type-heading-xxl-size);
+  line-height: var(--spectrum-line-height-100);
+  margin: 0 0 var(--spacing-400);
   font-weight: 700;
-  color: var(--s2-gray-800);
 }
 
-.msm-header-meta {
+.msm-toolbar-form {
   display: flex;
-  align-items: center;
-  gap: var(--spacing-200);
+  gap: 16px;
+  align-items: flex-start;
 }
 
-.msm-header .site-label {
-  font-size: var(--s2-font-size-200);
-  color: var(--s2-gray-600);
+.msm-toolbar-form sl-input {
+  flex: 1;
 }
 
-.msm-header .role-badge {
-  font-size: var(--s2-font-size-75, 11px);
+.role-badge {
+  display: inline-block;
+  margin-top: 12px;
+  font-size: var(--s2-body-xxs-size, 11px);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 2px 8px;
-  border-radius: 4px;
-  background: var(--s2-blue-100, #deebff);
-  color: var(--s2-blue-900, #0747a6);
-}
-
-/* ===== Init ===== */
-
-.msm-init {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 60vh;
-}
-
-.msm-init-card {
-  width: 100%;
-  max-width: 420px;
-  padding: var(--spacing-600);
-  border: 1px solid var(--s2-gray-200);
-  border-radius: 8px;
-  background: var(--s2-gray-25, #fff);
-}
-
-.msm-init-card h1 {
-  margin: 0 0 var(--spacing-100);
-  font-size: var(--s2-heading-size-700);
-  font-weight: 700;
-  color: var(--s2-gray-800);
-}
-
-.msm-init-card p {
-  margin: 0 0 var(--spacing-400);
-  font-size: var(--s2-font-size-200);
-  color: var(--s2-gray-600);
-}
-
-.msm-init-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-300);
-}
-
-.msm-init-fields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-300);
-}
-
-.msm-init-hint {
-  margin: 0;
-  font-size: var(--s2-font-size-75, 11px);
-  color: var(--s2-gray-500);
-  line-height: 1.4;
-}
-
-.msm-init-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-100);
-}
-
-.msm-init-field .optional {
-  font-weight: 400;
-  color: var(--s2-gray-500);
-}
-
-.msm-init-field label {
-  font-size: var(--s2-font-size-100);
-  font-weight: 600;
-  color: var(--s2-gray-700);
-}
-
-.msm-init-field input {
-  padding: var(--spacing-200) var(--spacing-300);
-  border: 1px solid var(--s2-gray-300);
-  border-radius: 4px;
-  font-size: var(--s2-font-size-200);
-  color: var(--s2-gray-800);
-  background: var(--s2-gray-50, #fafafa);
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.msm-init-field input:focus {
-  border-color: var(--s2-blue-800, #1473e6);
-  box-shadow: 0 0 0 1px var(--s2-blue-800, #1473e6);
-}
-
-.msm-init-field input::placeholder {
-  color: var(--s2-gray-500);
-}
-
-.msm-init-error {
-  padding: var(--spacing-200) var(--spacing-300);
-  border-radius: 4px;
-  background: var(--s2-red-100, #ffe0e0);
-  color: var(--s2-red-900, #a10000);
-  font-size: var(--s2-font-size-100);
+  border-radius: var(--s2-radius-75, 4px);
+  background: var(--s2-blue-100);
+  color: var(--s2-blue-900);
 }
 
 /* ===== Loading / Empty ===== */
@@ -186,4 +87,25 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-400);
+}
+
+/* ===== Responsive ===== */
+
+@media (width <= 600px) {
+  :host {
+    margin: 16px;
+  }
+
+  .msm-toolbar h1 {
+    font-size: 20px;
+  }
+
+  .msm-toolbar-form {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .msm-toolbar-form sl-input {
+    width: 100%;
+  }
 }

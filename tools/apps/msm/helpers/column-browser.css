@@ -8,16 +8,35 @@
   display: flex;
   border: 1px solid var(--s2-gray-200);
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   min-height: 320px;
   max-height: 480px;
-  background: var(--s2-gray-50, #fafafa);
+  background:
+    linear-gradient(to bottom,
+      var(--s2-gray-75, #f8f8f8) 32px,
+      var(--s2-gray-200) 32px,
+      var(--s2-gray-200) 33px,
+      var(--s2-gray-50, #fafafa) 33px);
+}
+
+.browser::-webkit-scrollbar { height: 5px; }
+.browser::-webkit-scrollbar-track { background: transparent; }
+
+.browser::-webkit-scrollbar-thumb {
+  background: var(--s2-gray-300);
+  border-radius: 3px;
+}
+
+.browser::-webkit-scrollbar-thumb:hover {
+  background: var(--s2-gray-500);
 }
 
 /* ===== Column ===== */
 
 .column {
   flex: 0 0 220px;
+  min-width: 220px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--s2-gray-200);
@@ -26,7 +45,6 @@
 
 .column:last-child {
   border-right: none;
-  flex: 1 1 220px;
 }
 
 .column-header {
@@ -106,52 +124,47 @@
   outline-offset: 2px;
 }
 
-/* ===== Checkbox ===== */
+/* ===== Checkbox (Spectrum 2) ===== */
 
 .item input[type="checkbox"] {
   appearance: none;
   width: 14px;
   height: 14px;
   margin: 0;
-  border: 2px solid var(--s2-gray-600, #717171);
+  border: 2px solid var(--s2-gray-600);
   border-radius: 2px;
   cursor: pointer;
   flex-shrink: 0;
   position: relative;
-  transition: border 0.13s ease-in-out;
+  background: transparent;
+  transition: background-color 0.13s, border-color 0.13s;
 }
 
 .item input[type="checkbox"]:checked {
+  background: var(--s2-gray-800);
   border-color: var(--s2-gray-800);
-  border-width: 7px;
-  background: var(--s2-gray-50, #f8f8f8);
 }
 
 .item input[type="checkbox"]:checked::after {
   content: '';
   position: absolute;
   inset: 0;
-  top: -2px;
-  left: -3px;
+  margin: auto;
+  margin-top: -1px;
   width: 4px;
   height: 8px;
-  margin: auto;
-  border: solid var(--s2-gray-50, #f8f8f8);
+  border: solid #fff;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
+}
+
+.item input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--s2-gray-800);
 }
 
 .item input[type="checkbox"]:focus-visible {
   outline: 2px solid var(--s2-blue-900);
   outline-offset: 2px;
-}
-
-.item input[type="checkbox"]:hover:not(:disabled) {
-  border-color: var(--s2-gray-700);
-}
-
-.item input[type="checkbox"]:checked:hover:not(:disabled) {
-  border-color: var(--s2-gray-800);
 }
 
 /* ===== Item label and icons ===== */

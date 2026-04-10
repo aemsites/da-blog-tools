@@ -3,10 +3,14 @@ import { LitElement, html, nothing } from 'da-lit';
 import { listFolder } from './api.js';
 
 const NX = 'https://da.live/nx';
+let sl;
 let sheet;
 try {
   const { default: getStyle } = await import(`${NX}/utils/styles.js`);
-  sheet = await getStyle(import.meta.url);
+  [sl, sheet] = await Promise.all([
+    getStyle(`${NX}/public/sl/styles.css`),
+    getStyle(import.meta.url),
+  ]);
 } catch (e) {
   console.warn('Failed to load column-browser styles:', e);
 }
@@ -31,16 +35,17 @@ class MsmColumnBrowser extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    if (sheet) this.shadowRoot.adoptedStyleSheets = [sheet];
+    this.shadowRoot.adoptedStyleSheets = [sl, sheet].filter(Boolean);
     this._columns = [];
     this._checked = new Set();
     this._activeColumnIdx = 0;
     this._loadingColumn = -1;
     this._focusedItemIdx = -1;
+    this._folderCache = new Map();
     this._handleKeydown = this._onKeydown.bind(this);
 
-    if (this.role === 'satellite' && this.site) {
-      this.initSatelliteRoot();
+    if (this.site) {
+      this.initSiteRoot();
     } else {
       this.initSitesColumn();
     }
@@ -110,6 +115,15 @@ class MsmColumnBrowser extends LitElement {
     });
   }
 
+  scrollToActiveColumn() {
+    this.updateComplete.then(() => {
+      const browser = this.shadowRoot.querySelector('.browser');
+      if (browser) {
+        browser.scrollTo({ left: browser.scrollWidth, behavior: 'smooth' });
+      }
+    });
+  }
+
   toggleCheck(item) {
     const next = new Set(this._checked);
     const key = `${item.site || ''}:${item.path}`;
@@ -132,7 +146,7 @@ class MsmColumnBrowser extends LitElement {
     this._columns = [{ header: 'Sites', items, selectedPath: null }];
   }
 
-  async initSatelliteRoot() {
+  async initSiteRoot() {
     this._loadingColumn = 0;
     this._columns = [{
       header: this.site, items: [], selectedPath: null,
@@ -146,7 +160,7 @@ class MsmColumnBrowser extends LitElement {
         selectedPath: null,
       }];
     } catch (e) {
-      console.error('Failed to load satellite root:', e);
+      console.error('Failed to load site root:', e);
       this._columns = [{ header: this.site, items: [], selectedPath: null }];
     }
     this._loadingColumn = -1;
@@ -184,12 +198,14 @@ class MsmColumnBrowser extends LitElement {
       ];
     }
     this._loadingColumn = -1;
+    this.scrollToActiveColumn();
 
     this.clearChecksAfterColumn(colIdx);
     this.emitSelection(site);
   }
 
-  findSite(colIdx) {
+  findSite(colIdx, item) {
+    if (item?.site) return item.site;
     if (this.role === 'satellite' && this.site) return this.site;
 
     const searchCols = this._columns.slice(0, colIdx + 1).reverse();
@@ -207,8 +223,8 @@ class MsmColumnBrowser extends LitElement {
 
     const firstSiteCol = this._columns[0];
     if (firstSiteCol?.selectedPath) {
-      const item = firstSiteCol.items.find((i) => i.path === firstSiteCol.selectedPath);
-      return item?.site;
+      const firstSel = firstSiteCol.items.find((i) => i.path === firstSiteCol.selectedPath);
+      return firstSel?.site;
     }
     return null;
   }
@@ -227,6 +243,8 @@ class MsmColumnBrowser extends LitElement {
     if (e?.target?.type === 'checkbox') return;
     if (item.isFolder || item.isSite) {
       this.navigateToFolder(colIdx, item);
+    } else {
+      this.toggleCheck(item);
     }
   }
 
@@ -254,16 +272,53 @@ class MsmColumnBrowser extends LitElement {
     this._checked = new Set([...this._checked].filter((key) => validPaths.has(key)));
   }
 
-  emitSelection(site) {
-    const lastCol = this._columns[this._columns.length - 1];
-    if (!lastCol) return;
+  async emitSelection(site) {
+    const checkedPages = [];
+    const checkedFolders = [];
 
-    const selectedItems = lastCol.items.filter((item) => {
-      const key = `${item.site || site || ''}:${item.path}`;
-      return this._checked.has(key);
+    this._columns.forEach((col) => {
+      col.items.forEach((item) => {
+        const key = `${item.site || site || ''}:${item.path}`;
+        if (!this._checked.has(key)) return;
+        if (item.isFolder && !item.isSite) {
+          checkedFolders.push(item);
+        } else if (!item.isSite) {
+          checkedPages.push(item);
+        }
+      });
     });
 
-    const currentPath = lastCol.header || '';
+    const folderPages = await Promise.all(
+      checkedFolders.map(async (folder) => {
+        const folderSite = folder.site || site;
+        const cacheKey = `${this.org}/${folderSite}${folder.path}`;
+        if (!this._folderCache.has(cacheKey)) {
+          try {
+            const items = await listFolder(this.org, folderSite, folder.path);
+            this._folderCache.set(
+              cacheKey,
+              items.filter((i) => i.ext === 'html').map((i) => ({ ...i, site: folderSite })),
+            );
+          } catch (e) {
+            console.error('Failed to resolve folder pages:', e);
+            this._folderCache.set(cacheKey, []);
+          }
+        }
+        return this._folderCache.get(cacheKey);
+      }),
+    );
+
+    const allItems = [...checkedPages, ...folderPages.flat()];
+    const seen = new Set();
+    const selectedItems = allItems.filter((item) => {
+      const key = `${item.site || ''}:${item.path}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const lastCol = this._columns[this._columns.length - 1];
+    const currentPath = lastCol?.header || '';
     this.dispatchEvent(new CustomEvent('browse-selection', {
       detail: { selectedItems, currentPath, site: site || this.getCurrentSite() },
       bubbles: true,
@@ -283,7 +338,7 @@ class MsmColumnBrowser extends LitElement {
   }
 
   showCheckbox(item) {
-    return item.ext === 'html' || item.isFolder;
+    return !item.isSite && (item.ext === 'html' || item.isFolder);
   }
 
   renderItem(colIdx, item, itemIdx) {

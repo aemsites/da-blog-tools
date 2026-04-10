@@ -9,6 +9,7 @@
   border-radius: 8px;
   background: #fff;
   overflow: hidden;
+  min-height: 370px;
 }
 
 .panel-header {
@@ -77,40 +78,59 @@
 }
 
 .sat-tag.active {
-  background: var(--s2-blue-100, #e0ecff);
-  border-color: var(--s2-blue-400, #96b8f6);
-  color: var(--s2-blue-900);
+  background: var(--s2-gray-75, #f8f8f8);
 }
 
-.sat-tag input[type="checkbox"] {
+/* ===== Checkbox (Spectrum 2) ===== */
+
+.sat-tag input[type="checkbox"],
+.sat-row input[type="checkbox"],
+.page-table input[type="checkbox"] {
   appearance: none;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   margin: 0;
-  border: 1.5px solid currentcolor;
+  border: 2px solid var(--s2-gray-600);
   border-radius: 2px;
-  position: relative;
   cursor: pointer;
   flex-shrink: 0;
+  position: relative;
+  background: transparent;
+  transition: background-color 0.13s, border-color 0.13s;
+  vertical-align: middle;
 }
 
-.sat-tag input[type="checkbox"]:checked {
-  border-width: 6px;
-  border-color: var(--s2-blue-900);
+.sat-tag input[type="checkbox"]:checked,
+.sat-row input[type="checkbox"]:checked,
+.page-table input[type="checkbox"]:checked {
+  background: var(--s2-gray-800);
+  border-color: var(--s2-gray-800);
 }
 
-.sat-tag input[type="checkbox"]:checked::after {
+.sat-tag input[type="checkbox"]:checked::after,
+.sat-row input[type="checkbox"]:checked::after,
+.page-table input[type="checkbox"]:checked::after {
   content: '';
   position: absolute;
   inset: 0;
-  top: -2px;
-  left: -2px;
-  width: 3px;
-  height: 6px;
   margin: auto;
+  margin-top: -1px;
+  width: 4px;
+  height: 8px;
   border: solid #fff;
-  border-width: 0 1.5px 1.5px 0;
+  border-width: 0 2px 2px 0;
   transform: rotate(45deg);
+}
+
+.page-table input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--s2-blue-900);
+  outline-offset: 2px;
+}
+
+.sat-tag input[type="checkbox"]:hover:not(:disabled),
+.sat-row input[type="checkbox"]:hover:not(:disabled),
+.page-table input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--s2-gray-800);
 }
 
 /* ===== Action row (global controls) ===== */
@@ -146,8 +166,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  width: 100%;
-  min-width: 160px;
+  min-width: 180px;
   height: 32px;
   padding: 0 10px;
   background: var(--s2-gray-75, #f8f8f8);
@@ -159,6 +178,10 @@
   cursor: pointer;
   box-sizing: border-box;
   transition: border-color 0.15s, background-color 0.15s;
+}
+
+.page-action-pickers .picker-trigger {
+  flex: 1;
 }
 
 .picker-trigger:disabled {
@@ -198,7 +221,6 @@
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  right: 0;
   z-index: 10;
   list-style: none;
   margin: 0;
@@ -255,59 +277,6 @@
 
 .picker-item.selected .picker-checkmark {
   visibility: visible;
-}
-
-/* ===== Buttons ===== */
-
-.btn {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 16px;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  border-radius: 8px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background-color 0.15s, border-color 0.15s, opacity 0.15s;
-  border: 1px solid var(--s2-gray-300);
-  background: #fff;
-  color: var(--s2-gray-800);
-}
-
-.btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.btn:hover:not(:disabled) {
-  border-color: var(--s2-gray-500);
-  background: var(--s2-gray-100);
-}
-
-.btn.primary {
-  background: var(--s2-blue-900, #3b63fb);
-  border-color: var(--s2-blue-900, #3b63fb);
-  color: #fff;
-}
-
-.btn.primary:hover:not(:disabled) {
-  background: var(--s2-blue-1000, #2d4ec2);
-  border-color: var(--s2-blue-1000, #2d4ec2);
-}
-
-.btn.danger {
-  color: var(--s2-red-900, #d31510);
-  border-color: #f0c8c2;
-}
-
-.btn.danger:hover:not(:disabled) {
-  background: #fef0ee;
-  border-color: var(--s2-red-900);
 }
 
 /* ===== Satellite list (single-page mode) ===== */
@@ -385,45 +354,11 @@
   white-space: nowrap;
 }
 
-/* stylelint-disable no-descending-specificity */
-.sat-row input[type="checkbox"] {
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  border: 2px solid var(--s2-gray-600);
-  border-radius: 2px;
-  cursor: pointer;
-  flex-shrink: 0;
-  position: relative;
-  transition: border 0.13s ease-in-out;
-}
-
-.sat-row input[type="checkbox"]:checked {
-  border-color: var(--s2-gray-800);
-  border-width: 7px;
-  background: var(--s2-gray-50, #f8f8f8);
-}
-
-.sat-row input[type="checkbox"]:checked::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  top: -2px;
-  left: -3px;
-  width: 4px;
-  height: 8px;
-  margin: auto;
-  border: solid var(--s2-gray-50, #f8f8f8);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-/* stylelint-enable no-descending-specificity */
-
 /* ===== Page table (bulk mode) ===== */
 
 .page-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -447,6 +382,14 @@
   vertical-align: middle;
 }
 
+.page-table td:has(.page-name-cell) {
+  height: 1px;
+}
+
+.page-table td:has(.row-actions) {
+  text-align: right;
+}
+
 .page-table tr:last-child td {
   border-bottom: none;
 }
@@ -455,8 +398,32 @@
   background: var(--s2-gray-50);
 }
 
+.page-action-pickers {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sync-picker-slot.hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.page-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  cursor: pointer;
+}
+
 .page-name {
+  flex: 1;
+  min-width: 0;
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .override-badge {
@@ -484,13 +451,15 @@
 .row-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+  white-space: nowrap;
 }
 
 /* ===== Expandable row detail ===== */
 
 .expand-row td { /* stylelint-disable-line no-descending-specificity */
-  padding: 0 8px 12px 32px;
+  padding: 12px 8px 12px 32px;
   background: var(--s2-gray-50);
 }
 
@@ -550,24 +519,11 @@
 
 /* ===== Confirm dialog ===== */
 
-.confirm-box {
-  padding: 12px;
-  background: #fef9ee;
-  border: 1px solid #f0dca0;
-  border-radius: 8px;
-  font-size: 14px;
-  color: var(--s2-gray-900);
-}
-
-.confirm-box p {
-  margin: 0 0 10px;
-  line-height: 1.4;
-}
-
 .confirm-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  margin-top: 12px;
 }
 
 /* ===== Progress view ===== */
@@ -653,7 +609,23 @@
 
 /* ===== Responsive ===== */
 
+@media (width <= 900px) {
+  .picker-trigger {
+    min-width: 140px;
+  }
+
+  .page-action-pickers {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 @media (width <= 600px) {
+  .panel-body {
+    padding: 12px;
+    gap: 12px;
+  }
+
   .action-row {
     flex-direction: column;
     align-items: stretch;
@@ -667,8 +639,83 @@
     flex-direction: column;
   }
 
+  .picker-trigger {
+    min-width: 0;
+    width: 100%;
+  }
+
+  /* Page table → card layout */
   .page-table {
-    font-size: 13px;
+    display: block;
+  }
+
+  .page-table thead {
+    display: none;
+  }
+
+  .page-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .page-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--s2-gray-200);
+    border-radius: 8px;
+  }
+
+  .page-table td {
+    display: block;
+    padding: 0;
+    border: none;
+  }
+
+  .page-table tr:hover td {
+    background: transparent;
+  }
+
+  .page-table tr:hover {
+    background: var(--s2-gray-50);
+  }
+
+  .page-name-cell {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .page-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .page-action-pickers {
+    flex-flow: row wrap;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .page-action-pickers .form-row {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .page-action-pickers .picker-trigger {
+    width: 100%;
+  }
+
+  .row-actions {
+    margin-left: auto;
+  }
+
+  .expand-row td { /* stylelint-disable-line no-descending-specificity */
+    padding: 4px 12px 12px;
+    width: 100%;
   }
 
   .form-actions {
