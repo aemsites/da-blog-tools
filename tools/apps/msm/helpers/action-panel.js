@@ -698,12 +698,12 @@ class MsmActionPanel extends LitElement {
 
     return html`
       <tr>
-        <td>
+        <td class="cell-check">
           <input type="checkbox"
             .checked=${this._includedPages.has(page.path)}
             @change=${() => this.togglePageInclude(page.path)} />
         </td>
-        <td>
+        <td class="cell-name">
           <div class="page-name-cell"
             @click=${() => this.toggleRow(page.path)}>
             <span class="page-name">${page.name}</span>
@@ -716,7 +716,7 @@ class MsmActionPanel extends LitElement {
           </div>
         </td>
         ${this._isSatellite ? nothing : html`
-          <td>
+          <td class="cell-overrides">
             <span class="override-badge">
               <span class="dot inh"></span>${summary.inherited} inh
             </span>
@@ -727,7 +727,7 @@ class MsmActionPanel extends LitElement {
             ` : nothing}
           </td>
         `}
-        <td>
+        <td class="cell-action">
           <div class="page-action-pickers">
             ${this.renderPicker(
     `page-${page.path}`,
@@ -748,7 +748,7 @@ class MsmActionPanel extends LitElement {
           </div>
           ${hasCustomAction ? html`<span style="font-size:11px;color:var(--s2-orange-700)">custom</span>` : nothing}
         </td>
-        <td>
+        <td class="cell-apply">
           <div class="row-actions">
             <sl-button @click=${() => this.executeRow(page)}
               ?disabled=${this._busy}>Apply</sl-button>

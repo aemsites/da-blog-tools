@@ -117,6 +117,7 @@ class MsmColumnBrowser extends LitElement {
 
   scrollToActiveColumn() {
     this.updateComplete.then(() => {
+      if (window.innerWidth <= 600) return;
       const browser = this.shadowRoot.querySelector('.browser');
       if (browser) {
         browser.scrollTo({ left: browser.scrollWidth, behavior: 'smooth' });

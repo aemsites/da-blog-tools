@@ -8,8 +8,7 @@
   display: flex;
   border: 1px solid var(--s2-gray-200);
   border-radius: 8px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden auto;
   min-height: 320px;
   max-height: 480px;
   background:
@@ -158,13 +157,13 @@
   transform: rotate(45deg);
 }
 
-.item input[type="checkbox"]:hover:not(:disabled) {
-  border-color: var(--s2-gray-800);
-}
-
 .item input[type="checkbox"]:focus-visible {
   outline: 2px solid var(--s2-blue-900);
   outline-offset: 2px;
+}
+
+.item input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--s2-gray-800);
 }
 
 /* ===== Item label and icons ===== */
@@ -239,6 +238,7 @@
   .browser {
     position: relative;
     min-height: 360px;
+    overflow: hidden;
   }
 
   .column {
@@ -250,11 +250,13 @@
     background: var(--s2-gray-50, #fafafa);
     transform: translateX(100%);
     transition: transform 0.25s ease;
+    visibility: hidden;
     z-index: 0;
   }
 
   .column.active {
     transform: translateX(0);
+    visibility: visible;
     z-index: 1;
   }
 

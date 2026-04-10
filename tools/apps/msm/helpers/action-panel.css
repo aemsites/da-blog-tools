@@ -647,6 +647,11 @@
   /* Page table → card layout */
   .page-table {
     display: block;
+    table-layout: auto;
+  }
+
+  .page-table colgroup {
+    display: none;
   }
 
   .page-table thead {
@@ -660,10 +665,10 @@
   }
 
   .page-table tr {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 4px 10px;
     align-items: center;
-    gap: 6px 10px;
     padding: 10px 12px;
     border: 1px solid var(--s2-gray-200);
     border-radius: 8px;
@@ -673,6 +678,43 @@
     display: block;
     padding: 0;
     border: none;
+    height: auto;
+  }
+
+  /* Row 1: checkbox | name + chevron */
+  .cell-check {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: start;
+    padding-top: 4px;
+  }
+
+  .cell-name {
+    grid-column: 2 / -1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .page-name-cell {
+    min-width: 0;
+  }
+
+  /* Row 2: overrides beside name (indented under name) */
+  .cell-overrides {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  /* Row 3: pickers + apply */
+  .cell-action {
+    grid-column: 1 / 3;
+    grid-row: 3;
+  }
+
+  .cell-apply {
+    grid-column: 3;
+    grid-row: 3;
+    align-self: end;
   }
 
   .page-table tr:hover td {
@@ -683,39 +725,35 @@
     background: var(--s2-gray-50);
   }
 
-  .page-name-cell {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .page-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .page-action-pickers {
     flex-flow: row wrap;
     gap: 6px;
-    width: 100%;
-  }
-
-  .page-action-pickers .form-row {
-    flex: 1;
-    min-width: 0;
   }
 
   .page-action-pickers .picker-trigger {
-    width: 100%;
+    min-width: 0;
+    flex: 1 1 140px;
   }
 
-  .row-actions {
-    margin-left: auto;
+  .sync-picker-slot.hidden {
+    display: none;
   }
 
   .expand-row td { /* stylelint-disable-line no-descending-specificity */
     padding: 4px 12px 12px;
     width: 100%;
+  }
+
+  .expand-row {
+    display: block;
+    border: none;
+    border-top: 1px dashed var(--s2-gray-200);
+    padding: 0;
+    margin-top: -8px;
+    border-radius: 0 0 8px 8px;
+    border-left: 1px solid var(--s2-gray-200);
+    border-right: 1px solid var(--s2-gray-200);
+    border-bottom: 1px solid var(--s2-gray-200);
   }
 
   .form-actions {
