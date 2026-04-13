@@ -718,11 +718,11 @@ class MsmActionPanel extends LitElement {
         ${this._isSatellite ? nothing : html`
           <td class="cell-overrides">
             <span class="override-badge">
-              <span class="dot inh"></span>${summary.inherited} inh
+              ${summary.inherited} inherited
             </span>
             ${summary.custom > 0 ? html`
-              <span class="override-badge" style="margin-left:8px">
-                <span class="dot cust"></span>${summary.custom} cust
+              <span class="override-badge">
+                ${summary.custom} custom
               </span>
             ` : nothing}
           </td>

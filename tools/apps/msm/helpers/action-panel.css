@@ -427,25 +427,11 @@
 }
 
 .override-badge {
-  display: inline-flex;
+  display: table-row;
   align-items: center;
   gap: 4px;
   font-size: 12px;
   color: var(--s2-gray-600);
-}
-
-.override-badge .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.override-badge .dot.inh {
-  background: var(--s2-gray-400);
-}
-
-.override-badge .dot.cust {
-  background: var(--s2-orange-700, #e68619);
 }
 
 .row-actions {
