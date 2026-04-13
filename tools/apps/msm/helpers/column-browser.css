@@ -8,7 +8,7 @@
   display: flex;
   border: 1px solid var(--s2-gray-200);
   border-radius: 8px;
-  overflow: hidden auto;
+  overflow: auto;
   min-height: 320px;
   max-height: 480px;
   background:

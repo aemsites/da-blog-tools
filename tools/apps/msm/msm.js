@@ -36,6 +36,7 @@ class MsmApp extends LitElement {
     _satellites: { state: true },
     _pageOverrides: { state: true },
     _initError: { state: true },
+    _siteWarning: { state: true },
   };
 
   connectedCallback() {
@@ -60,6 +61,7 @@ class MsmApp extends LitElement {
     this._org = org;
     this._site = site || '';
     this._initError = '';
+    this._siteWarning = '';
     this._selectedItems = [];
     this._currentPath = '';
     this._pageOverrides = new Map();
@@ -68,6 +70,8 @@ class MsmApp extends LitElement {
   }
 
   classifySite(config) {
+    this._siteWarning = '';
+
     if (!this._site) {
       this._role = 'base';
       this._baseSite = '';
@@ -94,8 +98,11 @@ class MsmApp extends LitElement {
       return;
     }
 
+    const fallback = config.baseSites[0];
     this._role = 'base';
-    this._baseSite = '';
+    this._baseSite = fallback.site;
+    this._satellites = fallback.satellites;
+    this._siteWarning = `"${this._site}" is not a recognized base or satellite site. Showing "${fallback.site}" instead.`;
   }
 
   async loadConfig(org) {
@@ -206,6 +213,7 @@ class MsmApp extends LitElement {
     }
 
     return html`
+      ${this._siteWarning ? html`<div class="nx-alert warning"><p>${this._siteWarning}</p></div>` : nothing}
       <div class="msm-body">
         <msm-column-browser
           .org=${this._org}

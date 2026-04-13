@@ -723,7 +723,6 @@ class MsmActionPanel extends LitElement {
     const isExpanded = this._expandedRows.has(page.path);
     const summary = this.getOverrideSummary(page.path);
     const action = this.getPageAction(page.path);
-    const hasCustomAction = this._pageActions.has(page.path);
 
     return html`
       <tr>
@@ -775,7 +774,6 @@ class MsmActionPanel extends LitElement {
   )}
             </div>
           </div>
-          ${hasCustomAction ? html`<span style="font-size:11px;color:var(--s2-orange-700)">custom</span>` : nothing}
         </td>
         <td class="cell-apply">
           <div class="row-actions">

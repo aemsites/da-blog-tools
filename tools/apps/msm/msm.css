@@ -81,6 +81,26 @@
   to { transform: rotate(360deg); }
 }
 
+/* ===== Warning banner ===== */
+
+.nx-alert {
+  border: 2px solid var(--s2-gray-300);
+  border-radius: 8px;
+  background: var(--s2-gray-100);
+  color: var(--s2-gray-900);
+  margin-bottom: 16px;
+  padding: 10px 12px;
+}
+
+.nx-alert p {
+  margin: 0;
+}
+
+.nx-alert.warning {
+  border-color: var(--s2-orange-500);
+  background: var(--s2-orange-100);
+}
+
 /* ===== Layout ===== */
 
 .msm-body {
@@ -101,11 +121,11 @@
   }
 
   .msm-toolbar-form {
-    flex-direction: column;
     gap: 8px;
   }
 
   .msm-toolbar-form sl-input {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
   }
 }
