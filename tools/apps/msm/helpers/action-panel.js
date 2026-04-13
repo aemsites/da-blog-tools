@@ -259,6 +259,17 @@ class MsmActionPanel extends LitElement {
     return { inherited: ov.length - custom, custom };
   }
 
+  hasApplicableSats(pagePath, action) {
+    if (this._isSatellite) return true;
+    const scope = ACTION_SCOPE[action];
+    if (!scope) return true;
+    const ov = this.getPageOverrides(pagePath);
+    const sats = this.isSinglePage ? this._singleSelectedSats : this._selectedSats;
+    return ov
+      .filter((o) => sats.has(o.site))
+      .some((o) => (scope === 'custom' ? o.hasOverride : !o.hasOverride));
+  }
+
   getFilteredSatellites() {
     return Object.entries(this.satellites || {}).filter(([satSite]) => (
       this._selectedSats.has(satSite)
@@ -284,10 +295,10 @@ class MsmActionPanel extends LitElement {
       return acc;
     }, {});
     const parts = Object.entries(counts).map(
-      ([a, c]) => `${getActionLabel(a)} ${c} page${c > 1 ? 's' : ''}`,
+      ([a, c]) => `${getActionLabel(a)} ${c} page${c > 1 ? 's' : ''} (${ACTION_SCOPE[a]} sites only)`,
     );
     const satCount = this._selectedSats.size;
-    return `${parts.join(', ')} across ${satCount} satellite${satCount !== 1 ? 's' : ''}. Continue?`;
+    return `${parts.join(', ')} across ${satCount} satellite${satCount !== 1 ? 's' : ''}. Satellites that don't match the action scope will be skipped. Continue?`;
   }
 
   cancelConfirm() {
@@ -315,14 +326,11 @@ class MsmActionPanel extends LitElement {
       this._taskStatuses = next;
     };
 
-    const groupEntries = [...actionGroups.values()]
-      .filter(({ action }) => {
-        const filteredSats = this.getFilteredSatellites(action);
-        return Object.keys(filteredSats).length > 0;
-      });
+    const groupEntries = [...actionGroups.values()];
+    const filteredSats = this.getFilteredSatellites();
 
     await groupEntries.reduce((chain, { action, syncMode, pages }) => chain.then(() => {
-      const filteredSats = this.getFilteredSatellites(action);
+      const scope = this._isSatellite ? null : ACTION_SCOPE[action];
       return executeBulkAction({
         org: this.org,
         baseSite: this.site,
@@ -330,6 +338,8 @@ class MsmActionPanel extends LitElement {
         satellites: filteredSats,
         action,
         syncMode: syncMode || undefined,
+        scope,
+        overrides: this.overrides,
         onPageStatus: statusCallback,
       });
     }), Promise.resolve());
@@ -366,6 +376,7 @@ class MsmActionPanel extends LitElement {
       .reduce((acc, [s, info]) => { acc[s] = info; return acc; }, {});
 
     const resolvedSyncMode = syncMode || this._globalSyncMode;
+    const scope = this._isSatellite ? null : ACTION_SCOPE[action];
 
     await executeBulkAction({
       org: this.org,
@@ -375,6 +386,8 @@ class MsmActionPanel extends LitElement {
       action,
       syncMode: action === 'sync' || action === 'sync-from-base'
         ? resolvedSyncMode : undefined,
+      scope,
+      overrides: this.overrides,
       onPageStatus: (key, status, error) => {
         const next = new Map(this._taskStatuses);
         next.set(key, { status, error });
@@ -479,14 +492,14 @@ class MsmActionPanel extends LitElement {
   renderConfirm() {
     if (!this._confirmAction) return nothing;
     return html`
-      <sl-dialog heading="Confirm action" open
-        @sl-request-close=${() => this.cancelConfirm()}>
-        <p>${this._confirmAction.message}</p>
-        <div class="confirm-actions">
-          <sl-button @click=${() => this.cancelConfirm()}>Cancel</sl-button>
-          <sl-button variant="negative" @click=${() => this._confirmAction.onConfirm()}>Confirm</sl-button>
+      <div class="alert-dialog" role="alertdialog">
+        <h2 class="alert-dialog-heading">Confirm action</h2>
+        <p class="alert-dialog-content">${this._confirmAction.message}</p>
+        <div class="alert-dialog-buttons">
+          <button class="s2-btn s2-btn-outline" @click=${() => this.cancelConfirm()}>Cancel</button>
+          <button class="s2-btn s2-btn-negative" @click=${() => this._confirmAction.onConfirm()}>Confirm</button>
         </div>
-      </sl-dialog>
+      </div>
     `;
   }
 
@@ -503,7 +516,7 @@ class MsmActionPanel extends LitElement {
     return html`
       <div class="panel">
         <div class="panel-header">
-          <h3 class="panel-title">${this._isSatellite ? '' : 'MSM: '}${page.name}</h3>
+          <h3 class="panel-title">${page.name}</h3>
         </div>
         <div class="panel-body">
           <div class="action-row">
@@ -522,7 +535,6 @@ class MsmActionPanel extends LitElement {
     (v) => { this._globalSyncMode = v; },
   ) : nothing}
           </div>
-
           ${this._isSatellite ? nothing : this.renderSatelliteGrid(inherited, custom)}
           ${this.renderConfirm()}
           ${this._executing ? this.renderProgress() : nothing}
@@ -530,7 +542,8 @@ class MsmActionPanel extends LitElement {
           <div class="form-actions">
             <sl-button variant="primary"
               @click=${() => this.executeSinglePage()}
-              ?disabled=${this._busy || this._singleSelectedSats.size === 0}>
+              ?disabled=${this._busy || this._singleSelectedSats.size === 0
+    || !this.hasApplicableSats(this.pages[0]?.path, this._globalAction)}>
               Apply
             </sl-button>
           </div>
@@ -599,13 +612,13 @@ class MsmActionPanel extends LitElement {
         <div class="panel-body">
           ${this._isSatellite ? nothing : this.renderSatelliteFilter()}
           ${this.renderGlobalActionBar()}
-          ${this.renderConfirm()}
           ${this._executing ? this.renderProgress() : this.renderPageTable()}
+          ${this.renderConfirm()}
           <div class="form-actions">
             <sl-button variant="primary"
               @click=${() => this.executeAll()}
               ?disabled=${this._busy || this._selectedSats.size === 0 || this._includedPages.size === 0}>
-              Execute All
+              Apply All
             </sl-button>
           </div>
         </div>
@@ -751,7 +764,7 @@ class MsmActionPanel extends LitElement {
         <td class="cell-apply">
           <div class="row-actions">
             <sl-button @click=${() => this.executeRow(page)}
-              ?disabled=${this._busy}>Apply</sl-button>
+              ?disabled=${this._busy || !this.hasApplicableSats(page.path, action)}>Apply</sl-button>
           </div>
         </td>
       </tr>

@@ -9,7 +9,7 @@
   border-radius: 8px;
   background: #fff;
   overflow: hidden;
-  min-height: 370px;
+  min-height: 400px;
 }
 
 .panel-header {
@@ -132,6 +132,7 @@
 .page-table input[type="checkbox"]:hover:not(:disabled) {
   border-color: var(--s2-gray-800);
 }
+
 
 /* ===== Action row (global controls) ===== */
 
@@ -503,13 +504,88 @@
   to { transform: rotate(360deg); }
 }
 
-/* ===== Confirm dialog ===== */
+/* ===== Alert dialog (inline, Spectrum 2) ===== */
 
-.confirm-actions {
+.alert-dialog {
+  background-color: #fff;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 8%), 0 8px 20px rgb(0 0 0 / 10%);
+}
+
+.alert-dialog-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--s2-gray-900);
+}
+
+.alert-dialog-content {
+  margin: 0 0 32px;
+  font-size: 14px;
+  color: var(--s2-gray-700);
+  line-height: 1.5;
+}
+
+.alert-dialog-buttons {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  margin-top: 12px;
+}
+
+/* S2 button base */
+.s2-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-width: 72px;
+  padding: 0 16px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.13s, border-color 0.13s, color 0.13s;
+}
+
+/* S2 secondary outline */
+.s2-btn-outline {
+  background: transparent;
+  border-color: var(--s2-gray-800, #4b4b4b);
+  color: var(--s2-gray-800, #4b4b4b);
+}
+
+.s2-btn-outline:hover {
+  background: var(--s2-gray-200, #e6e6e6);
+}
+
+.s2-btn-outline:active {
+  background: var(--s2-gray-300, #d5d5d5);
+}
+
+/* S2 negative fill */
+.s2-btn-negative {
+  background: var(--s2-red-900, #c9252d);
+  border-color: var(--s2-red-900, #c9252d);
+  color: #fff;
+}
+
+.s2-btn-negative:hover {
+  background: var(--s2-red-1000, #a41623);
+  border-color: var(--s2-red-1000, #a41623);
+}
+
+.s2-btn-negative:active {
+  background: var(--s2-red-1100, #8c0f1e);
+  border-color: var(--s2-red-1100, #8c0f1e);
 }
 
 /* ===== Progress view ===== */

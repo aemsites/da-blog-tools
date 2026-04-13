@@ -60,6 +60,9 @@ class MsmApp extends LitElement {
     this._org = org;
     this._site = site || '';
     this._initError = '';
+    this._selectedItems = [];
+    this._currentPath = '';
+    this._pageOverrides = new Map();
     this._state = 'loading';
     this.loadConfig(org);
   }

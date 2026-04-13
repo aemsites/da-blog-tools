@@ -242,14 +242,33 @@ export async function executeBulkAction({
   satellites,
   action,
   syncMode,
+  scope,
+  overrides,
   onPageStatus,
+  onSkipped,
 }) {
   const satEntries = Object.entries(satellites);
 
   const tasks = pages.flatMap((page) => {
     const pagePath = page.path.replace(/\.html$/, '');
+    const pageOverrides = overrides?.get(page.path) || [];
 
-    return satEntries.map(([satSite]) => async () => {
+    const applicableSats = scope
+      ? satEntries.filter(([satSite]) => {
+        const ov = pageOverrides.find((o) => o.site === satSite);
+        const hasOverride = ov?.hasOverride ?? false;
+        return scope === 'custom' ? hasOverride : !hasOverride;
+      })
+      : satEntries;
+
+    if (applicableSats.length < satEntries.length) {
+      const skipped = satEntries
+        .filter(([s]) => !applicableSats.some(([a]) => a === s))
+        .map(([s]) => s);
+      skipped.forEach((s) => onSkipped?.(page, s, scope));
+    }
+
+    return applicableSats.map(([satSite]) => async () => {
       const key = `${page.path}:${satSite}`;
       onPageStatus?.(key, 'pending');
 
