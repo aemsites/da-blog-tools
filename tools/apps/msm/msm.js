@@ -219,6 +219,7 @@ class MsmApp extends LitElement {
             .org=${this._org}
             .role=${this._role}
             .site=${this._role === 'satellite' ? this._site : this._currentSite}
+            .baseSite=${this._baseSite}
             .pages=${this._selectedPages}
             .satellites=${this._satellites}
             .overrides=${this._pageOverrides}

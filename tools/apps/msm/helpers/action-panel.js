@@ -43,8 +43,20 @@ const BASE_ACTION_OPTIONS = [
 ];
 
 const SAT_ACTION_OPTIONS = [
-  { value: 'preview', label: 'Preview' },
-  { value: 'publish', label: 'Publish' },
+  {
+    heading: 'Content',
+    items: [
+      { value: 'preview', label: 'Preview' },
+      { value: 'publish', label: 'Publish' },
+    ],
+  },
+  {
+    heading: 'Inheritance',
+    items: [
+      { value: 'sync', label: 'Sync from base' },
+      { value: 'reset', label: 'Resume inheritance' },
+    ],
+  },
 ];
 
 const SYNC_OPTIONS = [
@@ -61,8 +73,8 @@ const ACTION_SCOPE = {
 };
 
 const ALL_ACTION_ITEMS = [
-  ...BASE_ACTION_OPTIONS.flatMap((g) => g.items),
-  ...SAT_ACTION_OPTIONS,
+  ...BASE_ACTION_OPTIONS.flatMap((g) => g.items || [g]),
+  ...SAT_ACTION_OPTIONS.flatMap((g) => g.items || [g]),
 ];
 
 function getActionLabel(value) {
@@ -74,6 +86,7 @@ class MsmActionPanel extends LitElement {
     org: { type: String },
     role: { type: String },
     site: { type: String },
+    baseSite: { type: String },
     pages: { attribute: false },
     satellites: { attribute: false },
     overrides: { attribute: false },
@@ -294,11 +307,15 @@ class MsmActionPanel extends LitElement {
       acc[action] = (acc[action] || 0) + 1;
       return acc;
     }, {});
-    const parts = Object.entries(counts).map(
-      ([a, c]) => `${getActionLabel(a)} ${c} page${c > 1 ? 's' : ''} (${ACTION_SCOPE[a]} sites only)`,
-    );
+    const parts = Object.entries(counts).map(([a, c]) => {
+      const label = `${getActionLabel(a)} ${c} page${c > 1 ? 's' : ''}`;
+      const scope = this._isSatellite ? null : ACTION_SCOPE[a];
+      return scope ? `${label} (${scope} sites only)` : label;
+    });
     const satCount = this._selectedSats.size;
-    return `${parts.join(', ')} across ${satCount} satellite${satCount !== 1 ? 's' : ''}. Satellites that don't match the action scope will be skipped. Continue?`;
+    const satSuffix = `across ${satCount} satellite${satCount !== 1 ? 's' : ''}`;
+    const skipNote = this._isSatellite ? '' : ' Satellites that don\'t match the action scope will be skipped.';
+    return `${parts.join(', ')} ${satSuffix}.${skipNote} Continue?`;
   }
 
   cancelConfirm() {
@@ -333,7 +350,7 @@ class MsmActionPanel extends LitElement {
       const scope = this._isSatellite ? null : ACTION_SCOPE[action];
       return executeBulkAction({
         org: this.org,
-        baseSite: this.site,
+        baseSite: this.baseSite || this.site,
         pages,
         satellites: filteredSats,
         action,
@@ -380,12 +397,11 @@ class MsmActionPanel extends LitElement {
 
     await executeBulkAction({
       org: this.org,
-      baseSite: this.site,
+      baseSite: this.baseSite || this.site,
       pages: [page],
       satellites: sats,
       action,
-      syncMode: action === 'sync' || action === 'sync-from-base'
-        ? resolvedSyncMode : undefined,
+      syncMode: action === 'sync' ? resolvedSyncMode : undefined,
       scope,
       overrides: this.overrides,
       onPageStatus: (key, status, error) => {
