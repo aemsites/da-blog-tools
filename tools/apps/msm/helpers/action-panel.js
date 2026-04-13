@@ -283,6 +283,13 @@ class MsmActionPanel extends LitElement {
       .some((o) => (scope === 'custom' ? o.hasOverride : !o.hasOverride));
   }
 
+  get _hasAnyApplicablePages() {
+    return this._activePages.some((page) => this.hasApplicableSats(
+      page.path,
+      this.getPageAction(page.path),
+    ));
+  }
+
   getFilteredSatellites() {
     return Object.entries(this.satellites || {}).filter(([satSite]) => (
       this._selectedSats.has(satSite)
@@ -633,7 +640,8 @@ class MsmActionPanel extends LitElement {
           <div class="form-actions">
             <sl-button variant="primary"
               @click=${() => this.executeAll()}
-              ?disabled=${this._busy || this._selectedSats.size === 0 || this._includedPages.size === 0}>
+              ?disabled=${this._busy || this._selectedSats.size === 0
+    || this._includedPages.size === 0 || !this._hasAnyApplicablePages}>
               Apply All
             </sl-button>
           </div>

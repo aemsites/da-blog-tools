@@ -170,11 +170,11 @@
   min-width: 180px;
   height: 32px;
   padding: 0 10px;
-  background: var(--s2-gray-75, #f8f8f8);
+  background: var(--s2-gray-100, #f5f5f5);
   font-family: inherit;
   font-size: 14px;
   color: var(--s2-gray-800);
-  border: 1px solid var(--s2-gray-300);
+  border: 2px solid transparent;
   border-radius: 8px;
   cursor: pointer;
   box-sizing: border-box;
@@ -186,18 +186,18 @@
 }
 
 .picker-trigger:disabled {
-  background: var(--s2-gray-75);
-  border-color: var(--s2-gray-200);
+  background: var(--s2-gray-75, #f8f8f8);
+  border-color: transparent;
   color: var(--s2-gray-400);
   cursor: default;
 }
 
 .picker-trigger:hover:not(:disabled) {
-  border-color: var(--s2-gray-500);
+  background: var(--s2-gray-200, #e6e6e6);
 }
 
 .picker-trigger.open {
-  border-color: var(--s2-blue-900);
+  background: var(--s2-gray-200, #e6e6e6);
 }
 
 .picker-label {
@@ -491,7 +491,7 @@
   flex-shrink: 0;
 }
 
-.result-icon.success { color: #0d6e31; }
+.result-icon.success { color: var(--s2-green-900, #05834e); }
 .result-icon.error { color: var(--s2-red-900, #d31510); }
 
 .result-icon.pending {
@@ -564,28 +564,30 @@
 }
 
 .s2-btn-outline:hover {
-  background: var(--s2-gray-200, #e6e6e6);
+  background: var(--s2-gray-100, #f5f5f5);
+  border-color: var(--s2-gray-900, #2c2c2c);
 }
 
 .s2-btn-outline:active {
-  background: var(--s2-gray-300, #d5d5d5);
+  background: var(--s2-gray-100, #f5f5f5);
+  border-color: var(--s2-gray-900, #2c2c2c);
 }
 
 /* S2 negative fill */
 .s2-btn-negative {
   background: var(--s2-red-900, #c9252d);
-  border-color: var(--s2-red-900, #c9252d);
+  border-color: transparent;
   color: #fff;
 }
 
 .s2-btn-negative:hover {
   background: var(--s2-red-1000, #a41623);
-  border-color: var(--s2-red-1000, #a41623);
+  border-color: transparent;
 }
 
 .s2-btn-negative:active {
   background: var(--s2-red-1100, #8c0f1e);
-  border-color: var(--s2-red-1100, #8c0f1e);
+  border-color: transparent;
 }
 
 /* ===== Progress view ===== */
@@ -617,7 +619,7 @@
   gap: 16px;
 }
 
-.progress-summary .count-success { color: #0d6e31; }
+.progress-summary .count-success { color: var(--s2-green-900, #05834e); }
 .progress-summary .count-error { color: var(--s2-red-900); }
 
 .progress-list {
