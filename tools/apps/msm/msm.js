@@ -174,7 +174,7 @@ class MsmApp extends LitElement {
   renderToolbar() {
     return html`
       <div class="msm-toolbar">
-        <h1>MSM Actions</h1>
+        <h1>Multi-Site Management</h1>
         <form class="msm-toolbar-form" @submit=${this.handleOrgSubmit}>
           <sl-input
             id="path-input"
@@ -182,6 +182,7 @@ class MsmApp extends LitElement {
             placeholder="/org/site"
             autocomplete="off"
             spellcheck="false"
+            required
             value=${this._inputValue}
             .error=${this._initError || nothing}
           ></sl-input>

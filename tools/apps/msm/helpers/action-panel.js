@@ -182,6 +182,13 @@ class MsmActionPanel extends LitElement {
     return this._isSatellite ? SAT_ACTION_OPTIONS : BASE_ACTION_OPTIONS;
   }
 
+  _resetExecution() {
+    if (this._executing) {
+      this._executing = false;
+      this._taskStatuses = new Map();
+    }
+  }
+
   // ── Satellite filter ──
 
   toggleSatFilter(satSite) {
@@ -189,6 +196,7 @@ class MsmActionPanel extends LitElement {
     if (next.has(satSite)) next.delete(satSite);
     else next.add(satSite);
     this._selectedSats = next;
+    this._resetExecution();
   }
 
   toggleSingleSat(satSite) {
@@ -196,6 +204,7 @@ class MsmActionPanel extends LitElement {
     if (next.has(satSite)) next.delete(satSite);
     else next.add(satSite);
     this._singleSelectedSats = next;
+    this._resetExecution();
   }
 
   // ── Per-page action ──
@@ -212,6 +221,7 @@ class MsmActionPanel extends LitElement {
       next.set(pagePath, value);
     }
     this._pageActions = next;
+    this._resetExecution();
   }
 
   getPageSyncMode(pagePath) {
@@ -520,7 +530,7 @@ class MsmActionPanel extends LitElement {
         <p class="alert-dialog-content">${this._confirmAction.message}</p>
         <div class="alert-dialog-buttons">
           <button class="s2-btn s2-btn-outline" @click=${() => this.cancelConfirm()}>Cancel</button>
-          <button class="s2-btn s2-btn-negative" @click=${() => this._confirmAction.onConfirm()}>Confirm</button>
+          <button class="s2-btn s2-btn-confirm" @click=${() => this._confirmAction.onConfirm()}>Confirm</button>
         </div>
       </div>
     `;
@@ -548,7 +558,7 @@ class MsmActionPanel extends LitElement {
     'Action',
     this._globalAction,
     this._actionOptions,
-    (v) => { this._globalAction = v; },
+    (v) => { this._globalAction = v; this._resetExecution(); },
   )}
             ${this._globalAction === 'sync' ? this.renderPicker(
     'syncMode',
@@ -681,6 +691,7 @@ class MsmActionPanel extends LitElement {
       this._globalAction = v;
       this._pageActions = new Map();
       this._pageSyncModes = new Map();
+      this._resetExecution();
     },
   )}
         ${this._globalAction === 'sync' ? this.renderPicker(
