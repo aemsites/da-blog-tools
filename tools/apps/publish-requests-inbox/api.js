@@ -835,6 +835,73 @@ export async function getAllPendingRequestsByRequester(org, site, userEmail, tok
 }
 
 /**
+ * Check whether a DA site (repo) exists by listing the org's children.
+ * GET /list/{org} returns all repos; we check if `site` is among them.
+ * @param {string} org - Organization
+ * @param {string} site - Site (repo name)
+ * @param {string} token - Authorization token
+ * @returns {Promise<boolean>} true if the site exists, false otherwise
+ */
+export async function checkSiteExists(org, site, token) {
+  try {
+    const url = `${DA_ADMIN}/list/${org}`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) return false;
+    const items = await resp.json();
+    return items.some((item) => item.name === site);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check whether org--site is registered in the worker's KV store.
+ * GET /api/site-config?org={org}&site={site}
+ * @param {string} org - Organization
+ * @param {string} site - Site
+ * @param {string} token - Authorization token
+ * @returns {Promise<{registered: boolean, config: Object|null}>}
+ */
+export async function checkSiteRegistration(org, site, token) {
+  try {
+    const url = `${getWorkerUrl()}/api/site-config?org=${encodeURIComponent(org)}&site=${encodeURIComponent(site)}`;
+    const resp = await fetch(url, getOpts(token, 'GET'));
+    if (resp.status === 404) return { registered: false, config: null };
+    if (!resp.ok) return { registered: false, config: null };
+    const config = await resp.json();
+    return { registered: true, config };
+  } catch {
+    return { registered: false, config: null };
+  }
+}
+
+/**
+ * Register a new org--site in the worker's KV store with email provider config.
+ * POST /api/site-config
+ * @param {string} org - Organization
+ * @param {string} site - Site
+ * @param {Object} emailConfig - Email provider configuration
+ * @param {string} token - Authorization token
+ * @returns {Promise<Object>} Result
+ */
+export async function registerSite(org, site, emailConfig, token) {
+  try {
+    const opts = getOpts(token, 'POST', { org, site, ...emailConfig });
+    const resp = await fetch(`${getWorkerUrl()}/api/site-config`, opts);
+    const result = await resp.json();
+    if (!resp.ok) {
+      return { success: false, error: result.error || 'Registration failed' };
+    }
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('Error registering site:', error);
+    return { success: false, error: error.message || 'An error occurred' };
+  }
+}
+
+/**
  * Fetch the current user's email from Adobe IMS profile
  * @param {string} token - The authorization token
  * @returns {Promise<string>} User email or empty string if unavailable

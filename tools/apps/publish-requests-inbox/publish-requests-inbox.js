@@ -19,6 +19,9 @@ import {
   fetchSiteConfig,
   getLiveHostFromConfig,
   fetchAccentSettings,
+  checkSiteExists,
+  checkSiteRegistration,
+  registerSite,
 } from './api.js';
 
 // Super Lite (sl-*) — Spectrum-aligned controls for DA; pairs with S2 tokens in CSS.
@@ -71,7 +74,8 @@ class PublishRequestsApp extends LitElement {
     context: { attribute: false },
     token: { attribute: false },
     // view states: 'loading', 'idle', 'inbox', 'review', 'approved',
-    //               'rejected', 'error', 'unauthorized', 'no-request'
+    //               'rejected', 'error', 'unauthorized', 'no-request',
+    //               'site-not-found', 'unregistered'
     _state: { state: true },
     _isProcessing: { state: true },
     _message: { state: true },
@@ -97,6 +101,11 @@ class PublishRequestsApp extends LitElement {
     _orgSiteValue: { state: true },
     // Inline reject error
     _rejectError: { state: true },
+    // Registration
+    _siteRegistered: { state: true },
+    _registrationChecked: { state: true },
+    _registerProcessing: { state: true },
+    _showRegisterForm: { state: true },
   };
 
   constructor() {
@@ -120,6 +129,10 @@ class PublishRequestsApp extends LitElement {
     this._myRequestActions = new Map();
     this._siteSelectLoading = false;
     this._orgSiteValue = '';
+    this._siteRegistered = null;
+    this._registrationChecked = false;
+    this._registerProcessing = false;
+    this._showRegisterForm = false;
   }
 
   connectedCallback() {
@@ -342,6 +355,7 @@ class PublishRequestsApp extends LitElement {
   async handleSiteSelect(e) {
     if (e) e.preventDefault();
     this._message = null;
+    this._showRegisterForm = false;
 
     const input = this.shadowRoot.querySelector('#org-site');
     const orgSite = (input?.value ?? '').trim();
@@ -373,6 +387,32 @@ class PublishRequestsApp extends LitElement {
     this._orgSiteValue = `/${org}/${site}`;
     this._path = '';
     this._pendingRequests = [];
+
+    // Check site existence and registration in parallel
+    const [siteExists, regStatus] = await Promise.all([
+      checkSiteExists(org, site, this.token),
+      checkSiteRegistration(org, site, this.token),
+    ]);
+    this._registrationChecked = true;
+    this._siteRegistered = regStatus.registered;
+
+    if (!siteExists) {
+      this._siteSelectLoading = false;
+      this._state = 'site-not-found';
+      const urlParams = { org, site };
+      if (this._requester) urlParams.requester = 'true';
+      this.updateUrl(urlParams);
+      return;
+    }
+
+    if (!regStatus.registered) {
+      this._siteSelectLoading = false;
+      this._state = 'unregistered';
+      const urlParams = { org, site };
+      if (this._requester) urlParams.requester = 'true';
+      this.updateUrl(urlParams);
+      return;
+    }
 
     await this.loadSiteSettings(org, site);
 
@@ -727,13 +767,70 @@ class PublishRequestsApp extends LitElement {
     }
   }
 
+  // ======== Registration handlers ========
+
+  toggleRegisterForm() {
+    this._showRegisterForm = !this._showRegisterForm;
+  }
+
+  async handleRegister() {
+    this._registerProcessing = true;
+    this._message = null;
+
+    const getVal = (id) => (this.shadowRoot.querySelector(`#${id}`)?.value ?? '').trim();
+    const emailProvider = getVal('reg-email-provider') || 'default';
+    const apiUrl = getVal('reg-api-url');
+    const apiKey = getVal('reg-api-key');
+    const fromAddress = getVal('reg-from-address');
+    const fromName = getVal('reg-from-name');
+    const domainsRaw = getVal('reg-allowed-domains');
+    const allowedEmailDomains = domainsRaw
+      ? domainsRaw.split(',').map((d) => d.trim()).filter(Boolean)
+      : [];
+
+    const emailConfig = { emailProvider };
+    if (emailProvider === 'custom-api') {
+      if (!apiUrl) {
+        this._registerProcessing = false;
+        this._message = { type: 'error', text: 'API URL is required for custom API provider.' };
+        return;
+      }
+      emailConfig.apiUrl = apiUrl;
+      if (apiKey) emailConfig.apiKey = apiKey;
+    }
+    if (fromAddress) emailConfig.fromAddress = fromAddress;
+    if (fromName) emailConfig.fromName = fromName;
+    if (allowedEmailDomains.length > 0) emailConfig.allowedEmailDomains = allowedEmailDomains;
+
+    const result = await registerSite(this._org, this._site, emailConfig, this.token);
+    this._registerProcessing = false;
+
+    if (result.success) {
+      this._siteRegistered = true;
+      this._showRegisterForm = false;
+      this._message = { type: 'success', text: `Site ${this._org}/${this._site} registered successfully!` };
+
+      // Now proceed to load the inbox
+      this._siteSelectLoading = true;
+      await this.loadSiteSettings(this._org, this._site);
+      if (this._requester) {
+        await this.initMyRequests();
+      } else {
+        await this.initInbox();
+      }
+      this._siteSelectLoading = false;
+    } else {
+      this._message = { type: 'error', text: result.error };
+    }
+  }
+
   // ======== Render helpers ========
 
   renderLoading() {
     return html`
       <div class="loading-container" role="status" aria-live="polite" aria-busy="true">
         <div class="spectrum-loading-indicator" aria-hidden="true"></div>
-        <p class="loading-label">Loading…</p>
+        <p class="loading-label">Loading...</p>
       </div>
     `;
   }
@@ -773,7 +870,7 @@ class PublishRequestsApp extends LitElement {
             @click=${() => this.handleSiteSelect()}
             ?disabled=${this._siteSelectLoading}
           >
-            ${this._siteSelectLoading ? 'Loading…' : primaryLabel}
+            ${this._siteSelectLoading ? 'Loading...' : primaryLabel}
           </sl-button>
         </div>
       </div>
@@ -792,6 +889,10 @@ class PublishRequestsApp extends LitElement {
         return this.renderUnauthorized();
       case 'no-request':
         return this.renderNoRequest();
+      case 'site-not-found':
+        return this.renderSiteNotFound();
+      case 'unregistered':
+        return this.renderUnregistered();
       case 'inbox':
         return this.renderInbox();
       case 'my-requests':
@@ -805,6 +906,138 @@ class PublishRequestsApp extends LitElement {
       default:
         return nothing;
     }
+  }
+
+  // ======== Unregistered site — registration form ========
+
+  renderUnregistered() {
+    return html`
+      <div class="register-container">
+        <div class="register-banner">
+          <div class="status-icon status-icon--neutral">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 15a1 1 0 1 1 1-1 1 1 0 0 1-1 1Zm1-4.5a1 1 0 0 1-2 0v-4a1 1 0 0 1 2 0Z" fill="currentColor"/></svg>
+          </div>
+          <h2 class="register-heading">Site Not Registered</h2>
+          <p class="register-body">
+            <strong>${this._org}/${this._site}</strong> is not yet registered for the publish workflow.
+            Register it to enable publish request approvals and email notifications.
+          </p>
+          ${!this._showRegisterForm ? html`
+            <sl-button
+              class="pw-fill-accent"
+              @click=${() => this.toggleRegisterForm()}
+            >Register Site</sl-button>
+          ` : nothing}
+        </div>
+
+        ${this._showRegisterForm ? this.renderRegisterForm() : nothing}
+      </div>
+    `;
+  }
+
+  renderRegisterForm() {
+    return html`
+      <section class="review-card register-form-card">
+        <h3 class="review-card-title">Registration Settings</h3>
+        <p class="review-card-body">Configure the email provider and notification settings for this site.</p>
+
+        <div class="register-form">
+          <div class="form-group">
+            <label for="reg-email-provider">Email Provider</label>
+            <select id="reg-email-provider" class="reg-select"
+              @change=${() => this.requestUpdate()}>
+              <option value="default">MailChannels (default)</option>
+              <option value="custom-api">Custom API</option>
+            </select>
+          </div>
+
+          ${this.renderCustomApiFields()}
+
+          <div class="form-group">
+            <label for="reg-from-address">From Address</label>
+            <sl-input
+              id="reg-from-address"
+              type="text"
+              placeholder="noreply@example.com"
+            ></sl-input>
+          </div>
+
+          <div class="form-group">
+            <label for="reg-from-name">From Name</label>
+            <sl-input
+              id="reg-from-name"
+              type="text"
+              placeholder="My Organization"
+            ></sl-input>
+          </div>
+
+          <div class="form-group">
+            <label for="reg-allowed-domains">Allowed Email Domains</label>
+            <sl-input
+              id="reg-allowed-domains"
+              type="text"
+              placeholder="adobe.com, example.com"
+            ></sl-input>
+            <span class="form-hint">Comma-separated list of domains allowed to receive notifications.</span>
+          </div>
+
+          <div class="register-form-actions">
+            <sl-button
+              class="pw-fill-accent"
+              @click=${() => this.handleRegister()}
+              ?disabled=${this._registerProcessing}
+            >
+              ${this._registerProcessing ? 'Registering...' : 'Register'}
+            </sl-button>
+            <sl-button
+              class="pw-quiet-secondary"
+              @click=${() => this.toggleRegisterForm()}
+              ?disabled=${this._registerProcessing}
+            >Cancel</sl-button>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  renderCustomApiFields() {
+    const sel = this.shadowRoot?.querySelector('#reg-email-provider');
+    if (!sel || sel.value !== 'custom-api') return nothing;
+    return html`
+      <div class="form-group">
+        <label for="reg-api-url">API URL <span class="required">*</span></label>
+        <sl-input
+          id="reg-api-url"
+          type="text"
+          placeholder="https://example.com/api/sendEmail"
+        ></sl-input>
+      </div>
+      <div class="form-group">
+        <label for="reg-api-key">API Key</label>
+        <sl-input
+          id="reg-api-key"
+          type="password"
+          placeholder="Enter API key"
+        ></sl-input>
+      </div>
+    `;
+  }
+
+  // ======== Site not found render ========
+
+  renderSiteNotFound() {
+    return html`
+      <div class="status-page">
+        <div class="status-icon status-icon--error">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 15a1 1 0 1 1 1-1 1 1 0 0 1-1 1Zm1-4.5a1 1 0 0 1-2 0v-4a1 1 0 0 1 2 0Z" fill="currentColor"/></svg>
+        </div>
+        <h2 class="status-heading">Site Not Available</h2>
+        <p class="status-body">
+          The site <strong>${this._org}/${this._site}</strong> could not be found.
+          Please check the organization and site names and try again.
+        </p>
+      </div>
+    `;
   }
 
   // ======== Inbox renders ========

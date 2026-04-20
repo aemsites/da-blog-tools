@@ -277,7 +277,7 @@ class RequestForPublishPlugin extends LitElement {
     return html`
       <div class="loading-container" role="status" aria-live="polite" aria-busy="true">
         <div class="spectrum-loading-indicator" aria-hidden="true"></div>
-        <p class="loading-label">Loading…</p>
+        <p class="loading-label">Loading...</p>
       </div>
     `;
   }
