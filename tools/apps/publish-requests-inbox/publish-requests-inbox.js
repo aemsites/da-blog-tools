@@ -18,13 +18,35 @@ import {
   resendPublishRequest,
   fetchSiteConfig,
   getLiveHostFromConfig,
+  fetchAccentSettings,
 } from './api.js';
 
-// Super Lite components
-import 'https://da.live/nx/public/sl/components.js';
-
-// Application styles
-import loadStyle from '../../scripts/utils/styles.js';
+// Super Lite (sl-*) — Spectrum-aligned controls for DA; pairs with S2 tokens in CSS.
+// NX style pipeline matches other da.live shell apps (e.g. MSM): nexter.js loadStyle + getStyle.
+const NX = 'https://da.live/nx';
+let nexter = null;
+let sl = null;
+let styles = null;
+let buttons = null;
+try {
+  const [{ default: getStyle }, { loadStyle }] = await Promise.all([
+    import(`${NX}/utils/styles.js`),
+    import(`${NX}/scripts/nexter.js`),
+  ]);
+  await Promise.all([
+    loadStyle(`${NX}/styles/nexter.css`),
+    loadStyle(`${NX}/public/sl/styles.css`),
+  ]);
+  await import(`${NX}/public/sl/components.js`);
+  [nexter, sl, styles, buttons] = await Promise.all([
+    getStyle(`${NX}/styles/nexter.css`),
+    getStyle(`${NX}/public/sl/styles.css`),
+    getStyle(import.meta.url),
+    getStyle(`${NX}/styles/buttons.css`),
+  ]);
+} catch (e) {
+  console.warn('Failed to load styles:', e);
+}
 
 // RUM helper – safely fires a checkpoint if the RUM script is loaded
 function sampleRUM(checkpoint, data = {}) {
@@ -33,20 +55,29 @@ function sampleRUM(checkpoint, data = {}) {
   } catch { /* noop */ }
 }
 
-const styles = await loadStyle(import.meta.url);
+/** Parse `org/site` or `/org/site/` into `{ org, site }`. Returns null if invalid. */
+function parseOrgSitePath(raw) {
+  const normalized = (raw || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!normalized) return null;
+  const parts = normalized.split('/').filter((segment) => segment.length > 0);
+  if (parts.length !== 2) return null;
+  const [org, site] = parts;
+  if (!org || !site) return null;
+  return { org, site };
+}
 
 class PublishRequestsApp extends LitElement {
   static properties = {
     context: { attribute: false },
     token: { attribute: false },
-    // view states: 'loading', 'site-select', 'inbox', 'review', 'approved',
+    // view states: 'loading', 'idle', 'inbox', 'review', 'approved',
     //               'rejected', 'error', 'unauthorized', 'no-request'
     _state: { state: true },
     _isProcessing: { state: true },
     _message: { state: true },
     _userEmail: { state: true },
     _needsEmail: { state: true },
-    // Request data from URL params
+    // Request data
     _org: { state: true },
     _site: { state: true },
     _path: { state: true },
@@ -61,8 +92,11 @@ class PublishRequestsApp extends LitElement {
     _approveAllProcessing: { state: true },
     // My-requests mode: tracks per-path action ('resending' | 'withdrawing')
     _myRequestActions: { state: true },
-    // Site selection form
+    // Toolbar
     _siteSelectLoading: { state: true },
+    _orgSiteValue: { state: true },
+    // Inline reject error
+    _rejectError: { state: true },
   };
 
   constructor() {
@@ -85,11 +119,12 @@ class PublishRequestsApp extends LitElement {
     this._requester = false;
     this._myRequestActions = new Map();
     this._siteSelectLoading = false;
+    this._orgSiteValue = '';
   }
 
   connectedCallback() {
     super.connectedCallback();
-    this.shadowRoot.adoptedStyleSheets = [styles];
+    this.shadowRoot.adoptedStyleSheets = [nexter, sl, buttons, styles].filter(Boolean);
     this.init();
   }
 
@@ -139,32 +174,36 @@ class PublishRequestsApp extends LitElement {
     return `${this.appBaseUrl}?${params.toString()}`;
   }
 
-  /**
-   * Navigate the top-level (parent) browser window to the given URL.
-   * Since this app runs inside an iframe, we must use window.top to
-   * change the main browser URL.
-   */
-  navigateTop(url, e) {
-    if (e) e.preventDefault();
+  async loadSiteSettings(org, site) {
     try {
-      window.top.location.href = url;
+      const [siteConfig, accentSettings] = await Promise.all([
+        fetchSiteConfig(org, site),
+        fetchAccentSettings(org, site, this.token),
+      ]);
+      this._liveHost = getLiveHostFromConfig(org, site, siteConfig);
+      if (accentSettings.accentColor) {
+        this.style.setProperty('--pw-accent', accentSettings.accentColor);
+      }
+      if (accentSettings.accentColorHover) {
+        this.style.setProperty('--pw-accent-hover', accentSettings.accentColorHover);
+      }
     } catch {
-      // Cross-origin fallback
-      window.location.href = url;
+      this._liveHost = null;
     }
   }
 
+  updateUrl(params) {
+    try {
+      const qs = new URLSearchParams(params).toString();
+      window.history.replaceState(null, '', `${window.location.pathname}?${qs}`);
+    } catch { /* cross-origin iframe — ignore */ }
+  }
+
   async init() {
-    // Fetch user email from Adobe IMS profile
     this._userEmail = await getUserEmail(this.token);
     this._needsEmail = !this._userEmail;
 
-    // Parse URL parameters
     const urlParams = new URLSearchParams(window.location.search);
-
-    // Only use explicit URL params for org/repo — do NOT fall back to
-    // this.context because that reflects the *current* DA site the app is
-    // hosted on, not the site the user wants to manage.
     this._org = urlParams.get('org') || '';
     this._site = urlParams.get('site') || '';
     this._path = urlParams.get('path') || '';
@@ -173,19 +212,16 @@ class PublishRequestsApp extends LitElement {
     this._comment = urlParams.get('comment') || '';
     this._requester = urlParams.get('requester') || false;
 
-    // If org/repo are missing, show the site selection form
+    if (this._org && this._site) {
+      this._orgSiteValue = `/${this._org}/${this._site}`;
+    }
+
     if (!this._org || !this._site) {
-      this._state = 'site-select';
+      this._state = 'idle';
       return;
     }
 
-    // Fetch CDN config from admin.hlx.page to resolve live host (custom domains, etc.)
-    try {
-      const config = await fetchSiteConfig(this._org, this._site);
-      this._liveHost = getLiveHostFromConfig(this._org, this._site, config);
-    } catch {
-      this._liveHost = null; // fall back to default in liveUrl getter
-    }
+    await this.loadSiteSettings(this._org, this._site);
 
     // Sample RUM enhancer if the RUM script is loaded
     window.hlx?.rum?.sampleRUM?.enhance?.();
@@ -301,25 +337,26 @@ class PublishRequestsApp extends LitElement {
     this._state = 'review';
   }
 
-  // ======== Site selection handler ========
+  // ======== Toolbar handler — loads inbox inline ========
 
   async handleSiteSelect(e) {
-    e.preventDefault();
+    if (e) e.preventDefault();
     this._message = null;
 
-    const form = this.shadowRoot.querySelector('#site-select-form');
-    const formData = new FormData(form);
-    const org = formData.get('org')?.trim();
-    const site = formData.get('site')?.trim();
-
-    if (!org || !site) {
-      this._message = { type: 'error', text: 'Please provide both Organization and Site.' };
+    const input = this.shadowRoot.querySelector('#org-site');
+    const orgSite = (input?.value ?? '').trim();
+    const parsed = parseOrgSitePath(orgSite);
+    if (!parsed) {
+      this._message = {
+        type: 'error',
+        text: 'Enter organization and site as /org/site (for example aemsites/da-blog-tools).',
+      };
       return;
     }
+    const { org, site } = parsed;
 
     this._siteSelectLoading = true;
 
-    // Fetch user email first (needed for permission check)
     if (!this._userEmail) {
       this._userEmail = await getUserEmail(this.token);
       this._needsEmail = !this._userEmail;
@@ -331,24 +368,79 @@ class PublishRequestsApp extends LitElement {
       return;
     }
 
-    // Validate access by fetching requests for this org/site
-    try {
-      const isRequesterMode = !!this._requester;
-      await (isRequesterMode
-        ? getAllPendingRequestsByRequester(org, site, this._userEmail, this.token)
-        : getAllPendingRequestsForUser(org, site, this._userEmail, this.token));
+    this._org = org;
+    this._site = site;
+    this._orgSiteValue = `/${org}/${site}`;
+    this._path = '';
+    this._pendingRequests = [];
 
-      // Access validated — navigate the top-level window with org/site in the URL
-      // so the params persist in the browser address bar across page refreshes.
-      const params = new URLSearchParams();
-      params.set('org', org);
-      params.set('site', site);
-      if (isRequesterMode) params.set('requester', 'true');
-      const targetUrl = `${this.appBaseUrl}?${params.toString()}`;
-      this.navigateTop(targetUrl);
-    } catch (error) {
-      this._siteSelectLoading = false;
-      this._message = { type: 'error', text: error.message || `Unable to access site "${org}/${site}". Please check the organization and site names.` };
+    await this.loadSiteSettings(org, site);
+
+    const urlParams = { org, site };
+    if (this._requester) urlParams.requester = 'true';
+    this.updateUrl(urlParams);
+
+    // Load inbox inline
+    if (this._requester) {
+      await this.initMyRequests();
+    } else {
+      await this.initInbox();
+    }
+
+    this._siteSelectLoading = false;
+  }
+
+  // ======== Inline review — opens detail view without page navigation ========
+
+  async handleInlineReview(request) {
+    this._path = request.path;
+    this._authorEmail = request.requester || request.authorEmail || '';
+    this._comment = request.comment || '';
+    const path = request.path?.replace(/\/index$/, '') || '';
+    this._previewUrl = `https://main--${this._site}--${this._org}.aem.page${path}`;
+    this._message = null;
+    this._state = 'loading';
+
+    const urlParams = {
+      org: this._org,
+      site: this._site,
+      path: request.path,
+      preview: this._previewUrl,
+    };
+    if (request.requester) urlParams.author = request.requester;
+    this.updateUrl(urlParams);
+
+    await this.initReview();
+  }
+
+  // ======== Back to inbox — inline, no navigation ========
+
+  backToInbox(e) {
+    if (e) e.preventDefault();
+    const reviewedPath = this._path;
+    this._path = '';
+    this._authorEmail = '';
+    this._comment = '';
+    this._previewUrl = '';
+    this._message = null;
+    this._rejectError = null;
+    this._isProcessing = false;
+
+    // Remove the just-processed request from the cached list
+    if (reviewedPath && (this._state === 'approved' || this._state === 'rejected')) {
+      this._pendingRequests = this._pendingRequests.filter((r) => r.path !== reviewedPath);
+    }
+
+    const urlParams = { org: this._org, site: this._site };
+    if (this._requester) urlParams.requester = 'true';
+    this.updateUrl(urlParams);
+
+    if (this._pendingRequests.length > 0) {
+      this._state = this._requester ? 'my-requests' : 'inbox';
+    } else if (this._requester) {
+      this.initMyRequests();
+    } else {
+      this.initInbox();
     }
   }
 
@@ -386,11 +478,9 @@ class PublishRequestsApp extends LitElement {
             },
             this.token,
           );
-          this._message = notifyResult.success
-            ? { type: 'success', text: 'Content published successfully!' }
-            : { type: 'info', text: `Content published. Author notification failed: ${notifyResult.error}` };
-        } else {
-          this._message = { type: 'success', text: 'Content published successfully!' };
+          if (!notifyResult.success) {
+            this._message = { type: 'info', text: `Author notification failed: ${notifyResult.error}` };
+          }
         }
       } else {
         this._message = { type: 'error', text: result.error };
@@ -400,23 +490,21 @@ class PublishRequestsApp extends LitElement {
     }
   }
 
-  async handleReject(e) {
-    e.preventDefault();
-
+  async handleReject() {
     if (this._needsEmail) {
-      this._message = { type: 'error', text: 'Unable to determine your email. Please log in again.' };
+      this._rejectError = 'Unable to determine your email. Please log in again.';
       return;
     }
 
-    const form = this.shadowRoot.querySelector('#reject-form');
-    const formData = new FormData(form);
-    const reason = formData.get('reason')?.trim();
+    const textarea = this.shadowRoot.querySelector('#reason');
+    const reason = (textarea?.value ?? '').trim();
 
     if (!reason) {
-      this._message = { type: 'error', text: 'Please provide a reason for rejection.' };
+      this._rejectError = 'Please provide a reason for rejection.';
       return;
     }
 
+    this._rejectError = null;
     this._isProcessing = true;
     this._message = null;
 
@@ -436,10 +524,8 @@ class PublishRequestsApp extends LitElement {
     this._isProcessing = false;
 
     if (result.success) {
-      // Remove the pending request from the requests sheet
       await removePublishRequest(this._org, this._site, this._path, this.token);
       this._state = 'rejected';
-      this._message = { type: 'info', text: 'Rejection notification sent to author.' };
     } else {
       this._message = { type: 'error', text: result.error };
     }
@@ -645,9 +731,9 @@ class PublishRequestsApp extends LitElement {
 
   renderLoading() {
     return html`
-      <div class="loading-container">
-        <div class="loading-spinner"></div>
-        <p>Loading...</p>
+      <div class="loading-container" role="status" aria-live="polite" aria-busy="true">
+        <div class="spectrum-loading-indicator" aria-hidden="true"></div>
+        <p class="loading-label">Loading…</p>
       </div>
     `;
   }
@@ -657,63 +743,68 @@ class PublishRequestsApp extends LitElement {
     return html`<div class="message ${this._message.type}">${this._message.text}</div>`;
   }
 
-  // ======== Site Selection render ========
+  // ======== Persistent toolbar (always visible) ========
 
-  renderSiteSelect() {
+  renderToolbar() {
     const isRequesterMode = !!this._requester;
     const title = isRequesterMode ? 'My Publish Requests' : 'Publish Request Inbox';
-    const subtitle = isRequesterMode
-      ? 'Select a DA site to view your pending publish requests.'
-      : 'Select a DA site to view pending publish requests for approval.';
+    const primaryLabel = isRequesterMode ? 'View my requests' : 'View publish requests';
 
     return html`
       <div class="site-select-container">
         <header class="site-select-header">
-          <h1>${title}</h1>
-          <p class="site-select-subtitle">${subtitle}</p>
+          <h1 class="site-select-title">${title}</h1>
         </header>
 
-        ${this._userEmail
-          ? html`<p class="reviewer-info">Logged in as: <strong>${this._userEmail}</strong></p>`
-          : nothing}
-
-        ${this.renderMessage()}
-
-        <form id="site-select-form" @submit=${this.handleSiteSelect} class="site-select-form">
-          <div class="form-group">
-            <label for="org">Organization <span class="required">*</span></label>
-            <input
+        <div class="site-select-toolbar">
+          <div class="site-select-field site-select-field--grow">
+            <sl-input
               type="text"
-              id="org"
-              name="org"
-              placeholder="e.g. my-org"
-              required
+              id="org-site"
+              placeholder="/org/site"
               autocomplete="off"
-            />
+              aria-label="Organization and site, format org slash site"
+              .value=${this._orgSiteValue}
+              @keydown=${(e) => { if (e.key === 'Enter') this.handleSiteSelect(); }}
+            ></sl-input>
           </div>
-
-          <div class="form-group">
-            <label for="site">Site <span class="required">*</span></label>
-            <input
-              type="text"
-              id="site"
-              name="site"
-              placeholder="e.g. my-site"
-              required
-              autocomplete="off"
-            />
-          </div>
-
-          <button
-            type="submit"
-            class="btn-primary btn-large"
+          <sl-button
+            class="pw-fill-accent site-select-submit"
+            @click=${() => this.handleSiteSelect()}
             ?disabled=${this._siteSelectLoading}
           >
-            ${this._siteSelectLoading ? 'Loading...' : 'View Publish Requests'}
-          </button>
-        </form>
+            ${this._siteSelectLoading ? 'Loading…' : primaryLabel}
+          </sl-button>
+        </div>
       </div>
     `;
+  }
+
+  renderContent() {
+    switch (this._state) {
+      case 'loading':
+        return this.renderLoading();
+      case 'idle':
+        return nothing;
+      case 'error':
+        return this.renderError();
+      case 'unauthorized':
+        return this.renderUnauthorized();
+      case 'no-request':
+        return this.renderNoRequest();
+      case 'inbox':
+        return this.renderInbox();
+      case 'my-requests':
+        return this.renderMyRequests();
+      case 'approved':
+        return this.renderApproved();
+      case 'rejected':
+        return this.renderRejected();
+      case 'review':
+        return this.renderReview();
+      default:
+        return nothing;
+    }
   }
 
   // ======== Inbox renders ========
@@ -723,15 +814,12 @@ class PublishRequestsApp extends LitElement {
       <div class="inbox-container">
         <header class="inbox-header">
           <div>
-            <h1>Publish Request Inbox</h1>
             <p class="inbox-subtitle">Logged in as <strong>${this._userEmail}</strong></p>
           </div>
           ${this._pendingRequests.length > 0
             ? html`<span class="inbox-count">${this._pendingRequests.length} pending</span>`
             : nothing}
         </header>
-
-        ${this.renderMessage()}
 
         ${this._pendingRequests.length === 0
           ? this.renderInboxEmpty()
@@ -743,7 +831,6 @@ class PublishRequestsApp extends LitElement {
   renderInboxEmpty() {
     return html`
       <div class="inbox-empty">
-        <div class="inbox-empty-icon"></div>
         <h2>No Pending Requests</h2>
         <p>You have no publish requests waiting for your approval.</p>
       </div>
@@ -752,20 +839,20 @@ class PublishRequestsApp extends LitElement {
 
   renderInboxList() {
     return html`
+      <div class="inbox-list">
+        ${this._pendingRequests.map((request) => this.renderInboxItem(request))}
+      </div>
+
       <div class="inbox-actions-bar">
-        <button
-          class="btn-approve-all"
+        <sl-button
+          class="pw-fill-accent"
           @click=${this.handleApproveAll}
           ?disabled=${this._approveAllProcessing}
         >
           ${this._approveAllProcessing
             ? 'Publishing all...'
             : `Approve & Publish All (${this._pendingRequests.length})`}
-        </button>
-      </div>
-
-      <div class="inbox-list">
-        ${this._pendingRequests.map((request) => this.renderInboxItem(request))}
+        </sl-button>
       </div>
     `;
   }
@@ -774,30 +861,44 @@ class PublishRequestsApp extends LitElement {
     const isProcessing = this._processingPaths.has(request.path);
     const reviewUrl = this.getReviewUrl(request);
     const diffUrl = this.getDiffUrlForPath(request.path);
+    const requester = request.requester || 'Unknown';
 
     return html`
-      <div class="inbox-item">
-        <div class="inbox-item-info">
-          <div class="inbox-item-path">${request.path}</div>
-          <div class="inbox-item-meta">
-            Requested by: ${request.requester || 'Unknown'}
+      <details class="inbox-item">
+        <summary class="inbox-item-header">
+          <svg class="inbox-item-chevron" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1l4 4-4 4"/></svg>
+          <span class="inbox-item-path">${request.path}</span>
+          <span class="inbox-item-actions">
+            <a href="${diffUrl}" target="_blank" rel="noopener" class="action-link">
+              <svg class="action-icon" viewBox="0 0 18 18"><path d="M16.5 1h-15A1.5 1.5 0 0 0 0 2.5v13A1.5 1.5 0 0 0 1.5 17h15a1.5 1.5 0 0 0 1.5-1.5v-13A1.5 1.5 0 0 0 16.5 1ZM9 16H1.5a.5.5 0 0 1-.5-.5V3h8v13Zm8-.5a.5.5 0 0 1-.5.5H10V3h7v12.5Z"/></svg>
+              Diff
+            </a>
+            <a href="${reviewUrl}" class="action-link" @click=${(e) => { e.preventDefault(); this.handleInlineReview(request); }}>
+              <svg class="action-icon" viewBox="0 0 18 18"><path d="M9 1a8 8 0 1 0 8 8 8 8 0 0 0-8-8Zm0 15a7 7 0 1 1 7-7 7 7 0 0 1-7 7Z"/><path d="M9 4a1 1 0 0 0-1 1v4a1 1 0 0 0 .553.894l3 1.5a1 1 0 0 0 .894-1.788L10 8.382V5a1 1 0 0 0-1-1Z"/></svg>
+              Review
+            </a>
+            <sl-button
+              class="pw-fill-accent pw-action-sm"
+              @click=${(e) => { e.stopPropagation(); this.handleInboxApprove(request); }}
+              ?disabled=${isProcessing || this._approveAllProcessing}
+            >
+              ${isProcessing ? 'Publishing...' : 'Approve & Publish'}
+            </sl-button>
+          </span>
+        </summary>
+        <div class="inbox-item-details">
+          <div class="inbox-item-detail-row">
+            <span class="detail-label">Requested by</span>
+            <span class="detail-value">${requester}</span>
           </div>
-          ${request.comment
-            ? html`<div class="inbox-item-comment">"${request.comment}"</div>`
-            : nothing}
+          ${request.comment ? html`
+            <div class="inbox-item-detail-row">
+              <span class="detail-label">Message</span>
+              <span class="detail-value">${request.comment}</span>
+            </div>
+          ` : nothing}
         </div>
-        <div class="inbox-item-actions">
-          <a href="${diffUrl}" target="_blank" rel="noopener" class="btn-sm btn-diff">Diff ↗</a>
-          <a href="${reviewUrl}" class="btn-sm btn-review-link" @click=${(e) => this.navigateTop(reviewUrl, e)}>Review</a>
-          <button
-            class="btn-sm btn-approve-sm"
-            @click=${() => this.handleInboxApprove(request)}
-            ?disabled=${isProcessing || this._approveAllProcessing}
-          >
-            ${isProcessing ? 'Publishing...' : 'Approve & Publish'}
-          </button>
-        </div>
-      </div>
+      </details>
     `;
   }
 
@@ -808,15 +909,12 @@ class PublishRequestsApp extends LitElement {
       <div class="inbox-container">
         <header class="inbox-header">
           <div>
-            <h1>My Publish Requests</h1>
             <p class="inbox-subtitle">Logged in as <strong>${this._userEmail}</strong></p>
           </div>
           ${this._pendingRequests.length > 0
             ? html`<span class="inbox-count">${this._pendingRequests.length} pending</span>`
             : nothing}
         </header>
-
-        ${this.renderMessage()}
 
         ${this._pendingRequests.length === 0
           ? this.renderMyRequestsEmpty()
@@ -828,7 +926,6 @@ class PublishRequestsApp extends LitElement {
   renderMyRequestsEmpty() {
     return html`
       <div class="inbox-empty">
-        <div class="inbox-empty-icon"></div>
         <h2>No Pending Requests</h2>
         <p>You have no pending publish requests awaiting approval.</p>
       </div>
@@ -850,34 +947,44 @@ class PublishRequestsApp extends LitElement {
     const isBusy = !!action;
 
     return html`
-      <div class="inbox-item">
-        <div class="inbox-item-info">
-          <div class="inbox-item-path">${request.path}</div>
-          <div class="inbox-item-meta">
-            Status: <strong>Pending Approval</strong>
+      <details class="inbox-item">
+        <summary class="inbox-item-header">
+          <svg class="inbox-item-chevron" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1l4 4-4 4"/></svg>
+          <span class="inbox-item-path">${request.path}</span>
+          <span class="inbox-item-actions">
+            <a href="${previewUrl}" target="_blank" rel="noopener" class="action-link">
+              <svg class="action-icon" viewBox="0 0 18 18"><path d="M15.5 1h-13A1.5 1.5 0 0 0 1 2.5v13A1.5 1.5 0 0 0 2.5 17h13a1.5 1.5 0 0 0 1.5-1.5v-13A1.5 1.5 0 0 0 15.5 1Zm.5 14.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-13a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 .5.5v13ZM13 4.5a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.354.854L9.793 6.5 5.146 11.146a.5.5 0 0 0 .708.708L10.5 7.207l1.646 1.647A.5.5 0 0 0 13 8.5v-4Z"/></svg>
+              Preview
+            </a>
+            <sl-button
+              class="pw-quiet-secondary pw-action-sm"
+              @click=${(e) => { e.stopPropagation(); this.handleMyRequestResend(request); }}
+              ?disabled=${isBusy}
+            >
+              ${action === 'resending' ? 'Resending...' : 'Resend'}
+            </sl-button>
+            <sl-button
+              class="pw-fill-negative pw-action-sm"
+              @click=${(e) => { e.stopPropagation(); this.handleMyRequestWithdraw(request); }}
+              ?disabled=${isBusy}
+            >
+              ${action === 'withdrawing' ? 'Withdrawing...' : 'Withdraw'}
+            </sl-button>
+          </span>
+        </summary>
+        <div class="inbox-item-details">
+          <div class="inbox-item-detail-row">
+            <span class="detail-label">Status</span>
+            <span class="status-badge pending">Pending Approval</span>
           </div>
-          ${request.comment
-            ? html`<div class="inbox-item-comment">"${request.comment}"</div>`
-            : nothing}
+          ${request.comment ? html`
+            <div class="inbox-item-detail-row">
+              <span class="detail-label">Message</span>
+              <span class="detail-value">${request.comment}</span>
+            </div>
+          ` : nothing}
         </div>
-        <div class="inbox-item-actions">
-          <a href="${previewUrl}" target="_blank" rel="noopener" class="btn-sm btn-review-link">Preview ↗</a>
-          <button
-            class="btn-sm btn-resend-sm"
-            @click=${() => this.handleMyRequestResend(request)}
-            ?disabled=${isBusy}
-          >
-            ${action === 'resending' ? 'Resending...' : 'Resend Request'}
-          </button>
-          <button
-            class="btn-sm btn-withdraw-sm"
-            @click=${() => this.handleMyRequestWithdraw(request)}
-            ?disabled=${isBusy}
-          >
-            ${action === 'withdrawing' ? 'Withdrawing...' : 'Withdraw Request'}
-          </button>
-        </div>
-      </div>
+      </details>
     `;
   }
 
@@ -885,58 +992,69 @@ class PublishRequestsApp extends LitElement {
 
   renderUnauthorized() {
     return html`
-      <div class="error-container">
-        <div class="error-icon"></div>
-        <h2>Not Authorized</h2>
-        ${this.renderMessage()}
-        <div class="info-card">
-          <div class="info-row">
-            <span class="label">Content:</span>
-            <code>${this._path}</code>
-          </div>
-          <div class="info-row">
-            <span class="label">Logged in as:</span>
-            <span>${this._userEmail}</span>
-          </div>
+      <div class="status-page">
+        <div class="status-icon status-icon--warning">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 15a1 1 0 1 1 1-1 1 1 0 0 1-1 1Zm1-4.5a1 1 0 0 1-2 0v-4a1 1 0 0 1 2 0Z" fill="currentColor"/></svg>
         </div>
-        <p class="error-help">
+        <h2 class="status-heading">Not Authorized</h2>
+        <p class="status-body">
           You do not have permission to approve or reject this publish request.
           Please contact the listed approvers if you believe this is an error.
         </p>
+
+        <section class="review-card">
+          <dl class="detail-list">
+            <div class="detail-row">
+              <dt>Content</dt>
+              <dd><code>${this._path}</code></dd>
+            </div>
+            <div class="detail-row">
+              <dt>Logged in as</dt>
+              <dd><code>${this._userEmail}</code></dd>
+            </div>
+          </dl>
+        </section>
       </div>
     `;
   }
 
   renderNoRequest() {
     return html`
-      <div class="error-container">
-        <div class="error-icon"></div>
-        <h2>No Pending Request</h2>
-        ${this.renderMessage()}
-        <div class="info-card">
-          <div class="info-row">
-            <span class="label">Content:</span>
-            <code>${this._path}</code>
-          </div>
+      <div class="status-page">
+        <div class="status-icon status-icon--neutral">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 15a1 1 0 1 1 1-1 1 1 0 0 1-1 1Zm1-4.5a1 1 0 0 1-2 0v-4a1 1 0 0 1 2 0Z" fill="currentColor"/></svg>
         </div>
-        <p class="error-help">
+        <h2 class="status-heading">No Pending Request</h2>
+        <p class="status-body">
           There is no pending publish request for this content.
           It may have already been approved, rejected, or was never submitted.
         </p>
-        <div class="back-to-inbox">
-          <a href="${this.getInboxUrl()}" class="back-link" @click=${(e) => this.navigateTop(this.getInboxUrl(), e)}>Back to Inbox</a>
-        </div>
+
+        <section class="review-card">
+          <dl class="detail-list">
+            <div class="detail-row">
+              <dt>Content</dt>
+              <dd><code>${this._path}</code></dd>
+            </div>
+          </dl>
+        </section>
+
+        <a href="${this.getInboxUrl()}" class="back-link" @click=${(e) => this.backToInbox(e)}>
+          <svg class="back-chevron" viewBox="0 0 10 10" aria-hidden="true"><path d="M7 1L3 5l4 4"/></svg>
+          Back to Inbox
+        </a>
       </div>
     `;
   }
 
   renderError() {
     return html`
-      <div class="error-container">
-        <div class="error-icon"></div>
-        <h2>Error</h2>
-        ${this.renderMessage()}
-        <p class="error-help">
+      <div class="status-page">
+        <div class="status-icon status-icon--error">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 15a1 1 0 1 1 1-1 1 1 0 0 1-1 1Zm1-4.5a1 1 0 0 1-2 0v-4a1 1 0 0 1 2 0Z" fill="currentColor"/></svg>
+        </div>
+        <h2 class="status-heading">Error</h2>
+        <p class="status-body">
           This page requires URL parameters to identify the content to review.
           Please access this page via the link in your approval email.
         </p>
@@ -946,57 +1064,65 @@ class PublishRequestsApp extends LitElement {
 
   renderApproved() {
     return html`
-      <div class="result-container approved">
-        <div class="result-icon"></div>
-        <h2>Published!</h2>
-        <p>The content has been published successfully.</p>
-
-        <div class="info-card">
-          <div class="info-row">
-            <span class="label">Content:</span>
-            <code>${this._path}</code>
-          </div>
-          <div class="info-row">
-            <span class="label">Live URL:</span>
-            <a href="${this.liveUrl}" target="_blank" rel="noopener">${this.liveUrl}</a>
-          </div>
+      <div class="status-page">
+        <div class="status-icon status-icon--success">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 17.5L3.5 11.5l1.41-1.41L9.5 14.67l9.59-9.59L20.5 6.5z" fill="currentColor"/></svg>
         </div>
+        <h2 class="status-heading status-heading--success">Published!</h2>
+        <p class="status-body">The content has been published successfully.</p>
 
-        <div class="result-actions">
-          <a href="${this.liveUrl}" target="_blank" rel="noopener" class="btn-primary">
-            View Published Content
-          </a>
-          <a href="${this.getInboxUrl()}" class="back-link" @click=${(e) => this.navigateTop(this.getInboxUrl(), e)}>Back to Inbox</a>
-        </div>
+        <section class="review-card">
+          <dl class="detail-list">
+            <div class="detail-row">
+              <dt>Page</dt>
+              <dd><code>${this._path}</code></dd>
+            </div>
+            <div class="detail-row">
+              <dt>Live URL</dt>
+              <dd>
+                <a href="${this.liveUrl}" target="_blank" rel="noopener" class="action-link">
+                  <svg class="action-icon" viewBox="0 0 18 18"><path d="M15.5 1h-13A1.5 1.5 0 0 0 1 2.5v13A1.5 1.5 0 0 0 2.5 17h13a1.5 1.5 0 0 0 1.5-1.5v-13A1.5 1.5 0 0 0 15.5 1Zm.5 14.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-13a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 .5.5v13ZM13 4.5a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.354.854L9.793 6.5 5.146 11.146a.5.5 0 0 0 .708.708L10.5 7.207l1.646 1.647A.5.5 0 0 0 13 8.5v-4Z"/></svg>
+                  View Published Content
+                </a>
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <a href="${this.getInboxUrl()}" class="back-link" @click=${(e) => this.backToInbox(e)}>
+          <svg class="back-chevron" viewBox="0 0 10 10" aria-hidden="true"><path d="M7 1L3 5l4 4"/></svg>
+          Back to Inbox
+        </a>
       </div>
     `;
   }
 
   renderRejected() {
     return html`
-      <div class="result-container rejected">
-        <div class="result-icon"></div>
-        <h2>Request Rejected</h2>
-        ${this.renderMessage()}
-
-        <div class="info-card">
-          <div class="info-row">
-            <span class="label">Page URL:</span>
-            <code>${this._path}</code>
-          </div>
-          <div class="info-row">
-            <span class="label">Requested By:</span>
-            <span>${this._authorEmail}</span>
-          </div>
+      <div class="status-page">
+        <div class="status-icon status-icon--error">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.36 5.64a1 1 0 0 0-1.41 0L12 10.59 7.05 5.64a1 1 0 0 0-1.41 1.41L10.59 12l-4.95 4.95a1 1 0 1 0 1.41 1.41L12 13.41l4.95 4.95a1 1 0 0 0 1.41-1.41L13.41 12l4.95-4.95a1 1 0 0 0 0-1.41Z" fill="currentColor"/></svg>
         </div>
+        <h2 class="status-heading status-heading--error">Request Rejected</h2>
+        <p class="status-body">The author has been notified about the rejection.</p>
 
-        <p class="result-note">
-          The author has been notified about the rejection.
-        </p>
+        <section class="review-card">
+          <dl class="detail-list">
+            <div class="detail-row">
+              <dt>Page</dt>
+              <dd><code>${this._path}</code></dd>
+            </div>
+            <div class="detail-row">
+              <dt>Requested by</dt>
+              <dd><code>${this._authorEmail}</code></dd>
+            </div>
+          </dl>
+        </section>
 
-        <div class="result-actions">
-          <a href="${this.getInboxUrl()}" class="back-link" @click=${(e) => this.navigateTop(this.getInboxUrl(), e)}>Back to Inbox</a>
-        </div>
+        <a href="${this.getInboxUrl()}" class="back-link" @click=${(e) => this.backToInbox(e)}>
+          <svg class="back-chevron" viewBox="0 0 10 10" aria-hidden="true"><path d="M7 1L3 5l4 4"/></svg>
+          Back to Inbox
+        </a>
       </div>
     `;
   }
@@ -1006,135 +1132,124 @@ class PublishRequestsApp extends LitElement {
   renderReview() {
     return html`
       <div class="review-container">
-        <a href="${this.getInboxUrl()}" class="back-link" @click=${(e) => this.navigateTop(this.getInboxUrl(), e)}>Back to Inbox</a>
+        <a href="${this.getInboxUrl()}" class="back-link" @click=${(e) => this.backToInbox(e)}>
+          <svg class="back-chevron" viewBox="0 0 10 10" aria-hidden="true"><path d="M7 1L3 5l4 4"/></svg>
+          Back to Inbox
+        </a>
 
         <header class="review-header">
-          <h1>Publish Request Review</h1>
-          <p class="review-subtitle">Review requested website content changes for accuracy and compliance with Western Sydney University website standards.</p>
+          <h2>Publish Request Review</h2>
+          <p class="review-subtitle">Review the requested content changes for accuracy and compliance before publishing.</p>
         </header>
 
-        <div class="request-details">
-          <h3>Request Details</h3>
-          <div class="details-grid">
-            <div class="detail-item">
-              <span class="detail-label">Page URL:</span>
-              <code class="detail-value">${this._path}</code>
+        <section class="review-card">
+          <h3 class="review-card-title">Request Details</h3>
+          <dl class="detail-list">
+            <div class="detail-row">
+              <dt>Page</dt>
+              <dd><code>${this._path}</code></dd>
             </div>
-            <div class="detail-item">
-              <span class="detail-label">Requested By:</span>
-              <code class="detail-value">${this._authorEmail || 'Unknown'}</code>
+            <div class="detail-row">
+              <dt>Requested by</dt>
+              <dd><code>${this._authorEmail || 'Unknown'}</code></dd>
             </div>
-            ${this._comment
-              ? html`
-                  <div class="detail-item full-width">
-                    <span class="detail-label">Author's Note:</span>
-                    <p class="detail-value comment">"${this._comment}"</p>
-                  </div>
-                `
-              : nothing}
-            ${this._previewUrl
-              ? html`
-                  <div class="detail-item">
-                    <span class="detail-label">Preview Page URL:</span>
-                    <a href="${this._previewUrl}" target="_blank" rel="noopener" class="detail-value link">
-                      View Preview ↗
-                    </a>
-                  </div>
-                `
-              : nothing}
-          </div>
-        </div>
+            ${this._comment ? html`
+              <div class="detail-row">
+                <dt>Author's note</dt>
+                <dd class="detail-comment"><code>${this._comment}</code></dd>
+              </div>
+            ` : nothing}
+            ${this._previewUrl ? html`
+              <div class="detail-row">
+                <dt>Preview</dt>
+                <dd>
+                  <a href="${this._previewUrl}" target="_blank" rel="noopener" class="action-link">
+                    <svg class="action-icon" viewBox="0 0 18 18"><path d="M15.5 1h-13A1.5 1.5 0 0 0 1 2.5v13A1.5 1.5 0 0 0 2.5 17h13a1.5 1.5 0 0 0 1.5-1.5v-13A1.5 1.5 0 0 0 15.5 1Zm.5 14.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-13a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 .5.5v13ZM13 4.5a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.354.854L9.793 6.5 5.146 11.146a.5.5 0 0 0 .708.708L10.5 7.207l1.646 1.647A.5.5 0 0 0 13 8.5v-4Z"/></svg>
+                    View Preview
+                  </a>
+                </dd>
+              </div>
+            ` : nothing}
+          </dl>
+        </section>
 
-        <div class="diff-section">
-          <h3>Content Changes</h3>
-          <p class="diff-description">
-            Before publishing, please carefully review the requested changes and existing page version. Have they been SMART? <br />
-            S – Streamline Site Structure <br />
-            M – Metadata for SEO <br />
-            A – Accessibility compliant <br />
-            R – Redirects requested <br />
-            T – Tested all links <br />
-            <a href="${this.diffUrl}" target="_blank" rel="noopener" class="open-diff-link">View Existing Page↗ </a>
-          </p>
-        </div>
+        <section class="review-card">
+          <h3 class="review-card-title">Content Changes</h3>
+          <p class="review-card-body">Before publishing, please review the requested changes. Have they been SMART?</p>
+          <ul class="smart-checklist">
+            <li><strong>S</strong> Streamline Site Structure</li>
+            <li><strong>M</strong> Metadata for SEO</li>
+            <li><strong>A</strong> Accessibility compliant</li>
+            <li><strong>R</strong> Redirects requested</li>
+            <li><strong>T</strong> Tested all links</li>
+          </ul>
+          <a href="${this.diffUrl}" target="_blank" rel="noopener" class="action-link">
+            <svg class="action-icon" viewBox="0 0 18 18"><path d="M16.5 1h-15A1.5 1.5 0 0 0 0 2.5v13A1.5 1.5 0 0 0 1.5 17h15a1.5 1.5 0 0 0 1.5-1.5v-13A1.5 1.5 0 0 0 16.5 1ZM9 16H1.5a.5.5 0 0 1-.5-.5V3h8v13Zm8-.5a.5.5 0 0 1-.5.5H10V3h7v12.5Z"/></svg>
+            View Existing Page
+          </a>
+        </section>
 
-        ${this.renderMessage()}
-
-        <div class="decision-section">
-          <h3>Review Request</h3>
+        <section class="review-card review-card--decision">
+          <h3 class="review-card-title">Your Decision</h3>
 
           ${this._needsEmail
             ? html`
                 <div class="warning-banner">
-                  <span class="warning-icon"></span>
-                  <span>Unable to determine your email from session. Please log in to DA first.</span>
+                  <svg class="warning-icon" viewBox="0 0 18 18" aria-hidden="true"><path d="M8.5 1.5a1 1 0 0 1 1.64 0l7 10.5A1 1 0 0 1 16.31 13.5H1.69a1 1 0 0 1-.83-1.5ZM9 5a.75.75 0 0 0-.75.75v3.5a.75.75 0 0 0 1.5 0v-3.5A.75.75 0 0 0 9 5Zm0 6a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" fill="currentColor"/></svg>
+                  Unable to determine your email. Please log in to DA first.
                 </div>
               `
             : html`
-                <p class="reviewer-info">Reviewing as: <strong>${this._userEmail}</strong></p>
+                <p class="reviewer-info">Reviewing as <strong>${this._userEmail}</strong></p>
               `}
 
-          <div class="decision-buttons">
-            <button
-              class="btn-approve"
+          <div class="decision-actions">
+            <sl-button
+              class="pw-fill-accent"
               @click=${this.handleApprove}
               ?disabled=${this._isProcessing || this._needsEmail}
             >
               ${this._isProcessing ? 'Publishing...' : 'Approve & Publish'}
-            </button>
+            </sl-button>
           </div>
 
-          <details class="reject-section">
-            <summary class="reject-toggle">Reject this request</summary>
-            <form id="reject-form" @submit=${this.handleReject} class="reject-form">
+          <details class="reject-section" @toggle=${() => { this._rejectError = null; }}>
+            <summary class="reject-toggle">
+              <svg class="reject-chevron" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1l4 4-4 4"/></svg>
+              Reject this request
+            </summary>
+            <div class="reject-form">
               <div class="form-group">
                 <label for="reason">Reason for rejection <span class="required">*</span></label>
-                <textarea
+                <sl-textarea
                   id="reason"
-                  name="reason"
                   rows="3"
                   placeholder="Please explain why this content cannot be published..."
-                  required
-                ></textarea>
+                ></sl-textarea>
               </div>
-              <button
-                type="submit"
-                class="btn-reject"
+              ${this._rejectError ? html`<div class="message error">${this._rejectError}</div>` : nothing}
+              <sl-button
+                class="pw-fill-negative"
+                @click=${() => this.handleReject()}
                 ?disabled=${this._isProcessing || this._needsEmail}
               >
                 ${this._isProcessing ? 'Sending...' : 'Reject Request'}
-              </button>
-            </form>
+              </sl-button>
+            </div>
           </details>
-        </div>
+        </section>
       </div>
     `;
   }
 
   render() {
-    switch (this._state) {
-      case 'loading':
-        return this.renderLoading();
-      case 'site-select':
-        return this.renderSiteSelect();
-      case 'error':
-        return this.renderError();
-      case 'unauthorized':
-        return this.renderUnauthorized();
-      case 'no-request':
-        return this.renderNoRequest();
-      case 'inbox':
-        return this.renderInbox();
-      case 'my-requests':
-        return this.renderMyRequests();
-      case 'approved':
-        return this.renderApproved();
-      case 'rejected':
-        return this.renderRejected();
-      case 'review':
-      default:
-        return this.renderReview();
-    }
+    return html`
+      ${this.renderToolbar()}
+      ${this.renderMessage()}
+      <div class="pw-content">
+        ${this.renderContent()}
+      </div>
+    `;
   }
 }
 
