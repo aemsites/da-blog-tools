@@ -93,7 +93,6 @@ class PublishRequestsApp extends LitElement {
     // My-requests mode: tracks per-path action ('resending' | 'withdrawing')
     _myRequestActions: { state: true },
     // Toolbar
-    _siteSelectLoading: { state: true },
     _orgSiteValue: { state: true },
     // Inline reject error
     _rejectError: { state: true },
@@ -118,7 +117,6 @@ class PublishRequestsApp extends LitElement {
     this._approveAllProcessing = false;
     this._requester = false;
     this._myRequestActions = new Map();
-    this._siteSelectLoading = false;
     this._orgSiteValue = '';
   }
 
@@ -355,7 +353,7 @@ class PublishRequestsApp extends LitElement {
     }
     const { org, site } = parsed;
 
-    this._siteSelectLoading = true;
+    this._state = 'loading';
 
     if (!this._userEmail) {
       this._userEmail = await getUserEmail(this.token);
@@ -363,7 +361,7 @@ class PublishRequestsApp extends LitElement {
     }
 
     if (this._needsEmail) {
-      this._siteSelectLoading = false;
+      this._state = 'idle';
       this._message = { type: 'error', text: 'Unable to determine your email. Please log in to DA first.' };
       return;
     }
@@ -380,14 +378,12 @@ class PublishRequestsApp extends LitElement {
     if (this._requester) urlParams.requester = 'true';
     this.updateUrl(urlParams);
 
-    // Load inbox inline
+    // Load inbox inline — these methods set _state to 'inbox'/'my-requests' when done
     if (this._requester) {
       await this.initMyRequests();
     } else {
       await this.initInbox();
     }
-
-    this._siteSelectLoading = false;
   }
 
   // ======== Inline review — opens detail view without page navigation ========
@@ -771,9 +767,8 @@ class PublishRequestsApp extends LitElement {
           <sl-button
             class="pw-fill-accent site-select-submit"
             @click=${() => this.handleSiteSelect()}
-            ?disabled=${this._siteSelectLoading}
           >
-            ${this._siteSelectLoading ? 'Loading…' : primaryLabel}
+            ${primaryLabel}
           </sl-button>
         </div>
       </div>
@@ -1243,6 +1238,13 @@ class PublishRequestsApp extends LitElement {
   }
 
   render() {
+    // render nothing but the spinner until init()
+    // completes and the site theme (--pw-accent / --pw-accent-hover) is applied.
+    // This prevents a brief flash of the default blue theme on the toolbar
+    // button and action links before the site override takes effect.
+    if (this._state === 'loading') {
+      return this.renderLoading();
+    }
     return html`
       ${this.renderToolbar()}
       ${this.renderMessage()}
