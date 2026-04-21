@@ -234,6 +234,24 @@ class PublishRequestsApp extends LitElement {
       return;
     }
 
+    // Check site existence and registration before proceeding
+    const [siteExists, regStatus] = await Promise.all([
+      checkSiteExists(this._org, this._site, this.token),
+      checkSiteRegistration(this._org, this._site, this.token),
+    ]);
+    this._registrationChecked = true;
+    this._siteRegistered = regStatus.registered;
+
+    if (!siteExists) {
+      this._state = 'site-not-found';
+      return;
+    }
+
+    if (!regStatus.registered) {
+      this._state = 'unregistered';
+      return;
+    }
+
     await this.loadSiteSettings(this._org, this._site);
 
     // Sample RUM enhancer if the RUM script is loaded
@@ -797,9 +815,9 @@ class PublishRequestsApp extends LitElement {
       }
       emailConfig.apiUrl = apiUrl;
       if (apiKey) emailConfig.apiKey = apiKey;
+      if (fromAddress) emailConfig.fromAddress = fromAddress;
+      if (fromName) emailConfig.fromName = fromName;
     }
-    if (fromAddress) emailConfig.fromAddress = fromAddress;
-    if (fromName) emailConfig.fromName = fromName;
     if (allowedEmailDomains.length > 0) emailConfig.allowedEmailDomains = allowedEmailDomains;
 
     const result = await registerSite(this._org, this._site, emailConfig, this.token);
@@ -954,24 +972,6 @@ class PublishRequestsApp extends LitElement {
           ${this.renderCustomApiFields()}
 
           <div class="form-group">
-            <label for="reg-from-address">From Address</label>
-            <sl-input
-              id="reg-from-address"
-              type="text"
-              placeholder="noreply@example.com"
-            ></sl-input>
-          </div>
-
-          <div class="form-group">
-            <label for="reg-from-name">From Name</label>
-            <sl-input
-              id="reg-from-name"
-              type="text"
-              placeholder="My Organization"
-            ></sl-input>
-          </div>
-
-          <div class="form-group">
             <label for="reg-allowed-domains">Allowed Email Domains</label>
             <sl-input
               id="reg-allowed-domains"
@@ -1018,6 +1018,22 @@ class PublishRequestsApp extends LitElement {
           id="reg-api-key"
           type="password"
           placeholder="Enter API key"
+        ></sl-input>
+      </div>
+      <div class="form-group">
+        <label for="reg-from-address">From Address</label>
+        <sl-input
+          id="reg-from-address"
+          type="text"
+          placeholder="noreply@example.com"
+        ></sl-input>
+      </div>
+      <div class="form-group">
+        <label for="reg-from-name">From Name</label>
+        <sl-input
+          id="reg-from-name"
+          type="text"
+          placeholder="My Organization"
         ></sl-input>
       </div>
     `;
