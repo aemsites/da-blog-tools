@@ -12,23 +12,38 @@ import {
   checkExistingRequest,
 } from './utils.js';
 
-// Super Lite components
-import 'https://da.live/nx/public/sl/components.js';
+// Super Lite (sl-*) — Spectrum-aligned controls for DA; pairs with S2 tokens in CSS.
+// NX style pipeline matches other da.live shell apps: nexter.js loadStyle + getStyle.
+const NX = 'https://da.live/nx';
+let nexter = null;
+let sl = null;
+let styles = null;
+let buttons = null;
+try {
+  const [{ default: getStyle }, { loadStyle }] = await Promise.all([
+    import(`${NX}/utils/styles.js`),
+    import(`${NX}/scripts/nexter.js`),
+  ]);
+  await Promise.all([
+    loadStyle(`${NX}/styles/nexter.css`),
+    loadStyle(`${NX}/public/sl/styles.css`),
+  ]);
+  await import(`${NX}/public/sl/components.js`);
+  [nexter, sl, styles, buttons] = await Promise.all([
+    getStyle(`${NX}/styles/nexter.css`),
+    getStyle(`${NX}/public/sl/styles.css`),
+    getStyle(import.meta.url),
+    getStyle(`${NX}/styles/buttons.css`),
+  ]);
+} catch (e) {
+  console.warn('Failed to load styles:', e);
+}
 
 // RUM helper – safely fires a checkpoint if the RUM script is loaded
 function sampleRUM(checkpoint, data = {}) {
   try {
     window.hlx?.rum?.sampleRUM?.(checkpoint, data);
   } catch { /* noop */ }
-}
-
-// Application styles - load with error handling
-let styles = null;
-try {
-  const loadStyle = (await import('../../scripts/utils/styles.js')).default;
-  styles = await loadStyle(import.meta.url);
-} catch (e) {
-  console.warn('Failed to load styles:', e);
 }
 
 class RequestForPublishPlugin extends LitElement {
@@ -47,6 +62,7 @@ class RequestForPublishPlugin extends LitElement {
     _existingRequest: { state: true },
     _isResending: { state: true },
     _isWithdrawing: { state: true },
+    _withdrawn: { state: true },
     _commentsRequired: { state: true },
     _commentsMinLength: { state: true },
     _submitPhase: { state: true },
@@ -65,6 +81,7 @@ class RequestForPublishPlugin extends LitElement {
     this._existingRequest = null;
     this._isResending = false;
     this._isWithdrawing = false;
+    this._withdrawn = false;
     this._commentsRequired = false;
     this._commentsMinLength = 10;
     this._submitPhase = '';
@@ -72,9 +89,7 @@ class RequestForPublishPlugin extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    if (styles) {
-      this.shadowRoot.adoptedStyleSheets = [styles];
-    }
+    this.shadowRoot.adoptedStyleSheets = [nexter, sl, buttons, styles].filter(Boolean);
     this.init();
   }
 
@@ -123,6 +138,13 @@ class RequestForPublishPlugin extends LitElement {
     this._commentsRequired = result.commentsRequired || false;
     this._commentsMinLength = result.commentsMinLength ?? 10;
 
+    if (result.accentColor) {
+      this.style.setProperty('--pw-accent', result.accentColor);
+    }
+    if (result.accentColorHover) {
+      this.style.setProperty('--pw-accent-hover', result.accentColorHover);
+    }
+
     // Show error if config is missing or no matching rule found
     if (result.error) {
       this._message = { type: 'error', text: result.error };
@@ -144,24 +166,20 @@ class RequestForPublishPlugin extends LitElement {
     this._isLoading = false;
   }
 
-  async handleSubmit(e) {
-    e.preventDefault();
+  async handleSubmit() {
     if (this._isSubmitting) return;
     this._isSubmitting = true;
     this._message = null;
 
-    const form = this.shadowRoot.querySelector('form');
-    const formData = new FormData(form);
-    const comment = formData.get('comment')?.trim() || '';
+    const textarea = this.shadowRoot.querySelector('#comment');
+    const comment = (textarea?.value ?? '').trim();
 
-    // Validate comment if required
     if (this._commentsRequired && comment.length < this._commentsMinLength) {
       this._isSubmitting = false;
       this._message = { type: 'error', text: `Please provide a description of at least ${this._commentsMinLength} characters.` };
       return;
     }
 
-    // Use auto-fetched email from IMS profile
     const authorEmail = this._userEmail;
     if (!authorEmail) {
       this._isSubmitting = false;
@@ -249,31 +267,17 @@ class RequestForPublishPlugin extends LitElement {
 
     if (result.success) {
       this._existingRequest = null;
-      this._message = { type: 'success', text: 'Publish request withdrawn successfully.' };
+      this._withdrawn = true;
     } else {
       this._message = { type: 'error', text: result.error || 'Failed to withdraw request.' };
     }
   }
 
-  _handleCommentInvalid(e) {
-    const textarea = e.target;
-    if (!this._commentsRequired) return;
-    if (textarea.validity.valueMissing || textarea.validity.tooShort) {
-      textarea.setCustomValidity(`Please provide a description of at least ${this._commentsMinLength} characters.`);
-    } else {
-      textarea.setCustomValidity('');
-    }
-  }
-
-  _handleCommentInput(e) {
-    e.target.setCustomValidity('');
-  }
-
   renderLoading() {
     return html`
-      <div class="loading-container">
-        <div class="loading-spinner"></div>
-        <p>Loading...</p>
+      <div class="loading-container" role="status" aria-live="polite" aria-busy="true">
+        <div class="spectrum-loading-indicator" aria-hidden="true"></div>
+        <p class="loading-label">Loading…</p>
       </div>
     `;
   }
@@ -286,68 +290,95 @@ class RequestForPublishPlugin extends LitElement {
   renderExistingRequest() {
     const actionDisabled = this._isResending || this._isWithdrawing;
     return html`
-      <div class="result-container pending">
-        <div class="result-icon"></div>
-        <h3>Request Pending</h3>
-        <p>You already have a pending publish request for this content. Please wait while your request is reviewed.</p>
-        <div class="info-card">
-          <div class="info-row">
-            <span class="label">Content Path:</span>
-            <code>${this._existingRequest.path}</code>
-          </div>
-          <div class="info-row">
-            <span class="label">Approver:</span>
-            <code>${this._existingRequest.approver}</code>
-          </div>
-          <div class="info-row">
-            <span class="label">Status:</span>
-            <code>${this._existingRequest.status}</code>
-          </div>
+      <div class="status-page">
+        <div class="status-icon status-icon--neutral">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 15a1 1 0 1 1 1-1 1 1 0 0 1-1 1Zm1-4.5a1 1 0 0 1-2 0v-4a1 1 0 0 1 2 0Z" fill="currentColor"/></svg>
         </div>
+        <h3 class="status-heading">Request Pending</h3>
+        <p class="status-body">You already have a pending publish request for this content. Please wait while your request is reviewed.</p>
+
+        <section class="review-card">
+          <dl class="detail-list">
+            <div class="detail-row">
+              <dt>Content</dt>
+              <dd><code>${this._existingRequest.path}</code></dd>
+            </div>
+            <div class="detail-row">
+              <dt>Approver</dt>
+              <dd><code>${this._existingRequest.approver}</code></dd>
+            </div>
+            <div class="detail-row">
+              <dt>Status</dt>
+              <dd><code>${this._existingRequest.status}</code></dd>
+            </div>
+          </dl>
+        </section>
 
         ${this.renderMessage()}
 
-        <div class="form-actions">
-          <button
-            class="btn-primary"
+        <div class="status-actions">
+          <sl-button
+            class="pw-fill-accent"
             @click=${this.handleResend}
             ?disabled=${actionDisabled}
           >
             ${this._isResending ? 'Resending...' : 'Resend Publish Request'}
-          </button>
-          <button
-            class="btn-secondary btn-withdraw"
+          </sl-button>
+          <sl-button
+            class="pw-fill-negative"
             @click=${this.handleWithdraw}
             ?disabled=${actionDisabled}
           >
             ${this._isWithdrawing ? 'Withdrawing...' : 'Withdraw Publish Request'}
-          </button>
+          </sl-button>
         </div>
 
-        <p class="result-note">If your content owner is away please contact <a href="mailto:digiops@westernsydney.edu.au">digiops@westernsydney.edu.au</a> for assistance with content approvals.</p>
+        <p class="status-note">If your content owner is away please contact <a href="mailto:digiops@westernsydney.edu.au">digiops@westernsydney.edu.au</a> for assistance with content approvals.</p>
+      </div>
+    `;
+  }
+
+  renderWithdrawn() {
+    return html`
+      <div class="status-page">
+        <div class="status-icon status-icon--success">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 17.5L3.5 11.5l1.41-1.41L9.5 14.67l9.59-9.59L20.5 6.5z" fill="currentColor"/></svg>
+        </div>
+        <h3 class="status-heading status-heading--success">Request Withdrawn</h3>
+        <p class="status-body">Your publish request for <strong>${this.contentPath}</strong> has been withdrawn successfully.</p>
+        <p class="status-note">You can submit a new publish request at any time.</p>
       </div>
     `;
   }
 
   renderSubmitted() {
     return html`
-      <div class="result-container success">
-        <div class="result-icon"></div>
-        <h3>Request Sent!</h3>
-        <p>Your publish request has been sent to the following approvers:</p>
-        <ul class="approvers-list">
-          ${this._approvers.map((approver) => html`<li>${approver}</li>`)}
-        </ul>
-        ${this._cc.length > 0 ? html`
-          <p style="margin-top: 8px;">CC'd:</p>
+      <div class="status-page">
+        <div class="status-icon status-icon--success">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 17.5L3.5 11.5l1.41-1.41L9.5 14.67l9.59-9.59L20.5 6.5z" fill="currentColor"/></svg>
+        </div>
+        <h3 class="status-heading status-heading--success">Request Sent!</h3>
+        <p class="status-body">Your publish request has been sent to the following approvers:</p>
+
+        <section class="review-card">
           <ul class="approvers-list">
-            ${this._cc.map((email) => html`<li>${email}</li>`)}
+            ${this._approvers.map((approver) => html`<li><code>${approver}</code></li>`)}
           </ul>
-        ` : nothing}
+          ${this._cc.length > 0 ? html`
+            <h4 class="review-card-title cc-title">CC'd</h4>
+            <ul class="approvers-list">
+              ${this._cc.map((email) => html`<li><code>${email}</code></li>`)}
+            </ul>
+          ` : nothing}
+        </section>
+
         ${this.renderMessage()}
-        <p class="result-note">You will receive an email when your request is approved or rejected.</p>
-        <p class="my-pending-requests-link">
-          <a target="_blank" rel="noopener" href="${this.requesterPendingRequestsUrl}">View all my pending publish requests ↗</a>
+        <p class="status-note">You will receive an email when your request is approved or rejected.</p>
+        <p class="status-note">
+          <a target="_blank" rel="noopener" href="${this.requesterPendingRequestsUrl}" class="action-link">
+            <svg class="action-icon" viewBox="0 0 18 18"><path d="M15.5 1h-13A1.5 1.5 0 0 0 1 2.5v13A1.5 1.5 0 0 0 2.5 17h13a1.5 1.5 0 0 0 1.5-1.5v-13A1.5 1.5 0 0 0 15.5 1Zm.5 14.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-13a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 .5.5v13ZM13 4.5a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.354.854L9.793 6.5 5.146 11.146a.5.5 0 0 0 .708.708L10.5 7.207l1.646 1.647A.5.5 0 0 0 13 8.5v-4Z"/></svg>
+            View all my pending publish requests
+          </a>
         </p>
       </div>
     `;
@@ -356,93 +387,84 @@ class RequestForPublishPlugin extends LitElement {
   renderForm() {
     return html`
       <div class="form-container">
-        <h3>Request Publish</h3>
-        <p class="form-subtitle">Submit this website update for approval</p>
+        <header class="form-header">
+          <h3>Request Publish</h3>
+          <p class="form-subtitle">Submit this website update for approval</p>
+        </header>
 
-        <div class="info-card">
-          <div class="info-row">
-            <span class="label">Page URL:</span>
-            <code>${this.contentPath}</code>
-          </div>
-           <div class="info-row">
-              <span class="label">Requested By:</span>
-              <code>${this._userEmail}</code>
-          </div>
-          <div class="info-row">
-            <span class="label">Preview Page URL:</span>
-            <a href="${this.previewUrl}" target="_blank" rel="noopener">
-              View Preview ↗
-            </a>
-          </div>
-        </div>
+        <section class="review-card">
+          <h4 class="review-card-title">Request Details</h4>
+          <dl class="detail-list">
+            <div class="detail-row">
+              <dt>Page</dt>
+              <dd><code>${this.contentPath}</code></dd>
+            </div>
+            <div class="detail-row">
+              <dt>Requested by</dt>
+              <dd><code>${this._userEmail}</code></dd>
+            </div>
+            <div class="detail-row">
+              <dt>Preview</dt>
+              <dd>
+                <a href="${this.previewUrl}" target="_blank" rel="noopener" class="action-link">
+                  <svg class="action-icon" viewBox="0 0 18 18"><path d="M15.5 1h-13A1.5 1.5 0 0 0 1 2.5v13A1.5 1.5 0 0 0 2.5 17h13a1.5 1.5 0 0 0 1.5-1.5v-13A1.5 1.5 0 0 0 15.5 1Zm.5 14.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-13a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 .5.5v13ZM13 4.5a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.354.854L9.793 6.5 5.146 11.146a.5.5 0 0 0 .708.708L10.5 7.207l1.646 1.647A.5.5 0 0 0 13 8.5v-4Z"/></svg>
+                  View Preview
+                </a>
+              </dd>
+            </div>
+          </dl>
+        </section>
 
-        <div class="diff-section">
-          <div class="diff-header">
-            <span class="diff-title">Content Changes</span>
-          </div>
-          <p class="diff-description">
-            Before submitting for approval please carefully proofread and review your edits. Have you been SMART? <br />
-            S – Streamline Site Structure <br />
-            M – Metadata for SEO <br />
-            A – Accessibility compliant <br />
-            R – Redirects requested <br />
-            T – Tested all links <br />
-           <a href="${this.diffUrl}" target="_blank" rel="noopener" class="open-diff-link">View Existing Page↗</a>
-          </p>
-          <!--<div class="diff-iframe-container">
-            <iframe
-              src="${this.diffUrl}"
-              class="diff-iframe"
-              title="Content Diff"
-              sandbox="allow-scripts allow-same-origin allow-popups"
-            ></iframe>
-          </div> -->
-        </div>
+        <section class="review-card">
+          <h4 class="review-card-title">Content Changes</h4>
+          <p class="review-card-body">Before submitting, please proofread and review your edits. Have you been SMART?</p>
+          <ul class="smart-checklist">
+            <li><strong>S</strong> Streamline Site Structure</li>
+            <li><strong>M</strong> Metadata for SEO</li>
+            <li><strong>A</strong> Accessibility compliant</li>
+            <li><strong>R</strong> Redirects requested</li>
+            <li><strong>T</strong> Tested all links</li>
+          </ul>
+          <a href="${this.diffUrl}" target="_blank" rel="noopener" class="action-link">
+            <svg class="action-icon" viewBox="0 0 18 18"><path d="M16.5 1h-15A1.5 1.5 0 0 0 0 2.5v13A1.5 1.5 0 0 0 1.5 17h15a1.5 1.5 0 0 0 1.5-1.5v-13A1.5 1.5 0 0 0 16.5 1ZM9 16H1.5a.5.5 0 0 1-.5-.5V3h8v13Zm8-.5a.5.5 0 0 1-.5.5H10V3h7v12.5Z"/></svg>
+            View Existing Page
+          </a>
+        </section>
 
-        <div class="approvers-section">
-          <div class="approvers-header">
-            <span class="approvers-icon"></span>
-            <span class="approvers-title">Will be reviewed by:</span>
-          </div>
+        <section class="review-card">
+          <h4 class="review-card-title">Will be reviewed by</h4>
           <ul class="approvers-list">
-            ${this._approvers.map((approver) => html`<li>${approver}</li>`)}
+            ${this._approvers.map((approver) => html`<li><code>${approver}</code></li>`)}
           </ul>
           ${this._cc.length > 0 ? html`
-            <div class="approvers-header" style="margin-top: 8px;">
-              <span class="approvers-icon"></span>
-              <span class="approvers-title">CC:</span>
-            </div>
+            <h4 class="review-card-title cc-title">CC</h4>
             <ul class="approvers-list">
-              ${this._cc.map((email) => html`<li>${email}</li>`)}
+              ${this._cc.map((email) => html`<li><code>${email}</code></li>`)}
             </ul>
           ` : nothing}
+        </section>
+
+        <div class="form-group">
+          <label for="comment">Please provide a description of your website content changes and reason for the content update.${this._commentsRequired ? html` <span class="required-marker">*</span>` : nothing}</label>
+          <sl-textarea
+            id="comment"
+            placeholder="Overview of the website updates and context for the content update request."
+            rows="3"
+          ></sl-textarea>
+          ${this._commentsRequired ? html`<span class="field-hint">Minimum ${this._commentsMinLength} characters required.</span>` : nothing}
         </div>
 
         ${this.renderMessage()}
 
-
-        <form @submit=${this.handleSubmit}>
-          <div class="form-group">
-            <label for="comment">Please provide a description of your website content changes and reason for the content update.${this._commentsRequired ? html` <span class="required-marker">*</span>` : nothing}</label>
-            <textarea
-              id="comment"
-              name="comment"
-              placeholder="Overview of the website updates and context for the content update request."
-              rows="3"
-              ?required=${this._commentsRequired}
-              minlength=${this._commentsRequired ? this._commentsMinLength : nothing}
-              @invalid=${this._handleCommentInvalid}
-              @input=${this._handleCommentInput}
-            ></textarea>
-            ${this._commentsRequired ? html`<span class="field-hint">Minimum ${this._commentsMinLength} characters required.</span>` : nothing}
-          </div>
-
-          <div class="form-actions">
-            <button type="submit" class="btn-primary btn-large" ?disabled=${this._isSubmitting}>
-              ${this._submitButtonLabel}
-            </button>
-          </div>
-        </form>
+        <div class="form-actions">
+          <sl-button
+            class="pw-fill-accent"
+            @click=${() => this.handleSubmit()}
+            ?disabled=${this._isSubmitting}
+          >
+            ${this._submitButtonLabel}
+          </sl-button>
+        </div>
       </div>
     `;
   }
@@ -450,6 +472,10 @@ class RequestForPublishPlugin extends LitElement {
   render() {
     if (this._isLoading) {
       return this.renderLoading();
+    }
+
+    if (this._withdrawn) {
+      return this.renderWithdrawn();
     }
 
     if (this._submitted) {

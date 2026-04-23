@@ -7,7 +7,8 @@
     <script type="importmap">
       { "imports": { "da-lit": "/tools/deps/lit/dist/index.js" } }
     </script>
-    <style>html { display: flex; } html, body { min-height: 100%; min-width: 100%; }</style>
+    <link rel="stylesheet" href="https://da.live/nx/styles/nexter.css">
+    <style>html { display: flex; } html, body { min-height: 100%; min-width: 100%; } body { display: block; }</style>
     <!-- RUM -->
     <script src="/tools/deps/rum.js" type="module"></script>
     <!-- Import DA App SDK -->
@@ -15,6 +16,6 @@
     <!-- Project App Logic -->
     <script src="/tools/apps/publish-requests-inbox/publish-requests-inbox.js" type="module"></script>
   </head>
-  <body>
+  <body style="display: block; background-color: #fff;">
   </body>
 </html>
