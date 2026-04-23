@@ -106,6 +106,7 @@ class PublishRequestsApp extends LitElement {
     _registrationChecked: { state: true },
     _registerProcessing: { state: true },
     _showRegisterForm: { state: true },
+    _availableProviders: { state: true },
   };
 
   constructor() {
@@ -133,6 +134,7 @@ class PublishRequestsApp extends LitElement {
     this._registrationChecked = false;
     this._registerProcessing = false;
     this._showRegisterForm = false;
+    this._availableProviders = [];
   }
 
   connectedCallback() {
@@ -241,6 +243,7 @@ class PublishRequestsApp extends LitElement {
     ]);
     this._registrationChecked = true;
     this._siteRegistered = regStatus.registered;
+    this._availableProviders = regStatus.availableProviders || [];
 
     if (!siteExists) {
       this._state = 'site-not-found';
@@ -413,6 +416,7 @@ class PublishRequestsApp extends LitElement {
     ]);
     this._registrationChecked = true;
     this._siteRegistered = regStatus.registered;
+    this._availableProviders = regStatus.availableProviders || [];
 
     if (!siteExists) {
       this._siteSelectLoading = false;
@@ -796,7 +800,11 @@ class PublishRequestsApp extends LitElement {
     this._message = null;
 
     const getVal = (id) => (this.shadowRoot.querySelector(`#${id}`)?.value ?? '').trim();
-    const emailProvider = getVal('reg-email-provider') || 'default';
+    const providers = this._availableProviders;
+    const showDropdown = providers.length > 1;
+    const emailProvider = showDropdown
+      ? (getVal('reg-email-provider') || providers[0])
+      : (providers[0] || 'custom-api');
     const apiUrl = getVal('reg-api-url');
     const apiKey = getVal('reg-api-key');
     const fromAddress = getVal('reg-from-address');
@@ -954,22 +962,30 @@ class PublishRequestsApp extends LitElement {
   }
 
   renderRegisterForm() {
+    const providers = this._availableProviders;
+    const showDropdown = providers.length > 1;
+    const onlyCustomApi = providers.length === 1 && providers[0] === 'custom-api';
+
     return html`
       <section class="review-card register-form-card">
         <h3 class="review-card-title">Registration Settings</h3>
         <p class="review-card-body">Configure the email provider and notification settings for this site.</p>
 
         <div class="register-form">
-          <div class="form-group">
-            <label for="reg-email-provider">Email Provider</label>
-            <select id="reg-email-provider" class="reg-select"
-              @change=${() => this.requestUpdate()}>
-              <option value="default">MailChannels (default)</option>
-              <option value="custom-api">Custom API</option>
-            </select>
-          </div>
+          ${showDropdown ? html`
+            <div class="form-group">
+              <label for="reg-email-provider">Email Provider</label>
+              <select id="reg-email-provider" class="reg-select"
+                @change=${() => this.requestUpdate()}>
+                ${providers.map((p) => html`
+                  <option value="${p}">${p === 'default' ? 'MailChannels (default)' : 'Custom API'}</option>
+                `)}
+              </select>
+            </div>
+          ` : nothing}
 
-          ${this.renderCustomApiFields()}
+          ${showDropdown ? this.renderCustomApiFields() : nothing}
+          ${onlyCustomApi ? this.renderCustomApiFieldsAlways() : nothing}
 
           <div class="form-group">
             <label for="reg-allowed-domains">Allowed Email Domains</label>
@@ -980,6 +996,8 @@ class PublishRequestsApp extends LitElement {
             ></sl-input>
             <span class="form-hint">Comma-separated list of domains allowed to receive notifications.</span>
           </div>
+
+          ${this.renderMessage()}
 
           <div class="register-form-actions">
             <sl-button
@@ -1003,6 +1021,10 @@ class PublishRequestsApp extends LitElement {
   renderCustomApiFields() {
     const sel = this.shadowRoot?.querySelector('#reg-email-provider');
     if (!sel || sel.value !== 'custom-api') return nothing;
+    return this.renderCustomApiFieldsAlways();
+  }
+
+  renderCustomApiFieldsAlways() {
     return html`
       <div class="form-group">
         <label for="reg-api-url">API URL <span class="required">*</span></label>
@@ -1494,7 +1516,7 @@ class PublishRequestsApp extends LitElement {
   render() {
     return html`
       ${this.renderToolbar()}
-      ${this.renderMessage()}
+      ${this._showRegisterForm ? nothing : this.renderMessage()}
       <div class="pw-content">
         ${this.renderContent()}
       </div>

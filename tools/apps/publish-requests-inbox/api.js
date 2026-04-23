@@ -859,21 +859,37 @@ export async function checkSiteExists(org, site, token) {
 /**
  * Check whether org--site is registered in the worker's KV store.
  * GET /api/site-config?org={org}&site={site}
+ *
+ * The worker returns different shapes depending on registration status:
+ * - Registered: 200 with the site config object
+ * - Not registered: 200 with { error, availableProviders: string[] }
+ * - Legacy fallback: 404 for unregistered (older worker versions)
+ *
  * @param {string} org - Organization
  * @param {string} site - Site
  * @param {string} token - Authorization token
- * @returns {Promise<{registered: boolean, config: Object|null}>}
+ * @returns {Promise<{registered: boolean, config: Object|null, availableProviders: string[]}>}
  */
 export async function checkSiteRegistration(org, site, token) {
   try {
     const url = `${getWorkerUrl()}/api/site-config?org=${encodeURIComponent(org)}&site=${encodeURIComponent(site)}`;
     const resp = await fetch(url, getOpts(token, 'GET'));
-    if (resp.status === 404) return { registered: false, config: null };
-    if (!resp.ok) return { registered: false, config: null };
-    const config = await resp.json();
-    return { registered: true, config };
+    let data;
+    try { data = await resp.json(); } catch { data = null; }
+
+    if (data?.availableProviders) {
+      return {
+        registered: false,
+        config: null,
+        availableProviders: data.availableProviders,
+      };
+    }
+    if (!resp.ok) {
+      return { registered: false, config: null, availableProviders: ['custom-api'] };
+    }
+    return { registered: true, config: data, availableProviders: [] };
   } catch {
-    return { registered: false, config: null };
+    return { registered: false, config: null, availableProviders: ['custom-api'] };
   }
 }
 
