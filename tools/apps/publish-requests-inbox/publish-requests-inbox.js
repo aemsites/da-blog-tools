@@ -891,7 +891,6 @@ class PublishRequestsApp extends LitElement {
             class="pw-fill-accent site-select-submit"
             @click=${() => this.handleSiteSelect()}
           >
-<<<<<<< HEAD
             ${this._siteSelectLoading ? 'Loading...' : primaryLabel}
           </sl-button>
         </div>
@@ -1070,40 +1069,8 @@ class PublishRequestsApp extends LitElement {
           The site <strong>${this._org}/${this._site}</strong> could not be found.
           Please check the organization and site names and try again.
         </p>
-=======
-            ${primaryLabel}
-          </sl-button>
-        </div>
->>>>>>> c432c446451a4fd6286d2275fbf5866915ffc19e
       </div>
     `;
-  }
-
-  renderContent() {
-    switch (this._state) {
-      case 'loading':
-        return this.renderLoading();
-      case 'idle':
-        return nothing;
-      case 'error':
-        return this.renderError();
-      case 'unauthorized':
-        return this.renderUnauthorized();
-      case 'no-request':
-        return this.renderNoRequest();
-      case 'inbox':
-        return this.renderInbox();
-      case 'my-requests':
-        return this.renderMyRequests();
-      case 'approved':
-        return this.renderApproved();
-      case 'rejected':
-        return this.renderRejected();
-      case 'review':
-        return this.renderReview();
-      default:
-        return nothing;
-    }
   }
 
   // ======== Inbox renders ========
@@ -1551,11 +1518,7 @@ class PublishRequestsApp extends LitElement {
     }
     return html`
       ${this.renderToolbar()}
-<<<<<<< HEAD
       ${this._showRegisterForm ? nothing : this.renderMessage()}
-=======
-      ${this.renderMessage()}
->>>>>>> c432c446451a4fd6286d2275fbf5866915ffc19e
       <div class="pw-content">
         ${this.renderContent()}
       </div>
