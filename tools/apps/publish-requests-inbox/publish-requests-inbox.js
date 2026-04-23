@@ -796,11 +796,7 @@ class PublishRequestsApp extends LitElement {
     this._message = null;
 
     const getVal = (id) => (this.shadowRoot.querySelector(`#${id}`)?.value ?? '').trim();
-    const providers = this._availableProviders;
-    const showDropdown = providers.length > 1;
-    const emailProvider = showDropdown
-      ? (getVal('reg-email-provider') || providers[0])
-      : (providers[0] || 'custom-api');
+    const emailProvider = this.selectedProvider;
     const apiUrl = getVal('reg-api-url');
     const apiKey = getVal('reg-api-key');
     const fromAddress = getVal('reg-from-address');
@@ -834,13 +830,16 @@ class PublishRequestsApp extends LitElement {
 
       // Now proceed to load the inbox
       this._siteSelectLoading = true;
-      await this.loadSiteSettings(this._org, this._site);
-      if (this._requester) {
-        await this.initMyRequests();
-      } else {
-        await this.initInbox();
+      try {
+        await this.loadSiteSettings(this._org, this._site);
+        if (this._requester) {
+          await this.initMyRequests();
+        } else {
+          await this.initInbox();
+        }
+      } finally {
+        this._siteSelectLoading = false;
       }
-      this._siteSelectLoading = false;
     } else {
       this._message = { type: 'error', text: result.error };
     }
@@ -956,10 +955,25 @@ class PublishRequestsApp extends LitElement {
     `;
   }
 
+  getProviderLabel(provider) {
+    const labels = {
+      default: 'MailChannels (default)',
+      gmail: 'Gmail',
+      'custom-api': 'Custom API',
+    };
+    return labels[provider] || provider;
+  }
+
+  get selectedProvider() {
+    const providers = this._availableProviders;
+    if (providers.length <= 1) return providers[0] || 'custom-api';
+    const sel = this.shadowRoot?.querySelector('#reg-email-provider');
+    return sel?.value || providers[0];
+  }
+
   renderRegisterForm() {
     const providers = this._availableProviders;
     const showDropdown = providers.length > 1;
-    const onlyCustomApi = providers.length === 1 && providers[0] === 'custom-api';
 
     return html`
       <section class="review-card register-form-card">
@@ -971,16 +985,15 @@ class PublishRequestsApp extends LitElement {
             <div class="form-group">
               <label for="reg-email-provider">Email Provider</label>
               <select id="reg-email-provider" class="reg-select"
-                @change=${() => this.requestUpdate()}>
+                @change=${() => { this._message = null; this.requestUpdate(); }}>
                 ${providers.map((p) => html`
-                  <option value="${p}">${p === 'default' ? 'MailChannels (default)' : 'Custom API'}</option>
+                  <option value="${p}">${this.getProviderLabel(p)}</option>
                 `)}
               </select>
             </div>
           ` : nothing}
 
-          ${showDropdown ? this.renderCustomApiFields() : nothing}
-          ${onlyCustomApi ? this.renderCustomApiFieldsAlways() : nothing}
+          ${this.selectedProvider === 'custom-api' ? this.renderCustomApiFieldsAlways() : nothing}
 
           <div class="form-group">
             <label for="reg-allowed-domains">Allowed Email Domains</label>
@@ -1011,12 +1024,6 @@ class PublishRequestsApp extends LitElement {
         </div>
       </section>
     `;
-  }
-
-  renderCustomApiFields() {
-    const sel = this.shadowRoot?.querySelector('#reg-email-provider');
-    if (!sel || sel.value !== 'custom-api') return nothing;
-    return this.renderCustomApiFieldsAlways();
   }
 
   renderCustomApiFieldsAlways() {
