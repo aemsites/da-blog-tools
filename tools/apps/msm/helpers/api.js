@@ -297,6 +297,10 @@ export async function executeBulkAction({
       skipped.forEach((s) => onSkipped?.(page, s, scope));
     }
 
+    applicableSats.forEach(([satSite]) => {
+      onPageStatus?.(`${page.path}:${satSite}`, 'queued');
+    });
+
     return applicableSats.map(([satSite]) => async () => {
       const key = `${page.path}:${satSite}`;
       onPageStatus?.(key, 'pending');

@@ -19,6 +19,7 @@ try {
 
 const CHEVRON = html`<svg class="picker-chevron" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="2,3 5,7 8,3"/></svg>`;
 const CHECK_ICON = html`<svg class="picker-checkmark" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="2,6 5,9 10,3"/></svg>`;
+const QUEUED_ICON = html`<svg class="result-icon queued" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" opacity="0.4"><circle cx="8" cy="8" r="6"/></svg>`;
 const SPINNER_ICON = html`<svg class="result-icon pending" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 1a7 7 0 1 0 7 7" stroke-linecap="round"/></svg>`;
 const SUCCESS_ICON = html`<svg class="result-icon success" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,8 7,12 13,4"/></svg>`;
 const ERROR_ICON = html`<svg class="result-icon error" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`;
@@ -449,6 +450,7 @@ class MsmActionPanel extends LitElement {
   // ── Status icon helper ──
 
   statusIcon(status) {
+    if (status === 'queued') return QUEUED_ICON;
     if (status === 'pending') return SPINNER_ICON;
     if (status === 'success') return SUCCESS_ICON;
     if (status === 'error') return ERROR_ICON;
@@ -460,8 +462,7 @@ class MsmActionPanel extends LitElement {
   get _progressStats() {
     return [...this._taskStatuses.values()].reduce((acc, { status }) => {
       acc.total += 1;
-      if (status === 'success') { acc.done += 1; acc.success += 1; }
-      if (status === 'error') { acc.done += 1; acc.error += 1; }
+      if (status === 'success') { acc.done += 1; acc.success += 1; } else if (status === 'error') { acc.done += 1; acc.error += 1; }
       return acc;
     }, {
       total: 0, done: 0, success: 0, error: 0,
