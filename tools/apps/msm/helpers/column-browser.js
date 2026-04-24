@@ -1,6 +1,6 @@
 /* eslint-disable no-underscore-dangle, import/no-unresolved, no-console, class-methods-use-this */
 import { LitElement, html, nothing } from 'da-lit';
-import { listFolder } from './api.js';
+import { listFolder, isActionableItem } from './api.js';
 
 const NX = 'https://da.live/nx';
 let sl;
@@ -296,10 +296,10 @@ class MsmColumnBrowser extends LitElement {
         if (!this._folderCache.has(cacheKey)) {
           try {
             const items = await listFolder(this.org, folderSite, folder.path);
-            this._folderCache.set(
-              cacheKey,
-              items.filter((i) => i.ext === 'html').map((i) => ({ ...i, site: folderSite })),
-            );
+            const files = items
+              .filter((i) => !i.isFolder && !i.isSite)
+              .map((i) => ({ ...i, site: folderSite }));
+            this._folderCache.set(cacheKey, files);
           } catch (e) {
             console.error('Failed to resolve folder pages:', e);
             this._folderCache.set(cacheKey, []);
@@ -339,7 +339,7 @@ class MsmColumnBrowser extends LitElement {
   }
 
   showCheckbox(item) {
-    return !item.isSite && (item.ext === 'html' || item.isFolder);
+    return !item.isSite && (isActionableItem(item) || item.isFolder);
   }
 
   renderItem(colIdx, item, itemIdx) {

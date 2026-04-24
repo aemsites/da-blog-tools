@@ -623,7 +623,7 @@ class MsmActionPanel extends LitElement {
         </label>
         ${statusEntry ? this.statusIcon(statusEntry.status) : nothing}
         ${showEdit ? html`
-          <a class="edit-link" href="https://da.live/edit#/${this.org}/${sat.site}${this.pages[0]?.path?.replace('.html', '')}" target="_blank" title="Open in editor">
+          <a class="edit-link" href="https://da.live/edit#/${this.org}/${sat.site}${this.pages[0]?.path?.replace(/\.[^/.]+$/, '')}" target="_blank" title="Open in editor">
             ${EDIT_ICON}
           </a>
         ` : nothing}
@@ -836,7 +836,7 @@ class MsmActionPanel extends LitElement {
                     <li>
                       ${this.statusIcon(this._taskStatuses.get(`${page.path}:${sat.site}`)?.status)}
                       ${sat.label}
-                      <a class="edit-link" href="https://da.live/edit#/${this.org}/${sat.site}${page.path.replace('.html', '')}" target="_blank" title="Open in editor">
+                      <a class="edit-link" href="https://da.live/edit#/${this.org}/${sat.site}${page.path.replace(/\.[^/.]+$/, '')}" target="_blank" title="Open in editor">
                         ${EDIT_ICON}
                       </a>
                     </li>
@@ -871,7 +871,7 @@ class MsmActionPanel extends LitElement {
         <ul class="progress-list">
           ${[...this._taskStatuses.entries()].map(([key, { status, error }]) => {
     const [pagePath, satSite] = key.split(':');
-    const pageName = pagePath.split('/').pop().replace('.html', '');
+    const pageName = pagePath.split('/').pop().replace(/\.[^/.]+$/, '');
     const satLabel = this.satellites?.[satSite]?.label || satSite;
     return html`
               <li class="progress-item">

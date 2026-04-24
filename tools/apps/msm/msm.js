@@ -1,7 +1,7 @@
 /* eslint-disable no-underscore-dangle, import/no-unresolved, no-console, class-methods-use-this */
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { LitElement, html, nothing } from 'da-lit';
-import { fetchMsmConfig, checkPageOverrides } from './helpers/api.js';
+import { fetchMsmConfig, checkPageOverrides, isActionableItem } from './helpers/api.js';
 import 'https://da.live/nx/public/sl/components.js';
 import './helpers/column-browser.js';
 import './helpers/action-panel.js';
@@ -142,7 +142,7 @@ class MsmApp extends LitElement {
   }
 
   async loadOverrides(items) {
-    const pages = items.filter((i) => i.ext === 'html');
+    const pages = items.filter((i) => isActionableItem(i));
     if (!pages.length) return;
 
     const org = this._org;
@@ -150,8 +150,9 @@ class MsmApp extends LitElement {
     const overrides = new Map();
 
     await Promise.all(pages.map(async (page) => {
-      const pagePath = page.path.replace('.html', '');
-      const results = await checkPageOverrides(org, sats, pagePath);
+      const ext = page.ext || 'html';
+      const pagePath = page.path.replace(/\.[^/.]+$/, '');
+      const results = await checkPageOverrides(org, sats, pagePath, ext);
       overrides.set(page.path, results);
     }));
 
@@ -159,7 +160,7 @@ class MsmApp extends LitElement {
   }
 
   get _selectedPages() {
-    return this._selectedItems.filter((i) => i.ext === 'html');
+    return this._selectedItems.filter((i) => isActionableItem(i));
   }
 
   get _isSinglePage() {

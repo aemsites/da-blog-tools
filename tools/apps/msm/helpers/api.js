@@ -4,6 +4,21 @@ const DA_ORIGIN = 'https://admin.da.live';
 const AEM_ADMIN = 'https://admin.hlx.page';
 const MAX_CONCURRENT = 5;
 
+export const ACTIONABLE_EXTENSIONS = new Set(['html', 'json', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf']);
+
+export function isActionableItem(item) {
+  return !item.isFolder && !item.isSite && ACTIONABLE_EXTENSIONS.has(item.ext);
+}
+
+function stripExtension(filePath) {
+  return filePath.replace(/\.[^/.]+$/, '');
+}
+
+function getExtension(filePath) {
+  const match = filePath.match(/\.([^/.]+)$/);
+  return match ? match[1] : '';
+}
+
 let daFetchFn;
 
 async function ensureDaFetch() {
@@ -125,11 +140,11 @@ export async function listFolder(org, site, path = '/') {
 // Override checking
 // ──────────────────────────────────────────────
 
-export async function checkPageOverrides(org, satellites, pagePath) {
+export async function checkPageOverrides(org, satellites, pagePath, ext = 'html') {
   const entries = Object.entries(satellites);
   const results = await Promise.all(
     entries.map(async ([site, info]) => {
-      const url = `${DA_ORIGIN}/source/${org}/${site}${pagePath}.html`;
+      const url = `${DA_ORIGIN}/source/${org}/${site}${pagePath}.${ext}`;
       const resp = await daFetch(url, { method: 'HEAD' });
       return { site, label: info.label, hasOverride: resp.ok };
     }),
@@ -141,8 +156,8 @@ export async function checkPageOverrides(org, satellites, pagePath) {
 // Preview / Publish
 // ──────────────────────────────────────────────
 
-export async function previewSatellite(org, satellite, pagePath) {
-  const aemPath = pagePath.replace(/\.html$/, '');
+export async function previewSatellite(org, satellite, pagePath, ext = 'html') {
+  const aemPath = ext === 'html' ? pagePath : `${pagePath}.${ext}`;
   const url = `${AEM_ADMIN}/preview/${org}/${satellite}/main${aemPath}`;
   const resp = await daFetch(url, { method: 'POST' });
   if (!resp.ok) {
@@ -152,8 +167,8 @@ export async function previewSatellite(org, satellite, pagePath) {
   return resp.json();
 }
 
-export async function publishSatellite(org, satellite, pagePath) {
-  const aemPath = pagePath.replace(/\.html$/, '');
+export async function publishSatellite(org, satellite, pagePath, ext = 'html') {
+  const aemPath = ext === 'html' ? pagePath : `${pagePath}.${ext}`;
   const url = `${AEM_ADMIN}/live/${org}/${satellite}/main${aemPath}`;
   const resp = await daFetch(url, { method: 'POST' });
   if (!resp.ok) {
@@ -167,31 +182,44 @@ export async function publishSatellite(org, satellite, pagePath) {
 // Override management
 // ──────────────────────────────────────────────
 
-export async function createOverride(org, baseSite, satellite, pagePath) {
-  const basePath = `${DA_ORIGIN}/source/${org}/${baseSite}${pagePath}.html`;
+const EXT_MIME_TYPES = {
+  html: 'text/html',
+  json: 'application/json',
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  pdf: 'application/pdf',
+};
+
+export async function createOverride(org, baseSite, satellite, pagePath, ext = 'html') {
+  const basePath = `${DA_ORIGIN}/source/${org}/${baseSite}${pagePath}.${ext}`;
   const resp = await daFetch(basePath);
   if (!resp.ok) return { error: `Failed to fetch base content (${resp.status})` };
 
-  const content = await resp.text();
-  const blob = new Blob([content], { type: 'text/html' });
+  const content = await resp.blob();
+  const mimeType = EXT_MIME_TYPES[ext] || 'application/octet-stream';
+  const blob = new Blob([content], { type: mimeType });
   const formData = new FormData();
   formData.append('data', blob);
 
-  const satPath = `${DA_ORIGIN}/source/${org}/${satellite}${pagePath}.html`;
+  const satPath = `${DA_ORIGIN}/source/${org}/${satellite}${pagePath}.${ext}`;
   const saveResp = await daFetch(satPath, { method: 'PUT', body: formData });
   if (!saveResp.ok) return { error: `Failed to create override (${saveResp.status})` };
   return { ok: true };
 }
 
-export async function deleteOverride(org, satellite, pagePath) {
-  const satPath = `${DA_ORIGIN}/source/${org}/${satellite}${pagePath}.html`;
+export async function deleteOverride(org, satellite, pagePath, ext = 'html') {
+  const satPath = `${DA_ORIGIN}/source/${org}/${satellite}${pagePath}.${ext}`;
   const resp = await daFetch(satPath, { method: 'DELETE' });
   if (!resp.ok) return { error: `Failed to delete override (${resp.status})` };
   return { ok: true };
 }
 
-export async function getSatellitePageStatus(org, satellite, pagePath) {
-  const aemPath = pagePath.replace(/\.html$/, '');
+export async function getSatellitePageStatus(org, satellite, pagePath, ext = 'html') {
+  const aemPath = ext === 'html' ? pagePath : `${pagePath}.${ext}`;
   const url = `${AEM_ADMIN}/status/${org}/${satellite}/main${aemPath}`;
   const resp = await daFetch(url);
   if (!resp.ok) return { preview: false, live: false };
@@ -216,12 +244,12 @@ async function ensureMergeCopy() {
   return mergeCopyFn;
 }
 
-export async function mergeFromBase(org, baseSite, satellite, pagePath) {
+export async function mergeFromBase(org, baseSite, satellite, pagePath, ext = 'html') {
   try {
     const mergeCopy = await ensureMergeCopy();
     const url = {
-      source: `/${org}/${baseSite}${pagePath}.html`,
-      destination: `/${org}/${satellite}${pagePath}.html`,
+      source: `/${org}/${baseSite}${pagePath}.${ext}`,
+      destination: `/${org}/${satellite}${pagePath}.${ext}`,
     };
     const result = await mergeCopy(url, 'MSM Merge');
     if (!result?.ok) return { error: 'Merge failed' };
@@ -250,7 +278,8 @@ export async function executeBulkAction({
   const satEntries = Object.entries(satellites);
 
   const tasks = pages.flatMap((page) => {
-    const pagePath = page.path.replace(/\.html$/, '');
+    const ext = getExtension(page.path) || 'html';
+    const pagePath = stripExtension(page.path);
     const pageOverrides = overrides?.get(page.path) || [];
 
     const applicableSats = scope
@@ -276,28 +305,28 @@ export async function executeBulkAction({
         let result;
         switch (action) {
           case 'preview':
-            result = await previewSatellite(org, satSite, pagePath);
+            result = await previewSatellite(org, satSite, pagePath, ext);
             break;
           case 'publish':
-            result = await publishSatellite(org, satSite, pagePath);
+            result = await publishSatellite(org, satSite, pagePath, ext);
             break;
           case 'break':
-            result = await createOverride(org, baseSite, satSite, pagePath);
+            result = await createOverride(org, baseSite, satSite, pagePath, ext);
             break;
           case 'sync':
             result = syncMode === 'merge'
-              ? await mergeFromBase(org, baseSite, satSite, pagePath)
-              : await createOverride(org, baseSite, satSite, pagePath);
+              ? await mergeFromBase(org, baseSite, satSite, pagePath, ext)
+              : await createOverride(org, baseSite, satSite, pagePath, ext);
             break;
           case 'reset': {
-            const pageStatus = await getSatellitePageStatus(org, satSite, pagePath);
-            result = await deleteOverride(org, satSite, pagePath);
+            const pageStatus = await getSatellitePageStatus(org, satSite, pagePath, ext);
+            result = await deleteOverride(org, satSite, pagePath, ext);
             if (!result?.error) {
               if (pageStatus.live) {
-                await previewSatellite(org, satSite, pagePath);
-                await publishSatellite(org, satSite, pagePath);
+                await previewSatellite(org, satSite, pagePath, ext);
+                await publishSatellite(org, satSite, pagePath, ext);
               } else if (pageStatus.preview) {
-                await previewSatellite(org, satSite, pagePath);
+                await previewSatellite(org, satSite, pagePath, ext);
               }
             }
             break;
