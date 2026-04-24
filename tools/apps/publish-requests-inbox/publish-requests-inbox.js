@@ -105,7 +105,6 @@ class PublishRequestsApp extends LitElement {
     _siteRegistered: { state: true },
     _registrationChecked: { state: true },
     _registerProcessing: { state: true },
-    _showRegisterForm: { state: true },
     _availableProviders: { state: true },
   };
 
@@ -133,7 +132,6 @@ class PublishRequestsApp extends LitElement {
     this._siteRegistered = null;
     this._registrationChecked = false;
     this._registerProcessing = false;
-    this._showRegisterForm = false;
     this._availableProviders = [];
   }
 
@@ -376,7 +374,6 @@ class PublishRequestsApp extends LitElement {
   async handleSiteSelect(e) {
     if (e) e.preventDefault();
     this._message = null;
-    this._showRegisterForm = false;
 
     const input = this.shadowRoot.querySelector('#org-site');
     const orgSite = (input?.value ?? '').trim();
@@ -789,10 +786,6 @@ class PublishRequestsApp extends LitElement {
 
   // ======== Registration handlers ========
 
-  toggleRegisterForm() {
-    this._showRegisterForm = !this._showRegisterForm;
-  }
-
   async handleRegister() {
     this._registerProcessing = true;
     this._message = null;
@@ -827,7 +820,6 @@ class PublishRequestsApp extends LitElement {
 
     if (result.success) {
       this._siteRegistered = true;
-      this._showRegisterForm = false;
       this._message = { type: 'success', text: `Site ${this._org}/${this._site} registered successfully!` };
 
       // Now proceed to load the inbox
@@ -944,15 +936,9 @@ class PublishRequestsApp extends LitElement {
             <strong>${this._org}/${this._site}</strong> is not yet registered for the publish workflow.
             Register it to enable publish request approvals and email notifications.
           </p>
-          ${!this._showRegisterForm ? html`
-            <sl-button
-              class="pw-fill-accent"
-              @click=${() => this.toggleRegisterForm()}
-            >Register Site</sl-button>
-          ` : nothing}
         </div>
 
-        ${this._showRegisterForm ? this.renderRegisterForm() : nothing}
+        ${this.renderRegisterForm()}
       </div>
     `;
   }
@@ -1016,11 +1002,6 @@ class PublishRequestsApp extends LitElement {
             >
               ${this._registerProcessing ? 'Registering...' : 'Register'}
             </sl-button>
-            <sl-button
-              class="pw-quiet-secondary"
-              @click=${() => this.toggleRegisterForm()}
-              ?disabled=${this._registerProcessing}
-            >Cancel</sl-button>
           </div>
         </div>
       </section>
@@ -1524,10 +1505,10 @@ class PublishRequestsApp extends LitElement {
     if (this._state === 'loading') {
       return this.renderLoading();
     }
-    const hideToolbar = this._state === 'unregistered';
+    const isUnregistered = this._state === 'unregistered';
     return html`
-      ${this._showRegisterForm ? nothing : this.renderMessage()}
-      ${hideToolbar ? nothing : this.renderToolbar()}
+      ${isUnregistered ? nothing : this.renderMessage()}
+      ${isUnregistered ? nothing : this.renderToolbar()}
       <div class="pw-content">
         ${this.renderContent()}
       </div>
