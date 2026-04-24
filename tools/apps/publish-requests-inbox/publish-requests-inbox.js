@@ -957,8 +957,7 @@ class PublishRequestsApp extends LitElement {
 
   getProviderLabel(provider) {
     const labels = {
-      default: 'MailChannels (default)',
-      gmail: 'Gmail',
+      default: 'Default',
       'custom-api': 'Custom API',
     };
     return labels[provider] || provider;
@@ -1523,8 +1522,9 @@ class PublishRequestsApp extends LitElement {
     if (this._state === 'loading') {
       return this.renderLoading();
     }
+    const hideToolbar = this._state === 'unregistered';
     return html`
-      ${this.renderToolbar()}
+      ${hideToolbar ? nothing : this.renderToolbar()}
       ${this._showRegisterForm ? nothing : this.renderMessage()}
       <div class="pw-content">
         ${this.renderContent()}
