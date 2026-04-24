@@ -98,6 +98,7 @@ class PublishRequestsApp extends LitElement {
     _myRequestActions: { state: true },
     // Toolbar
     _orgSiteValue: { state: true },
+    _siteSelectLoading: { state: true },
     // Inline reject error
     _rejectError: { state: true },
     // Registration
@@ -128,6 +129,7 @@ class PublishRequestsApp extends LitElement {
     this._requester = false;
     this._myRequestActions = new Map();
     this._orgSiteValue = '';
+    this._siteSelectLoading = false;
     this._siteRegistered = null;
     this._registrationChecked = false;
     this._registerProcessing = false;
@@ -1524,8 +1526,8 @@ class PublishRequestsApp extends LitElement {
     }
     const hideToolbar = this._state === 'unregistered';
     return html`
-      ${hideToolbar ? nothing : this.renderToolbar()}
       ${this._showRegisterForm ? nothing : this.renderMessage()}
+      ${hideToolbar ? nothing : this.renderToolbar()}
       <div class="pw-content">
         ${this.renderContent()}
       </div>
