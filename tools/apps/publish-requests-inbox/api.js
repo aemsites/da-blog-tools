@@ -835,6 +835,204 @@ export async function getAllPendingRequestsByRequester(org, site, userEmail, tok
 }
 
 /**
+ * Check whether a DA site (repo) exists by listing the org's children.
+ * GET /list/{org} returns all repos; we check if `site` is among them.
+ * @param {string} org - Organization
+ * @param {string} site - Site (repo name)
+ * @param {string} token - Authorization token
+ * @returns {Promise<boolean>} true if the site exists, false otherwise
+ */
+export async function checkSiteExists(org, site, token) {
+  try {
+    const url = `${DA_ADMIN}/list/${org}`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) return false;
+    const items = await resp.json();
+    return items.some((item) => item.name === site);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check whether org--site is registered in the worker's KV store.
+ * GET /api/site-config?org={org}&site={site}
+ *
+ * The worker returns different shapes depending on registration status:
+ * - Registered: 200 with the site config object
+ * - Not registered: 200 with { error, availableProviders: string[] }
+ * - Legacy fallback: 404 for unregistered (older worker versions)
+ *
+ * @param {string} org - Organization
+ * @param {string} site - Site
+ * @param {string} token - Authorization token
+ * @returns {Promise<{registered: boolean, config: Object|null, availableProviders: string[]}>}
+ */
+export async function checkSiteRegistration(org, site, token) {
+  try {
+    const url = `${getWorkerUrl()}/api/site-config?org=${encodeURIComponent(org)}&site=${encodeURIComponent(site)}`;
+    const resp = await fetch(url, getOpts(token, 'GET'));
+    let data;
+    try { data = await resp.json(); } catch { data = null; }
+
+    if (data?.availableProviders) {
+      return {
+        registered: false,
+        config: null,
+        availableProviders: data.availableProviders,
+      };
+    }
+    if (!resp.ok) {
+      return { registered: false, config: null, availableProviders: ['custom-api'] };
+    }
+    return { registered: true, config: data, availableProviders: [] };
+  } catch {
+    return { registered: false, config: null, availableProviders: ['custom-api'] };
+  }
+}
+
+/**
+ * Inspect a DA config object for the `library` tab and report whether a row
+ * pointing at the Request Publish plugin is present. Path matching is a
+ * case-insensitive suffix match on the canonical plugin location, which
+ * keeps the check robust across forks (org/repo) of da-blog-tools.
+ * @param {Object} config - DA config object
+ * @returns {'ok'|'missing'} status of the library tab plugin entry
+ */
+function inspectLibraryTab(config) {
+  const rows = config?.library?.data;
+  if (!Array.isArray(rows)) return 'missing';
+  const needle = '/tools/plugins/request-for-publish/request-for-publish.html';
+  const hasRow = rows.some((row) => {
+    const p = (row?.path || row?.Path || '').toLowerCase();
+    return p.endsWith(needle);
+  });
+  return hasRow ? 'ok' : 'missing';
+}
+
+/**
+ * Inspect a DA config object for the `apps` tab and report whether a row
+ * pointing at the Publish Requests Inbox app is present. Uses a suffix match
+ * on the canonical app path so the check works across forks.
+ * @param {Object} config - DA config object
+ * @returns {'ok'|'missing'} status of the apps tab inbox entry
+ */
+function inspectAppsTab(config) {
+  const rows = config?.apps?.data;
+  if (!Array.isArray(rows)) return 'missing';
+  const needle = '/tools/apps/publish-requests-inbox/publish-requests-inbox';
+  const hasRow = rows.some((row) => {
+    const p = (row?.path || row?.Path || '').toLowerCase();
+    return p.endsWith(needle);
+  });
+  return hasRow ? 'ok' : 'missing';
+}
+
+/**
+ * Inspect a DA config object for the `publish-workflow-config` tab and
+ * report whether at least one approver rule row is present.
+ * @param {Object} config - DA config object
+ * @returns {'ok'|'missing'} status of the workflow config tab
+ */
+function inspectWorkflowConfigTab(config) {
+  const rows = config?.['publish-workflow-config']?.data;
+  if (!Array.isArray(rows) || rows.length === 0) return 'missing';
+  return 'ok';
+}
+
+/**
+ * Check that the required and recommended DA configuration tabs are set up
+ * for the Request Publish workflow. Mirrors the setup steps in
+ * https://docs.da.live/about/early-access/request-publish (Step 2).
+ *
+ * Reads the site-level DA config first
+ * (`GET https://admin.da.live/config/{org}/{site}/`) and merges any tabs
+ * still missing from the org-level config (`/config/{org}/`). This matches
+ * the documented "site-first, org fallback" behavior, but at the per-tab
+ * level so a tab present at either level counts as configured.
+ *
+ * @param {string} org - Organization
+ * @param {string} site - Site
+ * @param {string} token - Authorization token
+ * @returns {Promise<{
+ *   workflowConfig: 'ok'|'missing',
+ *   library: 'ok'|'missing',
+ *   apps: 'ok'|'missing',
+ *   error: string|null,
+ * }>}
+ */
+export async function checkDaConfiguration(org, site, token) {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/json',
+  };
+
+  const fetchConfig = async (url) => {
+    try {
+      const resp = await fetch(url, { headers });
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch {
+      return null;
+    }
+  };
+
+  const [siteConfig, orgConfig] = await Promise.all([
+    fetchConfig(`${DA_ADMIN}/config/${org}/${site}/`),
+    fetchConfig(`${DA_ADMIN}/config/${org}/`),
+  ]);
+
+  // Per-tab status: a tab is OK if present at site OR org level.
+  const promote = (siteStatus, orgStatus) => (
+    siteStatus === 'ok' || orgStatus === 'ok' ? 'ok' : 'missing'
+  );
+
+  const result = {
+    workflowConfig: promote(
+      inspectWorkflowConfigTab(siteConfig),
+      inspectWorkflowConfigTab(orgConfig),
+    ),
+    library: promote(inspectLibraryTab(siteConfig), inspectLibraryTab(orgConfig)),
+    apps: promote(inspectAppsTab(siteConfig), inspectAppsTab(orgConfig)),
+    error: null,
+  };
+
+  // If neither config request returned anything, surface that distinct error
+  // — most often a permissions issue on the DA config sheet.
+  if (!siteConfig && !orgConfig) {
+    result.error = 'Could not read DA configuration. You may not have access to the config sheet for this site.';
+  }
+
+  return result;
+}
+
+/**
+ * Register a new org--site in the worker's KV store with email provider config.
+ * POST /api/site-config
+ * @param {string} org - Organization
+ * @param {string} site - Site
+ * @param {Object} emailConfig - Email provider configuration
+ * @param {string} token - Authorization token
+ * @returns {Promise<Object>} Result
+ */
+export async function registerSite(org, site, emailConfig, token) {
+  try {
+    const opts = getOpts(token, 'POST', { org, site, ...emailConfig });
+    const resp = await fetch(`${getWorkerUrl()}/api/site-config`, opts);
+    const result = await resp.json();
+    if (!resp.ok) {
+      return { success: false, error: result.error || 'Registration failed' };
+    }
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('Error registering site:', error);
+    return { success: false, error: error.message || 'An error occurred' };
+  }
+}
+
+/**
  * Fetch the current user's email from Adobe IMS profile
  * @param {string} token - The authorization token
  * @returns {Promise<string>} User email or empty string if unavailable
