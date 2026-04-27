@@ -24,18 +24,18 @@
     // Import DA SDK to get org/repo context and auth
     import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
-    // Get context FIRST, before loading media-library
-    const { context, actions } = await DA_SDK;
-
-    // Set sitePath on element BEFORE media-library loads
-    const ml = document.getElementById('ml');
-    ml.sitePath = `/${context.org}/${context.repo}`;
-
-    // NOW load bundled media-library plugin (includes Lit + all dependencies)
+    // Load bundled media-library plugin FIRST to define the custom element
     await import('./media-library-plugin.js');
 
-    // Wait for component to be ready
+    // Wait for custom element to be defined
     await customElements.whenDefined('nx-media-library');
+
+    // Get context from DA SDK
+    const { context, actions } = await DA_SDK;
+
+    // NOW set sitePath on the upgraded custom element
+    const ml = document.getElementById('ml');
+    ml.sitePath = `/${context.org}/${context.repo}`;
 
     console.log('✅ Media library plugin loaded (bundled locally)');
     console.log(`📍 Site: ${ml.sitePath} (from DA context)`);
