@@ -896,6 +896,14 @@ class PublishRequestsApp extends LitElement {
         const daConfigOk = await this.checkDaConfig(this._org, this._site);
         if (!daConfigOk) return;
 
+        // Right after a successful registration is the highest-signal moment
+        // to nudge the user toward finishing optional setup. If anything needs
+        // attention, pop the Setup panel open so the orange dot doesn't get
+        // missed. Subsequent visits don't auto-open — the pill is enough.
+        if (this.setupHealth === 'attention') {
+          this._setupPanelOpen = true;
+        }
+
         await this.loadSiteSettings(this._org, this._site);
         if (this._requester) {
           await this.initMyRequests();
@@ -932,6 +940,11 @@ class PublishRequestsApp extends LitElement {
     const isRequesterMode = !!this._requester;
     const title = isRequesterMode ? 'My Publish Requests' : 'Publish Request Inbox';
     const primaryLabel = isRequesterMode ? 'View my requests' : 'View publish requests';
+    // When optional setup is incomplete, hide the site-select row so the user
+    // is funnelled to the Setup panel instead of being able to dive into the
+    // (not-yet-fully-functional) inbox. Only hides once we actually know the
+    // status; `unknown` keeps the toolbar visible to avoid a flicker.
+    const hideSiteSelect = this.setupHealth === 'attention';
 
     return html`
       <div class="site-select-container">
@@ -940,25 +953,27 @@ class PublishRequestsApp extends LitElement {
           ${this.renderSetupPill()}
         </header>
 
-        <div class="site-select-toolbar">
-          <div class="site-select-field site-select-field--grow">
-            <sl-input
-              type="text"
-              id="org-site"
-              placeholder="/org/site"
-              autocomplete="off"
-              aria-label="Organization and site, format org slash site"
-              .value=${this._orgSiteValue}
-              @keydown=${(e) => { if (e.key === 'Enter') this.handleSiteSelect(); }}
-            ></sl-input>
+        ${hideSiteSelect ? nothing : html`
+          <div class="site-select-toolbar">
+            <div class="site-select-field site-select-field--grow">
+              <sl-input
+                type="text"
+                id="org-site"
+                placeholder="/org/site"
+                autocomplete="off"
+                aria-label="Organization and site, format org slash site"
+                .value=${this._orgSiteValue}
+                @keydown=${(e) => { if (e.key === 'Enter') this.handleSiteSelect(); }}
+              ></sl-input>
+            </div>
+            <sl-button
+              class="pw-fill-accent site-select-submit"
+              @click=${() => this.handleSiteSelect()}
+            >
+              ${this._siteSelectLoading ? 'Loading...' : primaryLabel}
+            </sl-button>
           </div>
-          <sl-button
-            class="pw-fill-accent site-select-submit"
-            @click=${() => this.handleSiteSelect()}
-          >
-            ${this._siteSelectLoading ? 'Loading...' : primaryLabel}
-          </sl-button>
-        </div>
+        `}
 
         ${this.renderSetupPanel()}
       </div>
@@ -1191,7 +1206,10 @@ class PublishRequestsApp extends LitElement {
       case 'default':
         return { variant: 'neutral', label: 'Using documented defaults' };
       case 'not-needed':
-        return { variant: 'neutral', label: 'Not needed for this site' };
+        return {
+          variant: 'neutral',
+          label: 'Not needed — approver rules use individual emails',
+        };
       case 'empty':
         return { variant: 'missing', label: `Tab present but empty${sourceSuffix}` };
       case 'missing':
