@@ -13,8 +13,9 @@
     // Import DA SDK to get org/repo context and auth
     import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
-    // Import BUNDLED media-library plugin from CDN (includes Lit + Virtualizer + all deps)
-    import 'https://mldecouple--da-nx--adobe.aem.page/nx/blocks/media-library/build/media-library-plugin.js';
+    // POC: Load unbundled media-library from da.live main branch
+    // Uses da.live's infrastructure (CSS, icons, IMS config, import maps)
+    import 'https://da.live/nx/blocks/media-library/media-library.js';
 
     // Wait for SDK and component to be ready
     const { context, actions } = await DA_SDK;
@@ -25,12 +26,12 @@
     // Build sitePath from DA context (org/repo where plugin is launched)
     ml.sitePath = `/${context.org}/${context.repo}`;
 
-    console.log('✅ Media library plugin loaded (bundled version)');
+    console.log('✅ Media library plugin loaded (unbundled from da.live)');
     console.log(`📍 Site: ${ml.sitePath} (from DA context)`);
     console.log('🔐 Auth token: automatically handled by media-library via IMS');
-    console.log('📍 Mode should be: plugin (not app)');
-    console.log('🔍 Check: indexing should NOT auto-trigger');
-    console.log('📦 Bundle size: ~248KB (includes all dependencies)');
+    console.log('📍 Mode detection: URL-based (app vs plugin)');
+    console.log('🔍 POC: Proving same codebase works for both app and plugin');
+    console.log('⚠️  Note: May trigger indexing (main branch behavior)');
   </script>
 </body>
 </html>
