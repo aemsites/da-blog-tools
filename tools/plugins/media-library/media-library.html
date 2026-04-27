@@ -13,9 +13,8 @@
     // Import DA SDK to get org/repo context and auth
     import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
-    // Import BUNDLED media-library plugin LOCALLY for testing (includes Lit + Virtualizer + all deps)
-    // TODO: Switch to CDN after testing: https://mldecouple--da-nx--adobe.aem.page/nx/blocks/media-library/build/media-library-plugin.js
-    import './media-library-plugin.js';
+    // Import BUNDLED media-library plugin from CDN (includes Lit + Virtualizer + all deps)
+    import 'https://mldecouple--da-nx--adobe.aem.page/nx/blocks/media-library/build/media-library-plugin.js';
 
     // Wait for SDK and component to be ready
     const { context, actions } = await DA_SDK;
