@@ -1266,21 +1266,27 @@ class PublishRequestsApp extends LitElement {
           ${fetchError ? html`<p class="review-card-body">${fetchError}</p>` : nothing}
           ${this.renderSetupRows()}
           <p class="review-card-body">
-            You can add the required tabs at either scope:
+            Where to add these tabs:
           </p>
           <ul class="setup-where-list">
             <li>
-              <strong>This site only</strong> —
-              <a href="${siteConfigUrl}" target="_blank" rel="noopener">open the site config editor</a>.
-              Rows you add here apply only to
-              <code>${this._org}/${this._site}</code>.
+              <strong>Site config</strong> —
+              <a href="${siteConfigUrl}" target="_blank" rel="noopener">open the site config editor</a>
+              for <code>${this._org}/${this._site}</code>.
+              <code>library</code> and <code>apps</code> <strong>must</strong>
+              live here — DA doesn't inherit them from org config. Workflow
+              tabs (<code>publish-workflow-config</code>,
+              <code>publish-workflow-settings</code>,
+              <code>publish-workflow-groups-to-email</code>) added here apply
+              only to this site.
             </li>
             <li>
-              <strong>All sites under the org</strong> —
-              <a href="${orgConfigUrl}" target="_blank" rel="noopener">open the org config editor</a>.
-              Rows you add here apply to every site under
-              <code>${this._org}</code>, unless a site overrides the same tab
-              at site level (site-level config takes precedence).
+              <strong>Org config</strong> —
+              <a href="${orgConfigUrl}" target="_blank" rel="noopener">open the org config editor</a>
+              for <code>${this._org}</code>. Only the workflow tabs are
+              inherited from org config; rows added here apply to every site
+              under the org unless a site overrides the same tab. Site-level
+              workflow config takes precedence over org-level.
             </li>
           </ul>
           <p class="review-card-body">

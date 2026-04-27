@@ -977,6 +977,20 @@ function inspectAtBothLevels(siteConfig, orgConfig, inspectAt) {
 }
 
 /**
+ * Site-only variant for tabs that DA does not inherit from org config
+ * (`library` and `apps`). DA's per-site Library/Apps surfaces only read
+ * from the site-level config sheet, so org-level rows have no effect for
+ * these tabs even though the API would happily return them.
+ * @param {Object|null} siteConfig
+ * @param {(c: Object|null) => 'ok'|'missing'} inspectAt
+ * @returns {{state: 'ok'|'missing', source: 'site'|null}}
+ */
+function inspectAtSiteOnly(siteConfig, inspectAt) {
+  if (inspectAt(siteConfig) === 'ok') return { state: 'ok', source: 'site' };
+  return { state: 'missing', source: null };
+}
+
+/**
  * Inspect the optional `publish-workflow-settings` tab. Distinguishes:
  *  - 'configured': tab exists with at least one row
  *  - 'empty':      tab exists but has no rows (likely an authoring mistake)
@@ -1051,22 +1065,24 @@ function inspectGroupsToEmail(siteConfig, orgConfig) {
  * for the Request Publish workflow. Mirrors the setup steps in
  * https://docs.da.live/about/early-access/request-publish (Step 2).
  *
- * Reads site-level config first and falls back per-tab to the org-level
- * config — matching the documented "site-first, org fallback" behavior at
- * the per-tab granularity. The site/org configs themselves are returned
- * alongside the status so the inbox app can derive other settings (e.g.
- * accent colors via `extractAccentSettings`) without re-fetching.
+ * Scope rules:
+ *  - `publish-workflow-*` tabs (config / settings / groups-to-email) are
+ *    inherited from org config when not present at site level. Provenance
+ *    is reported as `'site'` or `'org'`.
+ *  - `library` and `apps` are site-only: DA does not inherit them from org
+ *    config, so we never look at orgConfig for these. Provenance is always
+ *    `'site'` (when configured) or `null` (when missing).
+ *
+ * The site/org configs themselves are returned alongside the status so the
+ * inbox app can derive other settings (e.g. accent colors via
+ * `extractAccentSettings`) without re-fetching.
  *
  * Status values per tab:
- *  - workflowConfig:   { state: 'ok'|'missing',                source }
- *  - library:          { state: 'ok'|'missing',                source }
- *  - apps:             { state: 'ok'|'missing',                source }
+ *  - workflowConfig:   { state: 'ok'|'missing',                 source }
+ *  - library:          { state: 'ok'|'missing',                 source }
+ *  - apps:             { state: 'ok'|'missing',                 source }
  *  - workflowSettings: { state: 'configured'|'empty'|'default', source }
- *  - groupsToEmail:    { state: 'ok'|'missing'|'not-needed',   source }
- *
- * Only `workflowConfig.state === 'missing'` is treated as a hard onboarding
- * block by the inbox app — the rest are surfaced for transparency in the
- * Setup status panel.
+ *  - groupsToEmail:    { state: 'ok'|'missing'|'not-needed',    source }
  *
  * @param {string} org
  * @param {string} site
@@ -1083,8 +1099,9 @@ export async function checkDaConfiguration(org, site, token) {
 
   const status = {
     workflowConfig: inspectAtBothLevels(siteConfig, orgConfig, inspectWorkflowConfigAt),
-    library: inspectAtBothLevels(siteConfig, orgConfig, inspectLibraryAt),
-    apps: inspectAtBothLevels(siteConfig, orgConfig, inspectAppsAt),
+    // library + apps are site-only; DA does not inherit them from org config.
+    library: inspectAtSiteOnly(siteConfig, inspectLibraryAt),
+    apps: inspectAtSiteOnly(siteConfig, inspectAppsAt),
     workflowSettings: inspectWorkflowSettings(siteConfig, orgConfig),
     groupsToEmail: inspectGroupsToEmail(siteConfig, orgConfig),
   };
