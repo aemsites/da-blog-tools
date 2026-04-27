@@ -13,6 +13,14 @@
     // Import DA SDK to get org/repo context and auth
     import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
+    // IMPORTANT: Set Nexter config with IMS Client ID before loading media-library
+    // This is normally done by nexter.js in the app context
+    window.c = {
+      imsClientId: 'da-web',
+      env: 'prod',
+      nxBase: 'https://da.live/nx'
+    };
+
     // Load bundled media-library plugin (includes Lit + all dependencies)
     import './media-library-plugin.js';
 
