@@ -112,7 +112,6 @@ class PublishRequestsApp extends LitElement {
     // DA configuration check (Step 2 of onboarding)
     _daConfig: { state: true },
     _daConfigRechecking: { state: true },
-    _setupPanelOpen: { state: true },
   };
 
   constructor() {
@@ -142,7 +141,6 @@ class PublishRequestsApp extends LitElement {
     this._availableProviders = [];
     this._daConfig = null;
     this._daConfigRechecking = false;
-    this._setupPanelOpen = false;
   }
 
   connectedCallback() {
@@ -199,23 +197,30 @@ class PublishRequestsApp extends LitElement {
 
   /**
    * Step 2 of onboarding: verify the DA-side configuration is in place for
-   * this org/site (publish-workflow-config required, library/apps tabs
-   * informational). Returns true when the workflow can proceed, false when
+   * this org/site. Returns true when the workflow can proceed, false when
    * the caller should stop and let the `'config-missing'` view render.
+   *
+   * Three tabs gate the inbox because, in practice, all three are needed
+   * for any publish request to ever reach this inbox:
+   *  - publish-workflow-config: defines approver routing rules
+   *  - library: makes the request-publish plugin available in DA's sidebar
+   *    so authors can submit a request in the first place
+   *  - apps: registers the inbox app so DA can surface it
+   *
+   * Without any one of these, the inbox would render "No Pending Requests"
+   * indefinitely — which is misleading. We block on all three and surface
+   * the full status (including the optional tabs) on the setup screen.
    *
    * Called after the registration check passes so we never block on DA
    * config for a site that's also unregistered.
-   *
-   * Library/apps tab statuses are tracked in `_daConfig` and surfaced inside
-   * the `renderConfigMissing` view, but they do not block the inbox view on
-   * their own. Their absence only matters to the author-side plugin flow,
-   * not to the approver inbox we're loading here.
    */
   async checkDaConfig(org, site) {
     const result = await checkDaConfiguration(org, site, this.token);
     this._daConfig = result;
 
-    if (result.status.workflowConfig.state === 'missing') {
+    const required = ['workflowConfig', 'library', 'apps'];
+    const blocked = required.some((key) => result.status[key]?.state === 'missing');
+    if (blocked) {
       this._state = 'config-missing';
       return false;
     }
@@ -425,9 +430,8 @@ class PublishRequestsApp extends LitElement {
   async handleSiteSelect(e) {
     if (e) e.preventDefault();
     this._message = null;
-    // Close the Setup panel and drop the previous site's DA config snapshot
-    // so the pill/panel don't briefly display stale state for the new site.
-    this._setupPanelOpen = false;
+    // Drop the previous site's DA config snapshot so a stale status doesn't
+    // briefly render while the new site's config is being fetched.
     this._daConfig = null;
 
     const input = this.shadowRoot.querySelector('#org-site');
@@ -896,14 +900,6 @@ class PublishRequestsApp extends LitElement {
         const daConfigOk = await this.checkDaConfig(this._org, this._site);
         if (!daConfigOk) return;
 
-        // Right after a successful registration is the highest-signal moment
-        // to nudge the user toward finishing optional setup. If anything needs
-        // attention, pop the Setup panel open so the orange dot doesn't get
-        // missed. Subsequent visits don't auto-open — the pill is enough.
-        if (this.setupHealth === 'attention') {
-          this._setupPanelOpen = true;
-        }
-
         await this.loadSiteSettings(this._org, this._site);
         if (this._requester) {
           await this.initMyRequests();
@@ -940,42 +936,32 @@ class PublishRequestsApp extends LitElement {
     const isRequesterMode = !!this._requester;
     const title = isRequesterMode ? 'My Publish Requests' : 'Publish Request Inbox';
     const primaryLabel = isRequesterMode ? 'View my requests' : 'View publish requests';
-    // When optional setup is incomplete, hide the site-select row so the user
-    // is funnelled to the Setup panel instead of being able to dive into the
-    // (not-yet-fully-functional) inbox. Only hides once we actually know the
-    // status; `unknown` keeps the toolbar visible to avoid a flicker.
-    const hideSiteSelect = this.setupHealth === 'attention';
 
     return html`
       <div class="site-select-container">
         <header class="site-select-header">
           <h1 class="site-select-title">${title}</h1>
-          ${this.renderSetupPill()}
         </header>
 
-        ${hideSiteSelect ? nothing : html`
-          <div class="site-select-toolbar">
-            <div class="site-select-field site-select-field--grow">
-              <sl-input
-                type="text"
-                id="org-site"
-                placeholder="/org/site"
-                autocomplete="off"
-                aria-label="Organization and site, format org slash site"
-                .value=${this._orgSiteValue}
-                @keydown=${(e) => { if (e.key === 'Enter') this.handleSiteSelect(); }}
-              ></sl-input>
-            </div>
-            <sl-button
-              class="pw-fill-accent site-select-submit"
-              @click=${() => this.handleSiteSelect()}
-            >
-              ${this._siteSelectLoading ? 'Loading...' : primaryLabel}
-            </sl-button>
+        <div class="site-select-toolbar">
+          <div class="site-select-field site-select-field--grow">
+            <sl-input
+              type="text"
+              id="org-site"
+              placeholder="/org/site"
+              autocomplete="off"
+              aria-label="Organization and site, format org slash site"
+              .value=${this._orgSiteValue}
+              @keydown=${(e) => { if (e.key === 'Enter') this.handleSiteSelect(); }}
+            ></sl-input>
           </div>
-        `}
-
-        ${this.renderSetupPanel()}
+          <sl-button
+            class="pw-fill-accent site-select-submit"
+            @click=${() => this.handleSiteSelect()}
+          >
+            ${this._siteSelectLoading ? 'Loading...' : primaryLabel}
+          </sl-button>
+        </div>
       </div>
     `;
   }
@@ -1156,23 +1142,18 @@ class PublishRequestsApp extends LitElement {
   // ======== Config missing (DA setup) render ========
 
   /**
-   * Re-run the DA configuration check without reloading the page.
-   *
-   * Two contexts call this:
-   *  - From the `config-missing` blocking page: if the required tab is now
-   *    in place, fall through to the normal post-check flow (load settings
-   *    → inbox or my-requests).
-   *  - From the toolbar Setup panel: the user is already in the inbox/
-   *    my-requests view. Just re-fetch and let the panel re-render — no
-   *    need to reload settings or re-fetch pending requests.
+   * Re-run the DA configuration check from the `config-missing` setup
+   * screen. If everything required is now in place, fall through to the
+   * normal post-check flow (load settings → inbox or my-requests). Otherwise
+   * `checkDaConfig` will leave us in `'config-missing'` with a refreshed
+   * status list.
    */
   async handleRecheckConfig() {
     if (this._daConfigRechecking) return;
-    const cameFromBlockingPage = this._state === 'config-missing';
     this._daConfigRechecking = true;
     try {
       const ok = await this.checkDaConfig(this._org, this._site);
-      if (!ok || !cameFromBlockingPage) return;
+      if (!ok) return;
 
       this._state = 'loading';
       await this.loadSiteSettings(this._org, this._site);
@@ -1249,8 +1230,8 @@ class PublishRequestsApp extends LitElement {
     return html`
       <ul class="config-status-list">
         ${this.renderConfigStatusRow('publish-workflow-config (required)', status.workflowConfig)}
-        ${this.renderConfigStatusRow('library — Request Publish plugin', status.library)}
-        ${this.renderConfigStatusRow('apps — Publish Requests Inbox', status.apps)}
+        ${this.renderConfigStatusRow('library — Request Publish plugin (required)', status.library)}
+        ${this.renderConfigStatusRow('apps — Publish Requests Inbox (required)', status.apps)}
         ${this.renderConfigStatusRow('publish-workflow-settings (optional)', status.workflowSettings)}
         ${this.renderConfigStatusRow('publish-workflow-groups-to-email (optional)', status.groupsToEmail)}
       </ul>
@@ -1268,9 +1249,13 @@ class PublishRequestsApp extends LitElement {
           </div>
           <h2 class="register-heading">DA Configuration Required</h2>
           <p class="register-body">
-            <strong>${this._org}/${this._site}</strong> is registered, but the
-            DA-side setup for the Request Publish workflow isn't complete yet.
-            Finish the steps below in your DA config sheet, then re-check.
+            This site is registered, but the DA-side setup for the Request
+            Publish workflow isn't complete yet. Finish the required steps
+            below in your DA config sheet, then re-check.
+          </p>
+          <p class="register-site-chip" aria-label="Configuring">
+            <span class="register-site-chip-label">Site</span>
+            <code>${this._org}/${this._site}</code>
           </p>
         </div>
 
@@ -1282,8 +1267,9 @@ class PublishRequestsApp extends LitElement {
             See the
             <a href="${REQUEST_PUBLISH_DOCS_URL}" target="_blank" rel="noopener">Request Publish setup guide</a>
             for the exact rows to add to each tab. The
-            <code>publish-workflow-config</code> tab is required — without it
-            the workflow has no approver rules to route requests through.
+            <code>publish-workflow-config</code>, <code>library</code>, and
+            <code>apps</code> tabs are all required — without them, no publish
+            requests can reach this inbox.
           </p>
           <div class="register-form-actions">
             <sl-button
@@ -1296,77 +1282,6 @@ class PublishRequestsApp extends LitElement {
           </div>
         </section>
       </div>
-    `;
-  }
-
-  /**
-   * Overall health for the toolbar Setup pill: 'ok' when nothing is in a
-   * 'missing' or 'empty' state, 'attention' otherwise. Required tabs being
-   * missing never reaches this code path (we'd be in 'config-missing'), so
-   * 'attention' here always means an optional tab needs attention.
-   */
-  get setupHealth() {
-    const status = this._daConfig?.status;
-    if (!status) return 'unknown';
-    const offenders = ['workflowConfig', 'library', 'apps', 'workflowSettings', 'groupsToEmail']
-      .map((k) => status[k]?.state)
-      .filter((s) => s === 'missing' || s === 'empty');
-    return offenders.length > 0 ? 'attention' : 'ok';
-  }
-
-  renderSetupPill() {
-    if (!this._daConfig) return nothing;
-    const health = this.setupHealth;
-    const dotClass = `setup-pill-dot setup-pill-dot--${health}`;
-    return html`
-      <button
-        type="button"
-        class="setup-pill"
-        aria-expanded=${this._setupPanelOpen ? 'true' : 'false'}
-        aria-label="Toggle setup status panel"
-        @click=${() => { this._setupPanelOpen = !this._setupPanelOpen; }}
-      >
-        <span class="${dotClass}" aria-hidden="true"></span>
-        <span>Setup</span>
-        <svg class="setup-pill-chevron" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M7 10l5 5 5-5z" fill="currentColor"/>
-        </svg>
-      </button>
-    `;
-  }
-
-  renderSetupPanel() {
-    if (!this._setupPanelOpen || !this._daConfig) return nothing;
-    const fetchError = this._daConfig.error;
-    return html`
-      <section class="setup-panel" role="region" aria-label="DA configuration status">
-        <div class="setup-panel-header">
-          <h3 class="setup-panel-title">DA configuration status</h3>
-          <button
-            type="button"
-            class="setup-panel-close"
-            aria-label="Close setup status panel"
-            @click=${() => { this._setupPanelOpen = false; }}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12Z" fill="currentColor"/></svg>
-          </button>
-        </div>
-        ${fetchError ? html`<p class="setup-panel-error">${fetchError}</p>` : nothing}
-        ${this.renderSetupRows()}
-        <p class="setup-panel-footer">
-          See the
-          <a href="${REQUEST_PUBLISH_DOCS_URL}" target="_blank" rel="noopener">Request Publish setup guide</a>
-          for the exact rows to add to each tab.
-          <button
-            type="button"
-            class="setup-panel-recheck"
-            @click=${() => this.handleRecheckConfig()}
-            ?disabled=${this._daConfigRechecking}
-          >
-            ${this._daConfigRechecking ? 'Re-checking…' : 'Re-check'}
-          </button>
-        </p>
-      </section>
     `;
   }
 
