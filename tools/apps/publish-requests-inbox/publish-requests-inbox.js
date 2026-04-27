@@ -1240,6 +1240,8 @@ class PublishRequestsApp extends LitElement {
 
   renderConfigMissing() {
     const fetchError = this._daConfig?.error;
+    const siteConfigUrl = `https://da.live/config/#/${this._org}/${this._site}/`;
+    const orgConfigUrl = `https://da.live/config/#/${this._org}/`;
 
     return html`
       <div class="register-container">
@@ -1266,8 +1268,12 @@ class PublishRequestsApp extends LitElement {
           <p class="review-card-body">
             See the
             <a href="${REQUEST_PUBLISH_DOCS_URL}" target="_blank" rel="noopener">Request Publish setup guide</a>
-            for the exact rows to add to each tab. The
-            <code>publish-workflow-config</code>, <code>library</code>, and
+            for the exact rows to add to each tab, then open the DA config
+            editor for
+            <a href="${siteConfigUrl}" target="_blank" rel="noopener">this site</a>
+            or
+            <a href="${orgConfigUrl}" target="_blank" rel="noopener">the org</a>.
+            The <code>publish-workflow-config</code>, <code>library</code>, and
             <code>apps</code> tabs are all required — without them, no publish
             requests can reach this inbox.
           </p>
