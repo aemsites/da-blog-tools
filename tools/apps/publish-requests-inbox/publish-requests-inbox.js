@@ -1240,8 +1240,8 @@ class PublishRequestsApp extends LitElement {
 
   renderConfigMissing() {
     const fetchError = this._daConfig?.error;
-    const siteConfigUrl = `https://da.live/config/#/${this._org}/${this._site}/`;
-    const orgConfigUrl = `https://da.live/config/#/${this._org}/`;
+    const siteConfigUrl = `https://da.live/config#/${this._org}/${this._site}/`;
+    const orgConfigUrl = `https://da.live/config#/${this._org}/`;
 
     return html`
       <div class="register-container">
