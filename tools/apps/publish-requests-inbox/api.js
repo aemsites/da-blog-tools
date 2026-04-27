@@ -151,6 +151,43 @@ function resolveApproversWithGroups(approversList, groupsData) {
 }
 
 /**
+ * Fetch site-level and org-level DA configs in parallel. This is the single
+ * source of truth for hitting `admin.da.live/config/...` from this module —
+ * higher-level helpers (`checkDaConfiguration`, `extractAccentSettings`,
+ * `fetchWorkflowConfig`) all derive from the configs returned here so the
+ * inbox app pays for at most two GETs at boot regardless of how many
+ * downstream questions it asks of the config.
+ *
+ * Network failures and non-200 responses become `null` for that level so
+ * callers can continue with the level that did return.
+ *
+ * @param {string} org - Organization
+ * @param {string} site - Site
+ * @param {string} token - Authorization token
+ * @returns {Promise<{siteConfig: Object|null, orgConfig: Object|null}>}
+ */
+async function fetchSiteAndOrgConfig(org, site, token) {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/json',
+  };
+  const fetchOne = async (url) => {
+    try {
+      const resp = await fetch(url, { headers });
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch {
+      return null;
+    }
+  };
+  const [siteConfig, orgConfig] = await Promise.all([
+    fetchOne(`${DA_ADMIN}/config/${org}/${site}/`),
+    fetchOne(`${DA_ADMIN}/config/${org}/`),
+  ]);
+  return { siteConfig, orgConfig };
+}
+
+/**
  * Fetch the workflow config via the DA Config API.
  * Tries site-level first: GET /config/{org}/{site}/publish-workflow-config
  * Falls back to org-level: GET /config/{org}/publish-workflow-config
@@ -161,31 +198,9 @@ function resolveApproversWithGroups(approversList, groupsData) {
  * @returns {Promise<Object|null>} Config data or null on failure
  */
 async function fetchWorkflowConfig(org, site, token) {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/json',
-  };
-
-  // 1. Try site-level root config
-  const siteUrl = `${DA_ADMIN}/config/${org}/${site}/`;
-  const siteResp = await fetch(siteUrl, { headers });
-  if (siteResp.ok) {
-    const config = await siteResp.json();
-    if (config['publish-workflow-config']) {
-      return config;
-    }
-  }
-
-  // 2. Fallback to org-level root config
-  const orgUrl = `${DA_ADMIN}/config/${org}/`;
-  const orgResp = await fetch(orgUrl, { headers });
-  if (orgResp.ok) {
-    const config = await orgResp.json();
-    if (config['publish-workflow-config']) {
-      return config;
-    }
-  }
-
+  const { siteConfig, orgConfig } = await fetchSiteAndOrgConfig(org, site, token);
+  if (siteConfig?.['publish-workflow-config']) return siteConfig;
+  if (orgConfig?.['publish-workflow-config']) return orgConfig;
   return null;
 }
 
@@ -237,6 +252,30 @@ export function getLiveHostFromConfig(org, site, config) {
  */
 export async function fetchAccentSettings(org, site, token) {
   const config = await fetchWorkflowConfig(org, site, token);
+  if (!config) return { accentColor: null, accentColorHover: null };
+  return {
+    accentColor: extractSetting(config, 'theme.accent-color'),
+    accentColorHover: extractSetting(config, 'theme.accent-color-hover'),
+  };
+}
+
+/**
+ * Synchronous accent-color extractor for callers that already have the DA
+ * configs in hand (e.g. the inbox app's `_daConfig` cache). Avoids a second
+ * round trip to `admin.da.live` on app boot when the config has already
+ * been fetched for the Step 2 setup check.
+ *
+ * Mirrors the precedence in `fetchWorkflowConfig`: prefer settings from
+ * whichever config has the `publish-workflow-settings` tab, site first.
+ *
+ * @param {Object|null} siteConfig - Site-level DA config (or null)
+ * @param {Object|null} orgConfig - Org-level DA config (or null)
+ * @returns {{accentColor: string|null, accentColorHover: string|null}}
+ */
+export function extractAccentSettings(siteConfig, orgConfig) {
+  let config = null;
+  if (siteConfig?.['publish-workflow-settings']) config = siteConfig;
+  else if (orgConfig?.['publish-workflow-settings']) config = orgConfig;
   if (!config) return { accentColor: null, accentColorHover: null };
   return {
     accentColor: extractSetting(config, 'theme.accent-color'),
@@ -893,15 +932,11 @@ export async function checkSiteRegistration(org, site, token) {
   }
 }
 
-/**
- * Inspect a DA config object for the `library` tab and report whether a row
- * pointing at the Request Publish plugin is present. Path matching is a
- * case-insensitive suffix match on the canonical plugin location, which
- * keeps the check robust across forks (org/repo) of da-blog-tools.
- * @param {Object} config - DA config object
- * @returns {'ok'|'missing'} status of the library tab plugin entry
- */
-function inspectLibraryTab(config) {
+// Per-tab inspectors. Each returns 'ok' or 'missing' for a single config
+// object — provenance promotion (site-level vs. org-level) is layered on
+// top by `inspectAtBothLevels` below.
+
+function inspectLibraryAt(config) {
   const rows = config?.library?.data;
   if (!Array.isArray(rows)) return 'missing';
   const needle = '/tools/plugins/request-for-publish/request-for-publish.html';
@@ -912,14 +947,7 @@ function inspectLibraryTab(config) {
   return hasRow ? 'ok' : 'missing';
 }
 
-/**
- * Inspect a DA config object for the `apps` tab and report whether a row
- * pointing at the Publish Requests Inbox app is present. Uses a suffix match
- * on the canonical app path so the check works across forks.
- * @param {Object} config - DA config object
- * @returns {'ok'|'missing'} status of the apps tab inbox entry
- */
-function inspectAppsTab(config) {
+function inspectAppsAt(config) {
   const rows = config?.apps?.data;
   if (!Array.isArray(rows)) return 'missing';
   const needle = '/tools/apps/publish-requests-inbox/publish-requests-inbox';
@@ -930,16 +958,94 @@ function inspectAppsTab(config) {
   return hasRow ? 'ok' : 'missing';
 }
 
-/**
- * Inspect a DA config object for the `publish-workflow-config` tab and
- * report whether at least one approver rule row is present.
- * @param {Object} config - DA config object
- * @returns {'ok'|'missing'} status of the workflow config tab
- */
-function inspectWorkflowConfigTab(config) {
+function inspectWorkflowConfigAt(config) {
   const rows = config?.['publish-workflow-config']?.data;
   if (!Array.isArray(rows) || rows.length === 0) return 'missing';
   return 'ok';
+}
+
+/**
+ * Promote a single-config inspector to a (site, org) pair, returning a
+ * status object with provenance. Site wins when both have it.
+ * @param {Object|null} siteConfig
+ * @param {Object|null} orgConfig
+ * @param {(c: Object|null) => 'ok'|'missing'} inspectAt
+ * @returns {{state: 'ok'|'missing', source: 'site'|'org'|null}}
+ */
+function inspectAtBothLevels(siteConfig, orgConfig, inspectAt) {
+  if (inspectAt(siteConfig) === 'ok') return { state: 'ok', source: 'site' };
+  if (inspectAt(orgConfig) === 'ok') return { state: 'ok', source: 'org' };
+  return { state: 'missing', source: null };
+}
+
+/**
+ * Inspect the optional `publish-workflow-settings` tab. Distinguishes:
+ *  - 'configured': tab exists with at least one row
+ *  - 'empty':      tab exists but has no rows (likely an authoring mistake)
+ *  - 'default':    tab is absent — workflow runs with documented defaults
+ *
+ * @returns {{state: 'configured'|'empty'|'default', source: 'site'|'org'|null}}
+ */
+function inspectWorkflowSettings(siteConfig, orgConfig) {
+  const inspect = (config) => {
+    const rows = config?.['publish-workflow-settings']?.data;
+    if (!Array.isArray(rows)) return null;
+    return rows.length > 0 ? 'configured' : 'empty';
+  };
+  const siteState = inspect(siteConfig);
+  if (siteState) return { state: siteState, source: 'site' };
+  const orgState = inspect(orgConfig);
+  if (orgState) return { state: orgState, source: 'org' };
+  return { state: 'default', source: null };
+}
+
+/**
+ * Detect whether `publish-workflow-config` rows reference any distribution
+ * list (DL) names. A non-email entry in approvers/CC means a DL — which in
+ * turn means `publish-workflow-groups-to-email` must exist for the workflow
+ * to resolve recipients. If everything is plain emails, that tab is
+ * genuinely unnecessary.
+ *
+ * @param {Array} rows - publish-workflow-config rows
+ * @returns {boolean}
+ */
+function workflowConfigUsesDistributionLists(rows) {
+  if (!Array.isArray(rows)) return false;
+  for (const row of rows) {
+    const approvers = (row.approvers || row.Approvers || '').split(',');
+    const cc = (row.cc || row.CC || '').split(',');
+    for (const entry of [...approvers, ...cc]) {
+      const trimmed = entry.trim();
+      if (trimmed && !trimmed.includes('@')) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Inspect the optional `publish-workflow-groups-to-email` tab. Smart about
+ * whether it's actually needed for this site's workflow rules:
+ *  - 'ok':         tab is present and populated
+ *  - 'missing':    workflow rules use DL names but the tab is absent/empty
+ *  - 'not-needed': workflow rules use only plain email addresses, so no
+ *                  DL→email mapping is required
+ *
+ * @returns {{state: 'ok'|'missing'|'not-needed', source: 'site'|'org'|null}}
+ */
+function inspectGroupsToEmail(siteConfig, orgConfig) {
+  const wfRows = siteConfig?.['publish-workflow-config']?.data
+    || orgConfig?.['publish-workflow-config']?.data
+    || [];
+  if (!workflowConfigUsesDistributionLists(wfRows)) {
+    return { state: 'not-needed', source: null };
+  }
+  const inspect = (config) => {
+    const rows = config?.['publish-workflow-groups-to-email']?.data;
+    return Array.isArray(rows) && rows.length > 0;
+  };
+  if (inspect(siteConfig)) return { state: 'ok', source: 'site' };
+  if (inspect(orgConfig)) return { state: 'ok', source: 'org' };
+  return { state: 'missing', source: null };
 }
 
 /**
@@ -947,65 +1053,56 @@ function inspectWorkflowConfigTab(config) {
  * for the Request Publish workflow. Mirrors the setup steps in
  * https://docs.da.live/about/early-access/request-publish (Step 2).
  *
- * Reads the site-level DA config first
- * (`GET https://admin.da.live/config/{org}/{site}/`) and merges any tabs
- * still missing from the org-level config (`/config/{org}/`). This matches
- * the documented "site-first, org fallback" behavior, but at the per-tab
- * level so a tab present at either level counts as configured.
+ * Reads site-level config first and falls back per-tab to the org-level
+ * config — matching the documented "site-first, org fallback" behavior at
+ * the per-tab granularity. The site/org configs themselves are returned
+ * alongside the status so the inbox app can derive other settings (e.g.
+ * accent colors via `extractAccentSettings`) without re-fetching.
  *
- * @param {string} org - Organization
- * @param {string} site - Site
- * @param {string} token - Authorization token
+ * Status values per tab:
+ *  - workflowConfig:   { state: 'ok'|'missing',                source }
+ *  - library:          { state: 'ok'|'missing',                source }
+ *  - apps:             { state: 'ok'|'missing',                source }
+ *  - workflowSettings: { state: 'configured'|'empty'|'default', source }
+ *  - groupsToEmail:    { state: 'ok'|'missing'|'not-needed',   source }
+ *
+ * Only `workflowConfig.state === 'missing'` is treated as a hard onboarding
+ * block by the inbox app — the rest are surfaced for transparency in the
+ * Setup status panel.
+ *
+ * @param {string} org
+ * @param {string} site
+ * @param {string} token
  * @returns {Promise<{
- *   workflowConfig: 'ok'|'missing',
- *   library: 'ok'|'missing',
- *   apps: 'ok'|'missing',
+ *   status: Object,
+ *   siteConfig: Object|null,
+ *   orgConfig: Object|null,
  *   error: string|null,
  * }>}
  */
 export async function checkDaConfiguration(org, site, token) {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/json',
-  };
+  const { siteConfig, orgConfig } = await fetchSiteAndOrgConfig(org, site, token);
 
-  const fetchConfig = async (url) => {
-    try {
-      const resp = await fetch(url, { headers });
-      if (!resp.ok) return null;
-      return await resp.json();
-    } catch {
-      return null;
-    }
-  };
-
-  const [siteConfig, orgConfig] = await Promise.all([
-    fetchConfig(`${DA_ADMIN}/config/${org}/${site}/`),
-    fetchConfig(`${DA_ADMIN}/config/${org}/`),
-  ]);
-
-  // Per-tab status: a tab is OK if present at site OR org level.
-  const promote = (siteStatus, orgStatus) => (
-    siteStatus === 'ok' || orgStatus === 'ok' ? 'ok' : 'missing'
-  );
-
-  const result = {
-    workflowConfig: promote(
-      inspectWorkflowConfigTab(siteConfig),
-      inspectWorkflowConfigTab(orgConfig),
-    ),
-    library: promote(inspectLibraryTab(siteConfig), inspectLibraryTab(orgConfig)),
-    apps: promote(inspectAppsTab(siteConfig), inspectAppsTab(orgConfig)),
-    error: null,
+  const status = {
+    workflowConfig: inspectAtBothLevels(siteConfig, orgConfig, inspectWorkflowConfigAt),
+    library: inspectAtBothLevels(siteConfig, orgConfig, inspectLibraryAt),
+    apps: inspectAtBothLevels(siteConfig, orgConfig, inspectAppsAt),
+    workflowSettings: inspectWorkflowSettings(siteConfig, orgConfig),
+    groupsToEmail: inspectGroupsToEmail(siteConfig, orgConfig),
   };
 
   // If neither config request returned anything, surface that distinct error
   // — most often a permissions issue on the DA config sheet.
-  if (!siteConfig && !orgConfig) {
-    result.error = 'Could not read DA configuration. You may not have access to the config sheet for this site.';
-  }
+  const error = !siteConfig && !orgConfig
+    ? 'Could not read DA configuration. You may not have access to the config sheet for this site.'
+    : null;
 
-  return result;
+  return {
+    status,
+    siteConfig,
+    orgConfig,
+    error,
+  };
 }
 
 /**

@@ -18,7 +18,7 @@ import {
   resendPublishRequest,
   fetchSiteConfig,
   getLiveHostFromConfig,
-  fetchAccentSettings,
+  extractAccentSettings,
   checkSiteExists,
   checkSiteRegistration,
   checkDaConfiguration,
@@ -112,6 +112,7 @@ class PublishRequestsApp extends LitElement {
     // DA configuration check (Step 2 of onboarding)
     _daConfig: { state: true },
     _daConfigRechecking: { state: true },
+    _setupPanelOpen: { state: true },
   };
 
   constructor() {
@@ -141,6 +142,7 @@ class PublishRequestsApp extends LitElement {
     this._availableProviders = [];
     this._daConfig = null;
     this._daConfigRechecking = false;
+    this._setupPanelOpen = false;
   }
 
   connectedCallback() {
@@ -210,10 +212,10 @@ class PublishRequestsApp extends LitElement {
    * not to the approver inbox we're loading here.
    */
   async checkDaConfig(org, site) {
-    const status = await checkDaConfiguration(org, site, this.token);
-    this._daConfig = status;
+    const result = await checkDaConfiguration(org, site, this.token);
+    this._daConfig = result;
 
-    if (status.workflowConfig === 'missing') {
+    if (result.status.workflowConfig.state === 'missing') {
       this._state = 'config-missing';
       return false;
     }
@@ -221,18 +223,27 @@ class PublishRequestsApp extends LitElement {
     return true;
   }
 
+  /**
+   * Load post-onboarding site settings: live host (from admin.hlx.page) and
+   * the customer's accent color overrides.
+   *
+   * Reuses the DA configs already fetched by `checkDaConfig` (cached on
+   * `_daConfig`) to derive accent settings without a second round trip to
+   * `admin.da.live`. For paths that don't go through `checkDaConfig` first
+   * we'd fall back to fetching, but in practice all callsites do.
+   */
   async loadSiteSettings(org, site) {
     try {
-      const [siteConfig, accentSettings] = await Promise.all([
-        fetchSiteConfig(org, site),
-        fetchAccentSettings(org, site, this.token),
-      ]);
-      this._liveHost = getLiveHostFromConfig(org, site, siteConfig);
-      if (accentSettings.accentColor) {
-        this.style.setProperty('--pw-accent', accentSettings.accentColor);
+      const hlxConfig = await fetchSiteConfig(org, site);
+      this._liveHost = getLiveHostFromConfig(org, site, hlxConfig);
+
+      const { siteConfig, orgConfig } = this._daConfig || {};
+      const accent = extractAccentSettings(siteConfig, orgConfig);
+      if (accent.accentColor) {
+        this.style.setProperty('--pw-accent', accent.accentColor);
       }
-      if (accentSettings.accentColorHover) {
-        this.style.setProperty('--pw-accent-hover', accentSettings.accentColorHover);
+      if (accent.accentColorHover) {
+        this.style.setProperty('--pw-accent-hover', accent.accentColorHover);
       }
     } catch {
       this._liveHost = null;
@@ -414,6 +425,10 @@ class PublishRequestsApp extends LitElement {
   async handleSiteSelect(e) {
     if (e) e.preventDefault();
     this._message = null;
+    // Close the Setup panel and drop the previous site's DA config snapshot
+    // so the pill/panel don't briefly display stale state for the new site.
+    this._setupPanelOpen = false;
+    this._daConfig = null;
 
     const input = this.shadowRoot.querySelector('#org-site');
     const orgSite = (input?.value ?? '').trim();
@@ -922,6 +937,7 @@ class PublishRequestsApp extends LitElement {
       <div class="site-select-container">
         <header class="site-select-header">
           <h1 class="site-select-title">${title}</h1>
+          ${this.renderSetupPill()}
         </header>
 
         <div class="site-select-toolbar">
@@ -943,6 +959,8 @@ class PublishRequestsApp extends LitElement {
             ${this._siteSelectLoading ? 'Loading...' : primaryLabel}
           </sl-button>
         </div>
+
+        ${this.renderSetupPanel()}
       </div>
     `;
   }
@@ -1123,16 +1141,23 @@ class PublishRequestsApp extends LitElement {
   // ======== Config missing (DA setup) render ========
 
   /**
-   * Re-run the DA configuration check without reloading the page. If the
-   * required tab is now in place, fall through to the normal post-check
-   * flow (load settings → inbox or my-requests).
+   * Re-run the DA configuration check without reloading the page.
+   *
+   * Two contexts call this:
+   *  - From the `config-missing` blocking page: if the required tab is now
+   *    in place, fall through to the normal post-check flow (load settings
+   *    → inbox or my-requests).
+   *  - From the toolbar Setup panel: the user is already in the inbox/
+   *    my-requests view. Just re-fetch and let the panel re-render — no
+   *    need to reload settings or re-fetch pending requests.
    */
   async handleRecheckConfig() {
     if (this._daConfigRechecking) return;
+    const cameFromBlockingPage = this._state === 'config-missing';
     this._daConfigRechecking = true;
     try {
       const ok = await this.checkDaConfig(this._org, this._site);
-      if (!ok) return;
+      if (!ok || !cameFromBlockingPage) return;
 
       this._state = 'loading';
       await this.loadSiteSettings(this._org, this._site);
@@ -1146,25 +1171,76 @@ class PublishRequestsApp extends LitElement {
     }
   }
 
+  /**
+   * Map a per-tab status object to the visual treatment used in the row.
+   * Centralizing the (state → icon variant + text + tone) mapping keeps the
+   * blocking config-missing page and the toolbar Setup panel in sync.
+   *
+   * @param {{state: string, source: 'site'|'org'|null}} status
+   * @returns {{variant: 'ok'|'missing'|'neutral', label: string}}
+   */
+  // eslint-disable-next-line class-methods-use-this
+  describeStatus(status) {
+    let sourceSuffix = '';
+    if (status?.source === 'site') sourceSuffix = ' (site-level)';
+    else if (status?.source === 'org') sourceSuffix = ' (org-level)';
+    switch (status?.state) {
+      case 'ok':
+      case 'configured':
+        return { variant: 'ok', label: `Configured${sourceSuffix}` };
+      case 'default':
+        return { variant: 'neutral', label: 'Using documented defaults' };
+      case 'not-needed':
+        return { variant: 'neutral', label: 'Not needed for this site' };
+      case 'empty':
+        return { variant: 'missing', label: `Tab present but empty${sourceSuffix}` };
+      case 'missing':
+      default:
+        return { variant: 'missing', label: 'Not configured' };
+    }
+  }
+
   renderConfigStatusRow(label, status) {
-    const ok = status === 'ok';
-    const iconClass = ok ? 'config-status-icon--ok' : 'config-status-icon--missing';
-    const text = ok ? 'Configured' : 'Not configured';
-    const icon = ok
-      ? html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41Z" fill="currentColor"/></svg>`
-      : html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12Z" fill="currentColor"/></svg>`;
+    const { variant, label: statusLabel } = this.describeStatus(status);
+    const iconClass = `config-status-icon--${variant}`;
+    let icon;
+    if (variant === 'ok') {
+      icon = html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41Z" fill="currentColor"/></svg>`;
+    } else if (variant === 'missing') {
+      icon = html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12Z" fill="currentColor"/></svg>`;
+    } else {
+      icon = html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 11h14v2H5z" fill="currentColor"/></svg>`;
+    }
     return html`
       <li class="config-status-row">
         <span class="config-status-icon ${iconClass}" aria-hidden="true">${icon}</span>
         <span class="config-status-label">${label}</span>
-        <span class="config-status-text">${text}</span>
+        <span class="config-status-text">${statusLabel}</span>
       </li>
     `;
   }
 
+  /**
+   * Render the full 5-tab setup status list. Shared between the
+   * `config-missing` blocking page and the toolbar Setup panel so the two
+   * surfaces never drift.
+   */
+  renderSetupRows() {
+    const status = this._daConfig?.status;
+    if (!status) return nothing;
+    return html`
+      <ul class="config-status-list">
+        ${this.renderConfigStatusRow('publish-workflow-config (required)', status.workflowConfig)}
+        ${this.renderConfigStatusRow('library — Request Publish plugin', status.library)}
+        ${this.renderConfigStatusRow('apps — Publish Requests Inbox', status.apps)}
+        ${this.renderConfigStatusRow('publish-workflow-settings (optional)', status.workflowSettings)}
+        ${this.renderConfigStatusRow('publish-workflow-groups-to-email (optional)', status.groupsToEmail)}
+      </ul>
+    `;
+  }
+
   renderConfigMissing() {
-    const status = this._daConfig || { workflowConfig: 'missing', library: 'missing', apps: 'missing' };
-    const fetchError = status.error;
+    const fetchError = this._daConfig?.error;
 
     return html`
       <div class="register-container">
@@ -1183,19 +1259,13 @@ class PublishRequestsApp extends LitElement {
         <section class="review-card">
           <h3 class="review-card-title">Configuration status</h3>
           ${fetchError ? html`<p class="review-card-body">${fetchError}</p>` : nothing}
-          <ul class="config-status-list">
-            ${this.renderConfigStatusRow('publish-workflow-config tab (required)', status.workflowConfig)}
-            ${this.renderConfigStatusRow('library tab — Request Publish plugin', status.library)}
-            ${this.renderConfigStatusRow('apps tab — Publish Requests Inbox', status.apps)}
-          </ul>
+          ${this.renderSetupRows()}
           <p class="review-card-body">
             See the
             <a href="${REQUEST_PUBLISH_DOCS_URL}" target="_blank" rel="noopener">Request Publish setup guide</a>
             for the exact rows to add to each tab. The
             <code>publish-workflow-config</code> tab is required — without it
-            the workflow has no approver rules to route requests through. The
-            <code>library</code> and <code>apps</code> tabs are needed for
-            authors to discover the plugin and this app from DA.
+            the workflow has no approver rules to route requests through.
           </p>
           <div class="register-form-actions">
             <sl-button
@@ -1208,6 +1278,77 @@ class PublishRequestsApp extends LitElement {
           </div>
         </section>
       </div>
+    `;
+  }
+
+  /**
+   * Overall health for the toolbar Setup pill: 'ok' when nothing is in a
+   * 'missing' or 'empty' state, 'attention' otherwise. Required tabs being
+   * missing never reaches this code path (we'd be in 'config-missing'), so
+   * 'attention' here always means an optional tab needs attention.
+   */
+  get setupHealth() {
+    const status = this._daConfig?.status;
+    if (!status) return 'unknown';
+    const offenders = ['workflowConfig', 'library', 'apps', 'workflowSettings', 'groupsToEmail']
+      .map((k) => status[k]?.state)
+      .filter((s) => s === 'missing' || s === 'empty');
+    return offenders.length > 0 ? 'attention' : 'ok';
+  }
+
+  renderSetupPill() {
+    if (!this._daConfig) return nothing;
+    const health = this.setupHealth;
+    const dotClass = `setup-pill-dot setup-pill-dot--${health}`;
+    return html`
+      <button
+        type="button"
+        class="setup-pill"
+        aria-expanded=${this._setupPanelOpen ? 'true' : 'false'}
+        aria-label="Toggle setup status panel"
+        @click=${() => { this._setupPanelOpen = !this._setupPanelOpen; }}
+      >
+        <span class="${dotClass}" aria-hidden="true"></span>
+        <span>Setup</span>
+        <svg class="setup-pill-chevron" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 10l5 5 5-5z" fill="currentColor"/>
+        </svg>
+      </button>
+    `;
+  }
+
+  renderSetupPanel() {
+    if (!this._setupPanelOpen || !this._daConfig) return nothing;
+    const fetchError = this._daConfig.error;
+    return html`
+      <section class="setup-panel" role="region" aria-label="DA configuration status">
+        <div class="setup-panel-header">
+          <h3 class="setup-panel-title">DA configuration status</h3>
+          <button
+            type="button"
+            class="setup-panel-close"
+            aria-label="Close setup status panel"
+            @click=${() => { this._setupPanelOpen = false; }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12Z" fill="currentColor"/></svg>
+          </button>
+        </div>
+        ${fetchError ? html`<p class="setup-panel-error">${fetchError}</p>` : nothing}
+        ${this.renderSetupRows()}
+        <p class="setup-panel-footer">
+          See the
+          <a href="${REQUEST_PUBLISH_DOCS_URL}" target="_blank" rel="noopener">Request Publish setup guide</a>
+          for the exact rows to add to each tab.
+          <button
+            type="button"
+            class="setup-panel-recheck"
+            @click=${() => this.handleRecheckConfig()}
+            ?disabled=${this._daConfigRechecking}
+          >
+            ${this._daConfigRechecking ? 'Re-checking…' : 'Re-check'}
+          </button>
+        </p>
+      </section>
     `;
   }
 
