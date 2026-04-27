@@ -597,6 +597,33 @@ export async function checkExistingRequest(org, site, path, requesterEmail, toke
 }
 
 /**
+ * Check whether org/site is registered in the worker's KV store.
+ * GET /api/site-config?org={org}&site={site}
+ *
+ * The worker returns different shapes depending on registration status:
+ * - Registered: 200 with the site config object
+ * - Not registered: 200 with { error, availableProviders: string[] }
+ * - Legacy fallback: 404 for unregistered (older worker versions)
+ *
+ * @param {string} org - Organization
+ * @param {string} site - Site
+ * @param {string} token - Authorization token
+ * @returns {Promise<boolean>} true if registered, false otherwise
+ */
+export async function checkSiteRegistration(org, site, token) {
+  try {
+    const url = `${getWorkerUrl()}/api/site-config?org=${encodeURIComponent(org)}&site=${encodeURIComponent(site)}`;
+    const resp = await fetch(url, getOpts(token, 'GET'));
+    let data;
+    try { data = await resp.json(); } catch { data = null; }
+    if (data?.availableProviders) return false;
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Fetch the current user's email from Adobe IMS profile
  * @param {string} token - The authorization token
  * @returns {Promise<string>} User email or empty string if unavailable

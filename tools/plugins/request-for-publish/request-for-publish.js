@@ -10,6 +10,7 @@ import {
   withdrawPublishRequest,
   getUserEmail,
   checkExistingRequest,
+  checkSiteRegistration,
 } from './utils.js';
 
 // Super Lite (sl-*) — Spectrum-aligned controls for DA; pairs with S2 tokens in CSS.
@@ -66,6 +67,8 @@ class RequestForPublishPlugin extends LitElement {
     _commentsRequired: { state: true },
     _commentsMinLength: { state: true },
     _submitPhase: { state: true },
+    _siteRegistered: { state: true },
+    _configMissing: { state: true },
   };
 
   constructor() {
@@ -85,6 +88,8 @@ class RequestForPublishPlugin extends LitElement {
     this._commentsRequired = false;
     this._commentsMinLength = 10;
     this._submitPhase = '';
+    this._siteRegistered = null;
+    this._configMissing = false;
   }
 
   connectedCallback() {
@@ -123,14 +128,27 @@ class RequestForPublishPlugin extends LitElement {
     return `https://da.live/app/aemsites/da-blog-tools/tools/apps/publish-requests-inbox/publish-requests-inbox?org=${encodeURIComponent(org)}&site=${encodeURIComponent(site)}&requester=true`;
   }
 
+  get inboxAppUrl() {
+    const { org, repo: site } = this.context;
+    return `https://da.live/app/aemsites/da-blog-tools/tools/apps/publish-requests-inbox/publish-requests-inbox?org=${encodeURIComponent(org)}&site=${encodeURIComponent(site)}`;
+  }
+
   async init() {
     this._isLoading = true;
 
     // Fetch user email from Adobe IMS profile
     this._userEmail = await getUserEmail(this.token);
 
-    // Detect approvers for this content path
     const { org, repo: site } = this.context;
+
+    // Check if the site is registered for the publish workflow
+    this._siteRegistered = await checkSiteRegistration(org, site, this.token);
+    if (!this._siteRegistered) {
+      this._isLoading = false;
+      return;
+    }
+
+    // Detect approvers for this content path
     const result = await resolveWorkflowConfig(this.contentPath, org, site, this.token);
     this._approvers = result.approvers || [];
     this._cc = result.cc || [];
@@ -145,7 +163,17 @@ class RequestForPublishPlugin extends LitElement {
       this.style.setProperty('--pw-accent-hover', result.accentColorHover);
     }
 
-    // Show error if config is missing or no matching rule found
+    // If the publish-workflow-config tab is missing entirely, route the user
+    // to the inbox app to finish setup (mirrors the unregistered flow).
+    if (result.source === 'error') {
+      this._configMissing = true;
+      this._isLoading = false;
+      return;
+    }
+
+    // For other errors (e.g. config exists but no matching rule for this path),
+    // keep the inline banner — that's a different problem the admin can fix
+    // by adding a rule to the existing publish-workflow-config tab.
     if (result.error) {
       this._message = { type: 'error', text: result.error };
       this._isLoading = false;
@@ -273,11 +301,56 @@ class RequestForPublishPlugin extends LitElement {
     }
   }
 
+  renderUnregistered() {
+    const { org, repo: site } = this.context;
+    return html`
+      <div class="status-page">
+        <div class="status-icon status-icon--neutral">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 15a1 1 0 1 1 1-1 1 1 0 0 1-1 1Zm1-4.5a1 1 0 0 1-2 0v-4a1 1 0 0 1 2 0Z" fill="currentColor"/></svg>
+        </div>
+        <h3 class="status-heading">Site Not Registered</h3>
+        <p class="status-body">
+          <strong>${org}/${site}</strong> is not yet registered for the publish workflow.
+          A site administrator needs to register it before publish requests can be submitted.
+        </p>
+        <p class="status-note">
+          <a href="${this.inboxAppUrl}" target="_blank" rel="noopener" class="action-link">
+            <svg class="action-icon" viewBox="0 0 18 18"><path d="M15.5 1h-13A1.5 1.5 0 0 0 1 2.5v13A1.5 1.5 0 0 0 2.5 17h13a1.5 1.5 0 0 0 1.5-1.5v-13A1.5 1.5 0 0 0 15.5 1Zm.5 14.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-13a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 .5.5v13ZM13 4.5a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.354.854L9.793 6.5 5.146 11.146a.5.5 0 0 0 .708.708L10.5 7.207l1.646 1.647A.5.5 0 0 0 13 8.5v-4Z"/></svg>
+            Go to Publish Requests Inbox to register this site
+          </a>
+        </p>
+      </div>
+    `;
+  }
+
+  renderConfigMissing() {
+    const { org, repo: site } = this.context;
+    return html`
+      <div class="status-page">
+        <div class="status-icon status-icon--neutral">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 15a1 1 0 1 1 1-1 1 1 0 0 1-1 1Zm1-4.5a1 1 0 0 1-2 0v-4a1 1 0 0 1 2 0Z" fill="currentColor"/></svg>
+        </div>
+        <h3 class="status-heading">Setup Incomplete</h3>
+        <p class="status-body">
+          <strong>${org}/${site}</strong> is registered, but its publish workflow
+          configuration isn't complete yet. A site administrator needs to finish
+          setup before publish requests can be submitted.
+        </p>
+        <p class="status-note">
+          <a href="${this.inboxAppUrl}" target="_blank" rel="noopener" class="action-link">
+            <svg class="action-icon" viewBox="0 0 18 18"><path d="M15.5 1h-13A1.5 1.5 0 0 0 1 2.5v13A1.5 1.5 0 0 0 2.5 17h13a1.5 1.5 0 0 0 1.5-1.5v-13A1.5 1.5 0 0 0 15.5 1Zm.5 14.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-13a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 .5.5v13ZM13 4.5a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.354.854L9.793 6.5 5.146 11.146a.5.5 0 0 0 .708.708L10.5 7.207l1.646 1.647A.5.5 0 0 0 13 8.5v-4Z"/></svg>
+            Go to Publish Requests Inbox to finish setup
+          </a>
+        </p>
+      </div>
+    `;
+  }
+
   renderLoading() {
     return html`
       <div class="loading-container" role="status" aria-live="polite" aria-busy="true">
         <div class="spectrum-loading-indicator" aria-hidden="true"></div>
-        <p class="loading-label">Loading…</p>
+        <p class="loading-label">Loading...</p>
       </div>
     `;
   }
@@ -472,6 +545,14 @@ class RequestForPublishPlugin extends LitElement {
   render() {
     if (this._isLoading) {
       return this.renderLoading();
+    }
+
+    if (this._siteRegistered === false) {
+      return this.renderUnregistered();
+    }
+
+    if (this._configMissing) {
+      return this.renderConfigMissing();
     }
 
     if (this._withdrawn) {
