@@ -18,13 +18,13 @@
   </script>
 </head>
 <body>
-  <nx-media-library id="ml"></nx-media-library>
+  <div id="ml-container"></div>
 
   <script type="module">
     // Import DA SDK to get org/repo context and auth
     import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
-    // Load bundled media-library plugin FIRST to define the custom element
+    // Load bundled media-library plugin to define the custom element
     await import('./media-library-plugin.js');
 
     // Wait for custom element to be defined
@@ -33,9 +33,13 @@
     // Get context from DA SDK
     const { context, actions } = await DA_SDK;
 
-    // NOW set sitePath on the upgraded custom element
-    const ml = document.getElementById('ml');
+    // Create the element and set sitePath BEFORE adding to DOM
+    const ml = document.createElement('nx-media-library');
+    ml.id = 'ml';
     ml.sitePath = `/${context.org}/${context.repo}`;
+
+    // NOW add it to the DOM - it will initialize with sitePath already set
+    document.getElementById('ml-container').appendChild(ml);
 
     console.log('✅ Media library plugin loaded (bundled locally)');
     console.log(`📍 Site: ${ml.sitePath} (from DA context)`);
