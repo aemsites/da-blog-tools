@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Media Library Test</title>
+  <link rel="stylesheet" href="media-library.css">
+</head>
+<body>
+  <nx-media-library id="ml"></nx-media-library>
+
+  <script type="module">
+    // Import DA SDK to get org/repo context and auth
+    import DA_SDK from 'https://da.live/nx/utils/sdk.js';
+
+    // Import media-library component from da-nx CDN (mldecouple branch for testing)
+    import 'https://mldecouple--da-nx--adobe.aem.page/nx/blocks/media-library/media-library.js';
+
+    // Wait for SDK and component to be ready
+    const { context, actions } = await DA_SDK;
+    await customElements.whenDefined('nx-media-library');
+
+    const ml = document.getElementById('ml');
+
+    // Build sitePath from DA context (org/repo where plugin is launched)
+    ml.sitePath = `/${context.org}/${context.repo}`;
+
+    console.log('✅ Media library plugin loaded');
+    console.log(`📍 Site: ${ml.sitePath} (from DA context)`);
+    console.log('🔐 Auth token: automatically handled by media-library via IMS');
+    console.log('📍 Mode should be: plugin (not app)');
+    console.log('🔍 Check: indexing should NOT auto-trigger');
+  </script>
+</body>
+</html>
