@@ -869,6 +869,28 @@ sl-button.pw-quiet-secondary::part(base):hover:not(:disabled) {
   color: var(--s2-gray-700);
 }
 
+.setup-where-list {
+  margin: 0 0 var(--spacing-300) 0;
+  padding-left: var(--spacing-400);
+  font-size: var(--s2-body-s-size);
+  color: var(--s2-gray-700);
+  line-height: 1.5;
+}
+
+.setup-where-list li + li {
+  margin-top: var(--spacing-150, 8px);
+}
+
+.setup-where-list strong {
+  color: var(--s2-gray-900);
+}
+
+.setup-where-list code {
+  font-family: var(--s2-code-family, ui-monospace, "SF Mono", monospace);
+  font-size: 0.95em;
+  color: var(--s2-gray-900);
+}
+
 .register-form {
   display: flex;
   flex-direction: column;

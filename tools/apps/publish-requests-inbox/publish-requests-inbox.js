@@ -1266,14 +1266,28 @@ class PublishRequestsApp extends LitElement {
           ${fetchError ? html`<p class="review-card-body">${fetchError}</p>` : nothing}
           ${this.renderSetupRows()}
           <p class="review-card-body">
+            You can add the required tabs at either scope:
+          </p>
+          <ul class="setup-where-list">
+            <li>
+              <strong>This site only</strong> —
+              <a href="${siteConfigUrl}" target="_blank" rel="noopener">open the site config editor</a>.
+              Rows you add here apply only to
+              <code>${this._org}/${this._site}</code>.
+            </li>
+            <li>
+              <strong>All sites under the org</strong> —
+              <a href="${orgConfigUrl}" target="_blank" rel="noopener">open the org config editor</a>.
+              Rows you add here apply to every site under
+              <code>${this._org}</code>, unless a site overrides the same tab
+              at site level (site-level config takes precedence).
+            </li>
+          </ul>
+          <p class="review-card-body">
             See the
             <a href="${REQUEST_PUBLISH_DOCS_URL}" target="_blank" rel="noopener">Request Publish setup guide</a>
-            for the exact rows to add to each tab, then open the DA config
-            editor for
-            <a href="${siteConfigUrl}" target="_blank" rel="noopener">this site</a>
-            or
-            <a href="${orgConfigUrl}" target="_blank" rel="noopener">the org</a>.
-            The <code>publish-workflow-config</code>, <code>library</code>, and
+            for the exact rows each tab needs. The
+            <code>publish-workflow-config</code>, <code>library</code>, and
             <code>apps</code> tabs are all required — without them, no publish
             requests can reach this inbox.
           </p>
