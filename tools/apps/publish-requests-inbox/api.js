@@ -936,26 +936,24 @@ export async function checkSiteRegistration(org, site, token) {
 // object — provenance promotion (site-level vs. org-level) is layered on
 // top by `inspectAtBothLevels` below.
 
+// Match a row's `path` cell against a substring needle. Substring (rather
+// than endsWith / equality) keeps the check stable across env refs
+// (`?env=ci`), with-or-without `.html` extensions, and forks that change
+// the host portion of the URL — what we really care about is that the row
+// points at the request-publish plugin / inbox app, not the exact URL.
+function hasRowWithPathContaining(rows, needle) {
+  if (!Array.isArray(rows)) return false;
+  return rows.some((row) => (row?.path || row?.Path || '').toLowerCase().includes(needle));
+}
+
 function inspectLibraryAt(config) {
   const rows = config?.library?.data;
-  if (!Array.isArray(rows)) return 'missing';
-  const needle = '/tools/plugins/request-for-publish/request-for-publish.html';
-  const hasRow = rows.some((row) => {
-    const p = (row?.path || row?.Path || '').toLowerCase();
-    return p.endsWith(needle);
-  });
-  return hasRow ? 'ok' : 'missing';
+  return hasRowWithPathContaining(rows, '/tools/plugins/request-for-publish') ? 'ok' : 'missing';
 }
 
 function inspectAppsAt(config) {
   const rows = config?.apps?.data;
-  if (!Array.isArray(rows)) return 'missing';
-  const needle = '/tools/apps/publish-requests-inbox/publish-requests-inbox';
-  const hasRow = rows.some((row) => {
-    const p = (row?.path || row?.Path || '').toLowerCase();
-    return p.endsWith(needle);
-  });
-  return hasRow ? 'ok' : 'missing';
+  return hasRowWithPathContaining(rows, '/tools/apps/publish-requests-inbox') ? 'ok' : 'missing';
 }
 
 function inspectWorkflowConfigAt(config) {
