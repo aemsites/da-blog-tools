@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Media Library Test</title>
   <link rel="stylesheet" href="media-library.css">
+
+  <!-- CRITICAL: Set Nexter config BEFORE any module imports -->
+  <script>
+    // Set Nexter config with IMS Client ID
+    // Must run before media-library loads to avoid "Missing IMS Client ID" error
+    window.c = {
+      imsClientId: 'da-web',
+      env: 'prod',
+      nxBase: 'https://da.live/nx'
+    };
+  </script>
 </head>
 <body>
   <nx-media-library id="ml"></nx-media-library>
@@ -13,25 +24,18 @@
     // Import DA SDK to get org/repo context and auth
     import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
-    // IMPORTANT: Set Nexter config with IMS Client ID before loading media-library
-    // This is normally done by nexter.js in the app context
-    window.c = {
-      imsClientId: 'da-web',
-      env: 'prod',
-      nxBase: 'https://da.live/nx'
-    };
-
-    // Load bundled media-library plugin (includes Lit + all dependencies)
-    import './media-library-plugin.js';
-
-    // Wait for SDK and component to be ready
+    // Get context FIRST, before loading media-library
     const { context, actions } = await DA_SDK;
-    await customElements.whenDefined('nx-media-library');
 
+    // Set sitePath on element BEFORE media-library loads
     const ml = document.getElementById('ml');
-
-    // Build sitePath from DA context (org/repo where plugin is launched)
     ml.sitePath = `/${context.org}/${context.repo}`;
+
+    // NOW load bundled media-library plugin (includes Lit + all dependencies)
+    await import('./media-library-plugin.js');
+
+    // Wait for component to be ready
+    await customElements.whenDefined('nx-media-library');
 
     console.log('✅ Media library plugin loaded (bundled locally)');
     console.log(`📍 Site: ${ml.sitePath} (from DA context)`);
