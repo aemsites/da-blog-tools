@@ -6,10 +6,14 @@
   <title>Media Library</title>
   <link rel="stylesheet" href="media-library.css">
 
+  <!--
+    Production import map (da-lit):
+      https://da.live/nx/deps/lit/dist/index.js
+  -->
   <script type="importmap">
     {
       "imports": {
-        "da-lit": "https://da.live/nx/deps/lit/dist/index.js"
+        "da-lit": "https://mldecouple--da-nx--adobe.aem.live/nx/deps/lit/dist/index.js"
       }
     }
   </script>
@@ -20,12 +24,20 @@
   </div>
 
   <script type="module">
-    import { setConfig } from 'https://da.live/nx/scripts/nexter.js';
-    import DA_SDK from 'https://da.live/nx/utils/sdk.js';
+    /*
+     * Branch preview base: mldecouple--da-nx--adobe.aem.live/nx
+     * Production (commented): https://da.live/nx
+     */
+    import { setConfig } from 'https://mldecouple--da-nx--adobe.aem.live/nx/scripts/nexter.js';
+    // import { setConfig } from 'https://da.live/nx/scripts/nexter.js';
+
+    import DA_SDK from 'https://mldecouple--da-nx--adobe.aem.live/nx/utils/sdk.js';
+    // import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
     setConfig({ imsClientId: 'da-web', env: 'prod' });
 
-    await import('https://da.live/nx/blocks/media-library/media-library.js');
+    await import('https://mldecouple--da-nx--adobe.aem.live/nx/blocks/media-library/media-library.js');
+    // await import('https://da.live/nx/blocks/media-library/media-library.js');
 
     const { context } = await DA_SDK;
     const ml = document.createElement('nx-media-library');
