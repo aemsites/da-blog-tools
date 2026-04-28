@@ -3,49 +3,46 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Media Library Test</title>
+  <title>Media Library</title>
   <link rel="stylesheet" href="media-library.css">
 
-  <!-- CRITICAL: Set Nexter config BEFORE any module imports -->
-  <script>
-    // Set Nexter config with IMS Client ID
-    // Must run before media-library loads to avoid "Missing IMS Client ID" error
-    window.c = {
-      imsClientId: 'da-web',
-      env: 'prod',
-      nxBase: 'https://da.live/nx'
-    };
+  <script type="importmap">
+    {
+      "imports": {
+        "da-lit": "https://da.live/nx/deps/lit/dist/index.js"
+      }
+    }
   </script>
 </head>
 <body>
   <div id="ml-container"></div>
 
   <script type="module">
-    // Import DA SDK to get org/repo context and auth
+    import { setConfig } from 'https://da.live/nx/scripts/nexter.js';
     import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
-    // Load bundled media-library plugin to define the custom element
-    await import('./media-library-plugin.js');
+    // Must run before any import of ims (pulled in by the media-library block)
+    setConfig({ imsClientId: 'da-web', env: 'prod' });
 
-    // Wait for custom element to be defined
+    await import('https://da.live/nx/blocks/media-library/media-library.js');
+
     await customElements.whenDefined('nx-media-library');
 
-    // Get context from DA SDK
-    const { context, actions } = await DA_SDK;
+    const { context } = await DA_SDK;
 
-    // Create the element and set sitePath BEFORE adding to DOM
     const ml = document.createElement('nx-media-library');
     ml.id = 'ml';
-    ml.sitePath = `/${context.org}/${context.repo}`;
 
-    // NOW add it to the DOM - it will initialize with sitePath already set
+    const org = context?.org;
+    const repo = context?.repo;
+    if (!org || !repo) {
+      console.error('[media-library plugin] Missing context.org / context.repo', context);
+      ml.sitePath = '';
+    } else {
+      ml.sitePath = `/${org}/${repo}`;
+    }
+
     document.getElementById('ml-container').appendChild(ml);
-
-    console.log('✅ Media library plugin loaded (bundled locally)');
-    console.log(`📍 Site: ${ml.sitePath} (from DA context)`);
-    console.log('🔐 Auth token: automatically handled by media-library via IMS');
-    console.log('📍 Mode detection: URL-based (app vs plugin)');
-    console.log('🔍 POC: Proving same codebase can be bundled for plugin use');
   </script>
 </body>
 </html>
