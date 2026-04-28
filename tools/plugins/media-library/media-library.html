@@ -4,11 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Media Library</title>
-  <link rel="stylesheet" href="media-library.css">
-  <!-- Design tokens: media-library fetches public/sl/*.css into shadow roots, but
-       --spacing-* and --s2-font-size-* are defined in nexter.css (not in sl/styles.css).
-       Load on the document so custom properties inherit into component shadow DOM. -->
+  <!-- Tokens first; plugin overrides must load after nexter (shell grid / main scroll). -->
   <link rel="stylesheet" href="https://da.live/nx/styles/nexter.css?nx=mldecouple" />
+  <link rel="stylesheet" href="media-library.css">
 
   <!-- Nexter branch preview: same ?nx= on every da.live/nx module URL so CDN serves one branch. -->
   <script type="importmap">
