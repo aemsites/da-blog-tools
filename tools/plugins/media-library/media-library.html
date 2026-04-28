@@ -23,43 +23,15 @@
     import { setConfig } from 'https://da.live/nx/scripts/nexter.js';
     import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
-    // Must run before any import of ims (pulled in by the media-library block)
     setConfig({ imsClientId: 'da-web', env: 'prod' });
-
-    // Diagnostic + guard: some DA wrappers may use `/apps/media-library` in the iframe URL,
-    // which triggers app-only auto-index rebuild behavior in the component.
-    // We neutralize that by rewriting the visible path (no reload) to avoid the substring match.
-    console.log('[media-library plugin] location:', {
-      href: window.location.href,
-      pathname: window.location.pathname,
-      inIframe: window.self !== window.top,
-    });
-    if (window.location.pathname.includes('/apps/media-library')) {
-      history.replaceState(
-        null,
-        document.title,
-        window.location.href.replace('/apps/media-library', '/apps/media-library-plugin'),
-      );
-      console.log('[media-library plugin] rewrote pathname for plugin mode:', window.location.pathname);
-    }
 
     await import('https://da.live/nx/blocks/media-library/media-library.js');
 
-    await customElements.whenDefined('nx-media-library');
-
     const { context } = await DA_SDK;
-
     const ml = document.createElement('nx-media-library');
-    ml.id = 'ml';
-
     const org = context?.org;
     const repo = context?.repo;
-    if (!org || !repo) {
-      console.error('[media-library plugin] Missing context.org / context.repo', context);
-      ml.sitePath = '';
-    } else {
-      ml.sitePath = `/${org}/${repo}`;
-    }
+    ml.sitePath = org && repo ? `/${org}/${repo}` : '';
 
     document.getElementById('ml-container').appendChild(ml);
   </script>
