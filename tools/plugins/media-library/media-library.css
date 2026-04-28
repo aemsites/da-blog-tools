@@ -1,6 +1,71 @@
 /*
- * Plugin shell layout only (no nexter.css — avoid global body grid / .nx-app main overflow rules).
+ * Media Library DA plugin: minimal Nexter design tokens on :root (spacing, font sizes, gaps vs
+ * public/sl/styles.css) + iframe shell layout. Do not load full nexter.css — it applies global
+ * body grid / .nx-app shell rules that break this iframe.
  */
+
+/* --- Document tokens (inherit into nx-media-library shadow DOM for var(...) resolution) --- */
+:root {
+  --font-family: "Adobe Clean", adobe-clean, "Trebuchet MS", sans-serif;
+  --body-font-family: var(--font-family);
+
+  --spacing-50: 2px;
+  --spacing-75: 4px;
+  --spacing-100: 8px;
+  --spacing-200: 12px;
+  --spacing-300: 16px;
+  --spacing-400: 24px;
+  --spacing-500: 32px;
+  --spacing-600: 40px;
+  --spacing-700: 48px;
+  --spacing-800: 64px;
+  --spacing-900: 80px;
+  --spacing-1000: 96px;
+
+  --s2-radius-75: 4px;
+  --s2-radius-100: 8px;
+  --s2-radius-200: 10px;
+  --s2-radius-300: 16px;
+
+  --s2-font-size-100: 17px;
+  --s2-font-size-200: 19px;
+  --s2-font-size-300: 22px;
+  --s2-font-size-400: 24px;
+  --s2-font-size-600: 31px;
+  --s2-font-size-800: 39px;
+
+  --s2-gray-25: #ffffff;
+  --s2-gray-900: #131313;
+
+  --s2-blue-500: #8eb9fc;
+  --s2-blue-600: #729efd;
+  --s2-blue-800: #4b75ff;
+
+  --s2-white: #fff;
+  --s2-green: #009851;
+  --s2-red: #f73b26;
+  --s2-amber-800: #b45309;
+
+  --font-size-100: var(--s2-font-size-100);
+  --font-size-200: var(--s2-font-size-200);
+  --font-size-300: var(--s2-font-size-300);
+  --font-size-500: var(--s2-font-size-600);
+  --font-weight-600: 600;
+  --border-radius-100: var(--s2-radius-100);
+}
+
+@media (width >= 600px) {
+  :root {
+    --s2-font-size-100: 14px;
+    --s2-font-size-200: 16px;
+    --s2-font-size-300: 18px;
+    --s2-font-size-400: 20px;
+    --s2-font-size-600: 25px;
+    --s2-font-size-800: 32px;
+  }
+}
+
+/* --- Plugin shell layout --- */
 html,
 body {
   height: 100%;
@@ -11,10 +76,9 @@ body {
 
 body {
   display: block;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--font-family), system-ui, -apple-system, sans-serif;
 }
 
-/* Single flex column: fill iframe, no second empty grid row from nexter body { grid; } */
 .nx-app {
   display: flex;
   flex-direction: column;
@@ -23,7 +87,6 @@ body {
   max-height: 100%;
 }
 
-/* Override nexter @media (min-width: 600px) .nx-app main { overflow-y: scroll; margin; ... } */
 .nx-app > main {
   flex: 1 1 auto;
   min-height: 0;
