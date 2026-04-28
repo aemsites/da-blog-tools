@@ -5,11 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Media Library</title>
   <link rel="stylesheet" href="media-library.css">
+  <!-- Design tokens: media-library fetches public/sl/*.css into shadow roots, but
+       --spacing-* and --s2-font-size-* are defined in nexter.css (not in sl/styles.css).
+       Load on the document so custom properties inherit into component shadow DOM. -->
+  <link rel="stylesheet" href="https://da.live/nx/styles/nexter.css?nx=mldecouple" />
 
+  <!-- Nexter branch preview: same ?nx= on every da.live/nx module URL so CDN serves one branch. -->
   <script type="importmap">
     {
       "imports": {
-        "da-lit": "https://da.live/nx/deps/lit/dist/index.js"
+        "da-lit": "https://da.live/nx/deps/lit/dist/index.js?nx=mldecouple"
       }
     }
   </script>
@@ -20,8 +25,8 @@
   </div>
 
   <script type="module">
-    import { setConfig } from 'https://da.live/nx/scripts/nexter.js';
-    import DA_SDK from 'https://da.live/nx/utils/sdk.js';
+    import { setConfig } from 'https://da.live/nx/scripts/nexter.js?nx=mldecouple';
+    import DA_SDK from 'https://da.live/nx/utils/sdk.js?nx=mldecouple';
 
     // Must run before any import of ims (pulled in by the media-library block)
     setConfig({ imsClientId: 'da-web', env: 'prod' });
@@ -43,7 +48,7 @@
       console.log('[media-library plugin] rewrote pathname for plugin mode:', window.location.pathname);
     }
 
-    await import('https://da.live/nx/blocks/media-library/media-library.js');
+    await import('https://da.live/nx/blocks/media-library/media-library.js?nx=mldecouple');
 
     await customElements.whenDefined('nx-media-library');
 
