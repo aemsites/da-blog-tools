@@ -1,7 +1,5 @@
 /*
- * Load after nexter.css: undo shell layout (grid body, scrollable main) meant for full da.live pages.
- * The plugin iframe is not body.nx-app + nav grid; those rules still hit .nx-app main and cause
- * double scrollbars + extra whitespace.
+ * Plugin shell layout only (no nexter.css — avoid global body grid / .nx-app main overflow rules).
  */
 html,
 body {

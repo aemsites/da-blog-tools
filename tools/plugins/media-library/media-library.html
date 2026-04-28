@@ -4,15 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Media Library</title>
-  <!-- Tokens first; plugin overrides must load after nexter (shell grid / main scroll). -->
-  <link rel="stylesheet" href="https://da.live/nx/styles/nexter.css?nx=mldecouple" />
+  <!-- Minimal design tokens only — full nexter.css adds body grid / .nx-app shell rules that break the iframe. -->
+  <link rel="stylesheet" href="nx-tokens.css" />
   <link rel="stylesheet" href="media-library.css">
 
-  <!-- Nexter branch preview: same ?nx= on every da.live/nx module URL so CDN serves one branch. -->
   <script type="importmap">
     {
       "imports": {
-        "da-lit": "https://da.live/nx/deps/lit/dist/index.js?nx=mldecouple"
+        "da-lit": "https://da.live/nx/deps/lit/dist/index.js"
       }
     }
   </script>
@@ -23,8 +22,8 @@
   </div>
 
   <script type="module">
-    import { setConfig } from 'https://da.live/nx/scripts/nexter.js?nx=mldecouple';
-    import DA_SDK from 'https://da.live/nx/utils/sdk.js?nx=mldecouple';
+    import { setConfig } from 'https://da.live/nx/scripts/nexter.js';
+    import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
     // Must run before any import of ims (pulled in by the media-library block)
     setConfig({ imsClientId: 'da-web', env: 'prod' });
@@ -46,7 +45,7 @@
       console.log('[media-library plugin] rewrote pathname for plugin mode:', window.location.pathname);
     }
 
-    await import('https://da.live/nx/blocks/media-library/media-library.js?nx=mldecouple');
+    await import('https://da.live/nx/blocks/media-library/media-library.js');
 
     await customElements.whenDefined('nx-media-library');
 
