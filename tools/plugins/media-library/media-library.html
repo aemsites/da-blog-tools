@@ -1,15 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<!-- ml-plugin rev: 2026-04-28-rev3 — NX imports below use mldecouple preview host; View Source must match after deploy -->
+<html lang="en" data-ml-plugin-rev="2026-04-28-rev3">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Media Library</title>
+  <title>Media Library · plugin rev3</title>
   <link rel="stylesheet" href="media-library.css">
 
-  <!--
-    Production import map (da-lit):
-      https://da.live/nx/deps/lit/dist/index.js
-  -->
+  <!-- Production da-lit (swap when testing only on da.live): https://da.live/nx/deps/lit/dist/index.js -->
   <script type="importmap">
     {
       "imports": {
@@ -24,20 +22,16 @@
   </div>
 
   <script type="module">
-    /*
-     * Branch preview base: mldecouple--da-nx--adobe.aem.live/nx
-     * Production (commented): https://da.live/nx
-     */
+    const PLUGIN_REV = '2026-04-28-rev3';
+    console.info(`[ml-plugin] ${PLUGIN_REV} — if Network still shows da.live for media-library.js, the browser is not serving this file (push + wait for preview, then hard refresh).`);
+
     import { setConfig } from 'https://mldecouple--da-nx--adobe.aem.live/nx/scripts/nexter.js';
-    // import { setConfig } from 'https://da.live/nx/scripts/nexter.js';
 
     import DA_SDK from 'https://mldecouple--da-nx--adobe.aem.live/nx/utils/sdk.js';
-    // import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
     setConfig({ imsClientId: 'da-web', env: 'prod' });
 
     await import('https://mldecouple--da-nx--adobe.aem.live/nx/blocks/media-library/media-library.js');
-    // await import('https://da.live/nx/blocks/media-library/media-library.js');
 
     const { context } = await DA_SDK;
     const ml = document.createElement('nx-media-library');
