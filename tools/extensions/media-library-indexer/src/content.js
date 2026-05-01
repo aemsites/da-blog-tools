@@ -51,44 +51,50 @@ function notifyTabActive() {
 }
 
 /**
+ * Get IMS token from localStorage
+ * @returns {string|null} - Token or null
+ */
+function getImsTokenFromStorage() {
+  try {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith('adobeid_ims_access_token'));
+
+    if (keys.length === 0) {
+      console.warn('[content] No IMS token keys found in localStorage');
+      return null;
+    }
+
+    // Find first valid token
+    for (const key of keys) {
+      const data = JSON.parse(localStorage.getItem(key));
+      if (data?.valid && data?.tokenValue) {
+        console.log('[content] Found valid IMS token');
+        return data.tokenValue;
+      }
+    }
+
+    console.warn('[content] No valid IMS token found');
+    return null;
+  } catch (error) {
+    console.error('[content] Error reading IMS token from localStorage:', error);
+    return null;
+  }
+}
+
+/**
  * Listen for auth token requests from service worker
  */
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'REQUEST_AUTH') {
-    // Import IMS module from da.live and get token
-    import('https://da.live/nx/utils/ims.js')
-      .then(async ({ loadIms }) => {
-        try {
-          const imsDetails = await loadIms();
-          const token = imsDetails?.accessToken?.token;
+    const token = getImsTokenFromStorage();
 
-          sendResponse({
-            type: 'AUTH_TOKEN',
-            token: token || null,
-            org: msg.org,
-            repo: msg.repo
-          });
-        } catch (error) {
-          console.error('[content] IMS load error:', error);
-          sendResponse({
-            type: 'AUTH_TOKEN',
-            token: null,
-            org: msg.org,
-            repo: msg.repo
-          });
-        }
-      })
-      .catch(error => {
-        console.error('[content] IMS import error:', error);
-        sendResponse({
-          type: 'AUTH_TOKEN',
-          token: null,
-          org: msg.org,
-          repo: msg.repo
-        });
-      });
+    sendResponse({
+      type: 'AUTH_TOKEN',
+      token: token,
+      org: msg.org,
+      repo: msg.repo
+    });
 
-    return true; // Keep channel open for async response
+    return false; // Synchronous response
   }
 });
 

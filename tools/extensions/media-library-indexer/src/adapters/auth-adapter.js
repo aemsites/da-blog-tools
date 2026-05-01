@@ -54,35 +54,35 @@ export function clearToken(org, repo) {
  * @returns {Promise<string|null>} - Token or null
  */
 async function requestTokenFromTabs(org, repo) {
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      resolve(null);
-    }, 5000); // 5s timeout
+  // Query for all da.live tabs
+  const tabs = await chrome.tabs.query({ url: 'https://da.live/*' });
 
-    // Broadcast to all tabs
-    chrome.runtime.sendMessage(
-      {
+  if (tabs.length === 0) {
+    console.warn('[auth-adapter] No da.live tabs open');
+    return null;
+  }
+
+  // Try each tab until we get a token
+  for (const tab of tabs) {
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, {
         type: 'REQUEST_AUTH',
         org,
         repo
-      },
-      (response) => {
-        clearTimeout(timeout);
+      });
 
-        if (chrome.runtime.lastError) {
-          console.warn('[auth-adapter] No response from tabs:', chrome.runtime.lastError);
-          resolve(null);
-          return;
-        }
-
-        if (response?.type === 'AUTH_TOKEN' && response?.token) {
-          resolve(response.token);
-        } else {
-          resolve(null);
-        }
+      if (response?.type === 'AUTH_TOKEN' && response?.token) {
+        console.log('[auth-adapter] Got token from tab', tab.id);
+        return response.token;
       }
-    );
-  });
+    } catch (error) {
+      // Tab might not have content script, try next
+      console.warn(`[auth-adapter] Failed to get token from tab ${tab.id}:`, error.message);
+    }
+  }
+
+  console.warn('[auth-adapter] No token received from any tab');
+  return null;
 }
 
 /**

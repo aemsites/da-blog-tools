@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Icon Generator</title>
+</head>
+<body>
+  <h1>Icon Generator</h1>
+  <p>Open browser console to generate icons</p>
+
+  <script>
+    function createIcon(size, color) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+
+      // Fill background
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, size, size);
+
+      // Draw "ML" text
+      ctx.fillStyle = 'white';
+      ctx.font = `bold ${Math.floor(size * 0.4)}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('ML', size / 2, size / 2);
+
+      return canvas.toDataURL('image/png');
+    }
+
+    function downloadIcon(dataUrl, filename) {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = filename;
+      a.click();
+    }
+
+    // Generate and download all icons
+    console.log('Generating icons...');
+
+    // Gray icons
+    downloadIcon(createIcon(16, '#666'), 'icon-16.png');
+    downloadIcon(createIcon(48, '#666'), 'icon-48.png');
+    downloadIcon(createIcon(128, '#666'), 'icon-128.png');
+
+    // Green active icons
+    downloadIcon(createIcon(48, '#34a853'), 'icon-active-48.png');
+    downloadIcon(createIcon(128, '#34a853'), 'icon-active-128.png');
+
+    console.log('Icons generated! Check your Downloads folder.');
+  </script>
+</body>
+</html>

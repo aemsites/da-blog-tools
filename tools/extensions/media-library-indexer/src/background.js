@@ -115,36 +115,56 @@ async function updateContextMenus(sitePath) {
 
   if (!sitePath) {
     // No valid org/site, show nothing
+    console.log('[background] No sitePath, skipping context menus');
     return;
   }
 
   const isTracked = await isSiteTracked(sitePath);
 
-  if (!isTracked) {
-    // Show "Add this site"
-    chrome.contextMenus.create({
-      id: 'add-site',
-      title: 'Add this site for indexing',
-      contexts: ['page'],
-      documentUrlPatterns: ['https://da.live/*']
-    });
-  } else {
-    // Show "Remove this site"
-    chrome.contextMenus.create({
-      id: 'remove-site',
-      title: 'Remove this site from indexing',
-      contexts: ['page'],
-      documentUrlPatterns: ['https://da.live/*']
-    });
-  }
+  try {
+    if (!isTracked) {
+      // Show "Add this site"
+      chrome.contextMenus.create({
+        id: 'add-site',
+        title: 'Add this site for indexing',
+        contexts: ['all']
+      }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('[background] Error creating add-site menu:', chrome.runtime.lastError);
+        } else {
+          console.log('[background] Created "Add this site" menu');
+        }
+      });
+    } else {
+      // Show "Remove this site"
+      chrome.contextMenus.create({
+        id: 'remove-site',
+        title: 'Remove this site from indexing',
+        contexts: ['all']
+      }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('[background] Error creating remove-site menu:', chrome.runtime.lastError);
+        } else {
+          console.log('[background] Created "Remove this site" menu');
+        }
+      });
+    }
 
-  // Always show "Open media library app"
-  chrome.contextMenus.create({
-    id: 'open-app',
-    title: 'Open media library app',
-    contexts: ['page'],
-    documentUrlPatterns: ['https://da.live/*']
-  });
+    // Always show "Open media library app"
+    chrome.contextMenus.create({
+      id: 'open-app',
+      title: 'Open media library app',
+      contexts: ['all']
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[background] Error creating open-app menu:', chrome.runtime.lastError);
+      } else {
+        console.log('[background] Created "Open app" menu');
+      }
+    });
+  } catch (error) {
+    console.error('[background] Error updating context menus:', error);
+  }
 }
 
 /**
@@ -183,7 +203,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 
   if (info.menuItemId === 'open-app') {
-    const appUrl = `https://da.live/#${sitePath}/media-library`;
+    const appUrl = `https://da.live/apps/media-library#${sitePath}`;
     chrome.tabs.create({ url: appUrl });
   }
 });

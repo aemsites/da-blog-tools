@@ -3,7 +3,7 @@
  */
 
 import { getSites, setSites, getSite, updateSite, removeSite } from '../adapters/storage-adapter.js';
-import { checkIfIndexExists } from '../adapters/fetch-adapter.js';
+import { checkIfIndexExists, daFetch } from '../adapters/fetch-adapter.js';
 
 /**
  * Create site object with defaults
@@ -37,6 +37,41 @@ function createSiteObject(org, repo, needsFullIndex) {
 }
 
 /**
+ * Fetch index stats from index-meta.json
+ * @param {string} sitePath - Site path
+ * @param {string} org - Organization
+ * @param {string} repo - Repository
+ * @returns {Promise<object|null>} - Stats object or null
+ */
+async function fetchIndexStats(sitePath, org, repo) {
+  try {
+    const metaUrl = `https://admin.da.live/source${sitePath}/.da/media-insights/index-meta.json`;
+    const response = await daFetch(metaUrl, org, repo);
+
+    if (!response.ok) {
+      console.warn(`[site-manager] Could not fetch index-meta for ${sitePath}: ${response.status}`);
+      return null;
+    }
+
+    const result = await response.json();
+
+    // DA admin API returns sheet format: {data: [{...actual meta...}]}
+    const meta = result.data?.[0] || result;
+    console.log('[site-manager] Fetched index-meta:', meta);
+
+    return {
+      mediaCount: meta.mediaCount || 0,
+      usageCount: meta.usageCount || 0,
+      lastIndexed: meta.lastFetchTime || null,
+      chunkCount: meta.chunkCount || 0
+    };
+  } catch (error) {
+    console.error(`[site-manager] Error fetching index stats for ${sitePath}:`, error);
+    return null;
+  }
+}
+
+/**
  * Add site to tracking list
  * @param {string} org - Organization
  * @param {string} repo - Repository
@@ -56,6 +91,16 @@ export async function addSite(org, repo) {
   const indexExists = await checkIfIndexExists(sitePath, org, repo);
 
   const site = createSiteObject(org, repo, !indexExists);
+
+  // If index exists, fetch current stats
+  if (indexExists) {
+    const stats = await fetchIndexStats(sitePath, org, repo);
+    if (stats) {
+      site.stats.mediaCount = stats.mediaCount;
+      site.lastIndexed = stats.lastIndexed;
+      console.log(`[site-manager] Loaded stats: ${stats.mediaCount} media items`);
+    }
+  }
 
   const sites = await getSites();
   sites.push(site);
