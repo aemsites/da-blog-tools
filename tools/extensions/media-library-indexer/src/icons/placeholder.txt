@@ -1,0 +1,8 @@
+Placeholder icons needed:
+- icon-16.png (gray square)
+- icon-48.png (gray square)
+- icon-128.png (gray square)
+- icon-active-48.png (green square)
+- icon-active-128.png (green square)
+
+Generate with scripts/generate-icons.html

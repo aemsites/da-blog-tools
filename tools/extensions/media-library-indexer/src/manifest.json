@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Media Library Indexer",
+  "version": "0.1.0",
+  "description": "Background indexer for DA Media Library",
+  "permissions": [
+    "alarms",
+    "storage",
+    "contextMenus",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://da.live/*",
+    "https://admin.da.live/*",
+    "https://stage-admin.da.live/*",
+    "https://admin.hlx.page/*",
+    "https://da-etc.adobeaem.workers.dev/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://da.live/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}
