@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Check if manifest exists
+if [ ! -f "src/manifest.json" ]; then
+  echo "Error: src/manifest.json not found. Create manifest first."
+  exit 1
+fi
+
 # Get version from manifest
 VERSION=$(grep -o '"version": "[^"]*"' src/manifest.json | cut -d'"' -f4)
 

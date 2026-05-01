@@ -7,8 +7,11 @@ echo "Building Media Library Indexer extension..."
 rm -rf dist
 mkdir -p dist
 
-# Copy source files to dist
-cp -r src/* dist/
+# Copy source files to dist (excluding .gitkeep)
+if [ -d "src" ]; then
+  cp -r src/. dist/
+  find dist -name ".gitkeep" -delete
+fi
 
 # Remove any .DS_Store files
 find dist -name ".DS_Store" -delete
