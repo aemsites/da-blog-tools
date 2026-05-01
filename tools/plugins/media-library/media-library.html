@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<!-- ml-plugin rev: 2026-04-28-rev3 — NX imports from da.live (main); View Source must match after deploy -->
+<html lang="en" data-ml-plugin-rev="2026-04-28-rev3">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Media Library · plugin rev3</title>
+  <link rel="stylesheet" href="media-library.css">
+
+  <script type="importmap">
+    {
+      "imports": {
+        "da-lit": "https://da.live/nx/deps/lit/dist/index.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div class="nx-app">
+    <main id="ml-container"></main>
+  </div>
+
+  <script type="module">
+    const PLUGIN_REV = '2026-04-28-rev3';
+    console.info(`[ml-plugin] ${PLUGIN_REV} — if Network still shows da.live for media-library.js, the browser is not serving this file (push + wait for preview, then hard refresh).`);
+
+    import { setConfig } from 'https://da.live/nx/scripts/nexter.js';
+
+    import DA_SDK from 'https://da.live/nx/utils/sdk.js';
+
+    setConfig({ imsClientId: 'da-web', env: 'prod' });
+
+    await import('https://da.live/nx/blocks/media-library/media-library.js');
+
+    const { context } = await DA_SDK;
+    const ml = document.createElement('nx-media-library');
+    const org = context?.org;
+    const repo = context?.repo;
+    ml.sitePath = org && repo ? `/${org}/${repo}` : '';
+
+    document.getElementById('ml-container').appendChild(ml);
+  </script>
+</body>
+</html>
