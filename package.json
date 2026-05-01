@@ -12,6 +12,8 @@
     "build:json:models": "merge-json-cli -i \"ue/models/component-models.json\" -o \"component-models.json\"",
     "build:json:definitions": "merge-json-cli -i \"ue/models/component-definition.json\" -o \"component-definition.json\"",
     "build:json:filters": "merge-json-cli -i \"ue/models/component-filters.json\" -o \"component-filters.json\"",
+    "build:extension": "cd tools/extensions/media-library-indexer && ./scripts/build.sh",
+    "package:extension": "cd tools/extensions/media-library-indexer && ./scripts/package.sh",
     "prepare": "husky"
   },
   "repository": {
