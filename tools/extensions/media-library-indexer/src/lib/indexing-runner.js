@@ -10,7 +10,7 @@
  */
 
 import { daFetch, DA_ORIGIN } from '../adapters/fetch-adapter.js';
-import { getSite, updateSite } from './site-manager.js';
+import { getSite, updateSite } from '../adapters/storage-adapter.js';
 
 const INDEX_FILES = {
   FOLDER: '.da/media-insights',
@@ -117,39 +117,6 @@ async function getIndexStatus(sitePath, org, repo) {
 }
 
 /**
- * Check if media sheet has changed
- * Based on da-nx/nx/blocks/media-library/ui/data.js::hasMediaSheetChanged
- *
- * @param {string} sitePath - Site path
- * @param {string} org - Organization
- * @param {string} repo - Repository
- * @returns {Promise<object>} - {hasChanged, fileTimestamp}
- */
-async function hasMediaSheetChanged(sitePath, org, repo) {
-  try {
-    const status = await getIndexStatus(sitePath, org, repo);
-
-    if (!status.indexExists) {
-      return { hasChanged: true, fileTimestamp: null };
-    }
-
-    // Get last known timestamp from site object
-    const site = await getSite(sitePath);
-    const lastKnown = site?.lastIndexed || null;
-
-    const hasChanged = !lastKnown || status.indexLastModified > lastKnown;
-
-    return {
-      hasChanged,
-      fileTimestamp: status.indexLastModified
-    };
-  } catch (error) {
-    console.error('[indexing-runner] Error checking sheet changes:', error);
-    return { hasChanged: true, fileTimestamp: null };
-  }
-}
-
-/**
  * Load media index if it has been updated
  * Based on da-nx/nx/blocks/media-library/ui/data.js::loadMediaIfUpdated
  *
@@ -160,7 +127,19 @@ async function hasMediaSheetChanged(sitePath, org, repo) {
  */
 export async function loadMediaIfUpdated(sitePath, org, repo) {
   try {
-    const { hasChanged, fileTimestamp } = await hasMediaSheetChanged(sitePath, org, repo);
+    // Get index status once
+    const status = await getIndexStatus(sitePath, org, repo);
+
+    if (!status.indexExists) {
+      console.log('[indexing-runner] Index missing');
+      return { hasChanged: true, mediaData: [], indexMissing: true };
+    }
+
+    // Get last known timestamp from site object
+    const site = await getSite(sitePath);
+    const lastKnown = site?.lastIndexed || null;
+
+    const hasChanged = !lastKnown || status.indexLastModified > lastKnown;
 
     if (!hasChanged) {
       console.log('[indexing-runner] No changes detected');
@@ -169,18 +148,9 @@ export async function loadMediaIfUpdated(sitePath, org, repo) {
 
     console.log('[indexing-runner] Changes detected, loading index...');
 
-    // Load the index (simplified - we don't need full data, just stats)
-    const status = await getIndexStatus(sitePath, org, repo);
-
-    if (!status.indexExists) {
-      console.log('[indexing-runner] Index missing');
-      return { hasChanged: true, mediaData: [], indexMissing: true };
-    }
-
     // Update site's lastIndexed timestamp
-    const site = await getSite(sitePath);
-    if (site && fileTimestamp) {
-      site.lastIndexed = fileTimestamp;
+    if (site && status.indexLastModified) {
+      site.lastIndexed = status.indexLastModified;
       await updateSite(site);
     }
 

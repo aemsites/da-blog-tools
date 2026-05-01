@@ -3,7 +3,8 @@
  * Manages polling intervals and determines when to check sites
  */
 
-import { getActiveSites, updateSite } from './site-manager.js';
+import { getActiveSites } from './site-manager.js';
+import { getSite, updateSite } from '../adapters/storage-adapter.js';
 import { loadMediaIfUpdated } from './indexing-runner.js';
 
 const INDEX_CHECK_INTERVAL_MS = 60_000; // 60s
@@ -82,7 +83,8 @@ async function checkIndexChanges(site, now) {
 
     if (result.hasChanged) {
       console.log(`[alarm] Index changed for ${site.sitePath}`);
-      // Index was updated, site.lastIndexed already updated by indexing-runner
+      // Index was updated, reload site to get updated lastIndexed
+      site = await getSite(site.sitePath);
     }
 
     if (result.indexMissing) {
