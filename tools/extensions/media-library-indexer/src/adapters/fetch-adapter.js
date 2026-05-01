@@ -4,6 +4,7 @@
  */
 
 import { getImsToken, clearToken } from './auth-adapter.js';
+import { getAemSiteToken, clearAemSiteToken } from './aem-token-adapter.js';
 
 /**
  * Get DA_ORIGIN based on environment
@@ -51,6 +52,41 @@ export async function daFetch(url, org, repo, opts = {}) {
   if (resp.status === 401 || resp.status === 403) {
     console.warn(`[daFetch] Auth error ${resp.status} for ${url}`);
     clearToken(org, repo);
+  }
+
+  return resp;
+}
+
+/**
+ * Fetch with AEM site token for admin.hlx.page APIs (status, audit, medialog)
+ * @param {string} url - URL to fetch (admin.hlx.page)
+ * @param {string} org - Organization
+ * @param {string} repo - Repository (site)
+ * @param {string} ref - Git ref (default: 'main')
+ * @param {object} opts - Fetch options
+ * @returns {Promise<Response>} - Fetch response
+ */
+export async function aemFetch(url, org, repo, ref = 'main', opts = {}) {
+  opts.headers ||= {};
+
+  const siteToken = await getAemSiteToken(org, repo, ref);
+
+  if (siteToken) {
+    opts.headers.Authorization = `token ${siteToken}`;
+  }
+
+  let resp;
+  try {
+    resp = await fetch(url, opts);
+  } catch (err) {
+    console.error('[aemFetch] Network error:', err);
+    resp = new Response(null, { status: 500, statusText: err.message });
+  }
+
+  // Handle 401 - clear token and let caller retry
+  if (resp.status === 401 || resp.status === 403) {
+    console.warn(`[aemFetch] Auth error ${resp.status} for ${url}`);
+    clearAemSiteToken(org, repo, ref);
   }
 
   return resp;
