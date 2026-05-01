@@ -6,9 +6,10 @@
 import { getActiveSites } from './site-manager.js';
 import { getSite, updateSite } from '../adapters/storage-adapter.js';
 import { loadMediaIfUpdated } from './indexing-runner.js';
+import { checkForContentChanges } from './content-checker.js';
 
 const INDEX_CHECK_INTERVAL_MS = 60_000; // 60s
-const CONTENT_CHECK_INTERVAL_MS = 120_000; // 120s
+const CONTENT_CHECK_INTERVAL_MS = 80_000; // 80s
 
 /**
  * Check if site needs index check (60s interval)
@@ -109,9 +110,32 @@ async function checkIndexChanges(site, now) {
 async function checkContentChanges(site, now) {
   console.log(`[alarm] Checking content for ${site.sitePath}`);
 
-  // TODO: Check locks, trigger builds if needed
-  // For now, just update timestamp
+  try {
+    const result = await checkForContentChanges(
+      site.sitePath,
+      site.org,
+      site.repo,
+      site.lastIndexed
+    );
 
-  site.lastContentCheck = now;
-  await updateSite(site);
+    if (result.hasChanges) {
+      console.log(`[alarm] Content changes detected for ${site.sitePath}:`, {
+        changeCount: result.changeCount,
+        latestTimestamp: result.latestTimestamp
+      });
+
+      // Reload site to get latest data
+      site = await getSite(site.sitePath);
+      site.needsFullIndex = true; // Flag for rebuild
+      site.pendingChanges = result.changeCount;
+    } else {
+      console.log(`[alarm] No content changes for ${site.sitePath}`);
+    }
+
+    site.lastContentCheck = now;
+    await updateSite(site);
+  } catch (error) {
+    console.error(`[alarm] Error checking content for ${site.sitePath}:`, error);
+    throw error;
+  }
 }
