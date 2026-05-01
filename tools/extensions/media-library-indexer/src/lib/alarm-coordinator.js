@@ -4,6 +4,7 @@
  */
 
 import { getActiveSites, updateSite } from './site-manager.js';
+import { loadMediaIfUpdated } from './indexing-runner.js';
 
 const INDEX_CHECK_INTERVAL_MS = 60_000; // 60s
 const CONTENT_CHECK_INTERVAL_MS = 120_000; // 120s
@@ -76,11 +77,26 @@ export async function processAlarmWake() {
 async function checkIndexChanges(site, now) {
   console.log(`[alarm] Checking index for ${site.sitePath}`);
 
-  // TODO: Import and use loadMediaIfUpdated from da.live CDN
-  // For now, just update timestamp
+  try {
+    const result = await loadMediaIfUpdated(site.sitePath, site.org, site.repo);
 
-  site.lastIndexCheck = now;
-  await updateSite(site);
+    if (result.hasChanged) {
+      console.log(`[alarm] Index changed for ${site.sitePath}`);
+      // Index was updated, site.lastIndexed already updated by indexing-runner
+    }
+
+    if (result.indexMissing) {
+      console.warn(`[alarm] Index missing for ${site.sitePath}, may need full rebuild`);
+      site.needsFullIndex = true;
+    }
+
+    site.lastIndexCheck = now;
+    site.consecutiveFailures = 0; // Reset on success
+    await updateSite(site);
+  } catch (error) {
+    console.error(`[alarm] Error checking index for ${site.sitePath}:`, error);
+    throw error; // Let processAlarmWake handle the error
+  }
 }
 
 /**
