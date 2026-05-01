@@ -4,6 +4,7 @@
  */
 
 import { addSite, removeSiteFromTracking, updateLastActive, isSiteTracked } from './lib/site-manager.js';
+import { processAlarmWake } from './lib/alarm-coordinator.js';
 
 console.log('[background] Media Library Indexer service worker started');
 
@@ -31,8 +32,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'media-library-poll') {
     console.log('[background] Alarm fired:', new Date().toISOString());
 
-    // TODO: Check active sites and run polling logic
-    // For now, just log
+    try {
+      await processAlarmWake();
+    } catch (error) {
+      console.error('[background] Alarm processing error:', error);
+    }
   }
 });
 
