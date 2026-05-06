@@ -3,3 +3,4 @@ test-unpublish.js
 tools/test-ims-token.js
 tools/deps/
 workers/
+tools/extensions/media-library-indexer/dist/
