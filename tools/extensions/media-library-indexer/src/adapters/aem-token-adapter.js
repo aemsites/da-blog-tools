@@ -35,6 +35,10 @@ async function fetchAemSiteToken(org, site, ref = 'main') {
     return { error: 'Missing IMS access token' };
   }
 
+  // Check debug setting
+  const storage = await chrome.storage.local.get('debugPerf');
+  const debugPerf = storage.debugPerf || false;
+
   try {
     const body = JSON.stringify({
       org,
@@ -43,7 +47,11 @@ async function fetchAemSiteToken(org, site, ref = 'main') {
       accessToken: imsToken,
     });
 
-    console.log('[aem-token] Exchange request:', { org, site, ref, imsTokenLength: imsToken?.length });
+    if (debugPerf) {
+      console.log('[aem-token] Exchange request:', {
+        org, site, ref, imsTokenLength: imsToken?.length,
+      });
+    }
 
     const resp = await fetch(`${AEM_ORIGIN}/auth/adobe/exchange`, {
       method: 'POST',
@@ -51,7 +59,9 @@ async function fetchAemSiteToken(org, site, ref = 'main') {
       headers: { 'Content-Type': 'application/json' },
     });
 
-    console.log('[aem-token] Exchange response status:', resp.status, resp.statusText);
+    if (debugPerf) {
+      console.log('[aem-token] Exchange response status:', resp.status, resp.statusText);
+    }
 
     if (!resp.ok) {
       const errorText = await resp.text();
@@ -60,10 +70,16 @@ async function fetchAemSiteToken(org, site, ref = 'main') {
     }
 
     const responseText = await resp.text();
-    console.log('[aem-token] Exchange response body:', responseText);
+
+    if (debugPerf) {
+      console.log('[aem-token] Exchange response body:', responseText);
+    }
 
     const data = responseText ? JSON.parse(responseText) : {};
-    console.log('[aem-token] Exchange response parsed:', data);
+
+    if (debugPerf) {
+      console.log('[aem-token] Exchange response parsed:', data);
+    }
 
     const siteToken = data.siteToken || data.token;
     const siteTokenExpiry = data.siteTokenExpiry || data.tokenExpiry || 0;

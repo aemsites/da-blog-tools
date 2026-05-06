@@ -30,7 +30,7 @@ export async function getImsToken(org, repo) {
   if (token) {
     tokenCache.set(sitePath, {
       token,
-      expiresAt: Date.now() + TOKEN_TTL_MS
+      expiresAt: Date.now() + TOKEN_TTL_MS,
     });
   }
 
@@ -68,7 +68,7 @@ async function requestTokenFromTabs(org, repo) {
       const response = await chrome.tabs.sendMessage(tab.id, {
         type: 'REQUEST_AUTH',
         org,
-        repo
+        repo,
       });
 
       if (response?.type === 'AUTH_TOKEN' && response?.token) {
