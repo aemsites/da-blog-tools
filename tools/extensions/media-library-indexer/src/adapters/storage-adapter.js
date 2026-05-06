@@ -92,7 +92,7 @@ export async function getSite(sitePath) {
   if (!sitePath) throw new Error('Site path is required');
 
   const sites = await getSites();
-  return sites.find(s => s?.sitePath === sitePath) || null;
+  return sites.find((s) => s?.sitePath === sitePath) || null;
 }
 
 /**
@@ -106,7 +106,7 @@ export async function updateSite(updatedSite) {
   }
 
   const sites = await getSites();
-  const index = sites.findIndex(s => s?.sitePath === updatedSite.sitePath);
+  const index = sites.findIndex((s) => s?.sitePath === updatedSite.sitePath);
 
   if (index >= 0) {
     sites[index] = { ...sites[index], ...updatedSite };
@@ -126,6 +126,6 @@ export async function removeSite(sitePath) {
   if (!sitePath) throw new Error('Site path is required');
 
   const sites = await getSites();
-  const filtered = sites.filter(s => s?.sitePath !== sitePath);
+  const filtered = sites.filter((s) => s?.sitePath !== sitePath);
   await setSites(filtered);
 }

@@ -2,7 +2,9 @@
  * Site manager - CRUD operations for tracked sites
  */
 
-import { getSites, setSites, getSite, updateSite, removeSite } from '../adapters/storage-adapter.js';
+import {
+  getSites, setSites, getSite, updateSite, removeSite,
+} from '../adapters/storage-adapter.js';
 import { checkIfIndexExists, daFetch } from '../adapters/fetch-adapter.js';
 
 /**
@@ -29,10 +31,10 @@ function createSiteObject(org, repo, needsFullIndex) {
       images: 0,
       videos: 0,
       documents: 0,
-      fragments: 0
+      fragments: 0,
     },
     lastError: null,
-    consecutiveFailures: 0
+    consecutiveFailures: 0,
   };
 }
 
@@ -55,6 +57,11 @@ async function fetchIndexStats(sitePath, org, repo) {
 
     const result = await response.json();
 
+    if (!result) {
+      console.warn(`[site-manager] Empty JSON response for ${sitePath}`);
+      return null;
+    }
+
     // DA admin API returns sheet format: {data: [{...actual meta...}]}
     const meta = result.data?.[0] || result;
     console.log('[site-manager] Fetched index-meta:', meta);
@@ -63,7 +70,7 @@ async function fetchIndexStats(sitePath, org, repo) {
       mediaCount: meta.mediaCount || 0,
       usageCount: meta.usageCount || 0,
       lastIndexed: meta.lastFetchTime || null,
-      chunkCount: meta.chunkCount || 0
+      chunkCount: meta.chunkCount || 0,
     };
   } catch (error) {
     console.error(`[site-manager] Error fetching index stats for ${sitePath}:`, error);
@@ -97,6 +104,7 @@ export async function addSite(org, repo) {
     const stats = await fetchIndexStats(sitePath, org, repo);
     if (stats) {
       site.stats.mediaCount = stats.mediaCount;
+      site.mediaCount = stats.mediaCount; // Cache for popup
       site.lastIndexed = stats.lastIndexed;
       console.log(`[site-manager] Loaded stats: ${stats.mediaCount} media items`);
     }
@@ -135,18 +143,13 @@ export async function updateLastActive(sitePath) {
 }
 
 /**
- * Get all active sites (lastActive within 24hrs)
- * @returns {Promise<Array>} - Array of active site objects
+ * Get all tracked sites
+ * Note: With tab-required mode, we process ALL tracked sites when da.live tabs are open.
+ * The tab check in alarm-coordinator handles stopping when no tabs are open.
+ * @returns {Promise<Array>} - Array of all tracked site objects
  */
 export async function getActiveSites() {
-  const sites = await getSites();
-  const now = Date.now();
-  const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-
-  return sites.filter(site => {
-    const inactive = now - site.lastActive > TWENTY_FOUR_HOURS_MS;
-    return !inactive;
-  });
+  return getSites();
 }
 
 /**
