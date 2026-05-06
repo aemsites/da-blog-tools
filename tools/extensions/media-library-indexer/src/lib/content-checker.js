@@ -17,8 +17,8 @@ const AEM_ORIGIN = 'https://admin.hlx.page';
  * @param {string} ref - Git ref (default: 'main')
  * @returns {Promise<object>} - {hasChanges, changeCount, latestTimestamp}
  */
-export async function checkForContentChanges(sitePath, org, repo, lastIndexed, ref = 'main') {
-  if (!lastIndexed) {
+export async function checkForContentChanges(sitePath, org, repo, lastContentCheckTimestamp, ref = 'main') {
+  if (!lastContentCheckTimestamp) {
     // No baseline, assume changes exist
     return { hasChanges: true, changeCount: 0, latestTimestamp: null };
   }
@@ -27,11 +27,11 @@ export async function checkForContentChanges(sitePath, org, repo, lastIndexed, r
     // Check medialog and auditlog for recent changes
     // Use 5-minute buffer to catch delayed entries
     const bufferMs = 5 * 60 * 1000;
-    const since = lastIndexed - bufferMs;
+    const since = lastContentCheckTimestamp - bufferMs;
 
     const [medialogChanges, auditlogChanges] = await Promise.all([
       checkMedialogChanges(org, repo, ref, since),
-      checkAuditlogChanges(org, repo, ref, since)
+      checkAuditlogChanges(org, repo, ref, since),
     ]);
 
     const totalChanges = medialogChanges.count + auditlogChanges.count;
@@ -41,7 +41,7 @@ export async function checkForContentChanges(sitePath, org, repo, lastIndexed, r
       medialogCount: medialogChanges.count,
       auditlogCount: auditlogChanges.count,
       totalChanges,
-      hasChanges: totalChanges > 0
+      hasChanges: totalChanges > 0,
     });
 
     return {
@@ -49,8 +49,8 @@ export async function checkForContentChanges(sitePath, org, repo, lastIndexed, r
       changeCount: totalChanges,
       latestTimestamp: Math.max(
         medialogChanges.latestTimestamp || 0,
-        auditlogChanges.latestTimestamp || 0
-      ) || null
+        auditlogChanges.latestTimestamp || 0,
+      ) || null,
     };
   } catch (error) {
     console.error('[content-checker] Error checking content changes:', error);
@@ -85,9 +85,9 @@ async function checkMedialogChanges(org, repo, ref, since) {
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${imsToken}`,
-        'x-content-source-authorization': `Bearer ${imsToken}`
-      }
+        Authorization: `Bearer ${imsToken}`,
+        'x-content-source-authorization': `Bearer ${imsToken}`,
+      },
     });
 
     if (!response.ok) {
@@ -96,16 +96,20 @@ async function checkMedialogChanges(org, repo, ref, since) {
     }
 
     const data = await response.json();
+    // Handle multiple API response formats:
+    // - Direct array: [entry1, entry2, ...]
+    // - Object with 'log' property: {log: [entry1, entry2, ...]}
+    // - Object with 'entries' property: {entries: [entry1, entry2, ...]}
     const entries = Array.isArray(data) ? data : (data.log || data.entries || []);
 
     console.log('[content-checker] Medialog response:', {
       totalEntries: entries.length,
       firstEntry: entries[0],
-      dataStructure: Object.keys(data)
+      dataStructure: Object.keys(data),
     });
 
     // Filter entries newer than 'since'
-    const newEntries = entries.filter(entry => {
+    const newEntries = entries.filter((entry) => {
       const entryTime = entry.timestamp || entry.time || 0;
       return entryTime > since;
     });
@@ -115,12 +119,12 @@ async function checkMedialogChanges(org, repo, ref, since) {
     }
 
     const latestTimestamp = newEntries.length > 0
-      ? Math.max(...newEntries.map(e => e.timestamp || e.time || 0))
+      ? Math.max(...newEntries.map((e) => e.timestamp || e.time || 0))
       : null;
 
     return {
       count: newEntries.length,
-      latestTimestamp
+      latestTimestamp,
     };
   } catch (error) {
     console.error('[content-checker] Medialog check error:', error);
@@ -154,9 +158,9 @@ async function checkAuditlogChanges(org, repo, ref, since) {
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${imsToken}`,
-        'x-content-source-authorization': `Bearer ${imsToken}`
-      }
+        Authorization: `Bearer ${imsToken}`,
+        'x-content-source-authorization': `Bearer ${imsToken}`,
+      },
     });
 
     if (!response.ok) {
@@ -165,16 +169,20 @@ async function checkAuditlogChanges(org, repo, ref, since) {
     }
 
     const data = await response.json();
+    // Handle multiple API response formats:
+    // - Direct array: [entry1, entry2, ...]
+    // - Object with 'log' property: {log: [entry1, entry2, ...]}
+    // - Object with 'entries' property: {entries: [entry1, entry2, ...]}
     const entries = Array.isArray(data) ? data : (data.log || data.entries || []);
 
     console.log('[content-checker] Auditlog response:', {
       totalEntries: entries.length,
       firstEntry: entries[0],
-      dataStructure: Object.keys(data)
+      dataStructure: Object.keys(data),
     });
 
     // Filter entries newer than 'since'
-    const newEntries = entries.filter(entry => {
+    const newEntries = entries.filter((entry) => {
       const entryTime = entry.timestamp || entry.time || 0;
       return entryTime > since;
     });
@@ -184,12 +192,12 @@ async function checkAuditlogChanges(org, repo, ref, since) {
     }
 
     const latestTimestamp = newEntries.length > 0
-      ? Math.max(...newEntries.map(e => e.timestamp || e.time || 0))
+      ? Math.max(...newEntries.map((e) => e.timestamp || e.time || 0))
       : null;
 
     return {
       count: newEntries.length,
-      latestTimestamp
+      latestTimestamp,
     };
   } catch (error) {
     console.error('[content-checker] Auditlog check error:', error);
