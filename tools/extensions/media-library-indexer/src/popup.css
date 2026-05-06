@@ -68,6 +68,11 @@ body {
   color: #c62828;
 }
 
+.status-warning {
+  color: #f57c00;
+  font-weight: 500;
+}
+
 .stat {
   display: flex;
   justify-content: space-between;

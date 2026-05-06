@@ -3,7 +3,9 @@
  * Coordinates alarms, manages sites, runs indexing
  */
 
-import { addSite, removeSiteFromTracking, updateLastActive, isSiteTracked } from './lib/site-manager.js';
+import {
+  addSite, removeSiteFromTracking, updateLastActive, isSiteTracked,
+} from './lib/site-manager.js';
 import { processAlarmWake } from './lib/alarm-coordinator.js';
 
 console.log('[background] Media Library Indexer service worker started');
@@ -16,7 +18,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
   // Create periodic alarm (every 60s)
   await chrome.alarms.create('media-library-poll', {
-    periodInMinutes: 1
+    periodInMinutes: 1,
   });
 
   console.log('[background] Created polling alarm (60s interval)');
@@ -45,7 +47,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
  */
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'TAB_ACTIVE') {
-    handleTabActive(msg, sender);
+    handleTabActive(msg);
     return false;
   }
 
@@ -58,13 +60,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleGetStats(msg).then(sendResponse);
     return true; // Async response
   }
+
+  return false; // Return false for unhandled messages
 });
 
 /**
  * Handle TAB_ACTIVE message from content script
  */
-async function handleTabActive(msg, sender) {
-  const { org, repo, sitePath } = msg;
+async function handleTabActive(msg) {
+  const { sitePath } = msg;
   console.log(`[background] Tab active: ${sitePath}`);
 
   // Update lastActive if site is tracked
@@ -81,7 +85,7 @@ async function handleUpdateIcon(msg, sender) {
   const { state } = msg;
   const tabId = sender.tab?.id;
 
-  if (!tabId) return;
+  if (tabId === undefined || tabId === null) return;
 
   const iconPath = state === 'active'
     ? 'icons/icon-active-48.png'
@@ -90,7 +94,7 @@ async function handleUpdateIcon(msg, sender) {
   try {
     await chrome.action.setIcon({
       path: iconPath,
-      tabId
+      tabId,
     });
   } catch (error) {
     console.warn('[background] Icon update failed:', error);
@@ -106,7 +110,7 @@ async function handleGetStats(msg) {
   // TODO: Return actual stats from storage
   return {
     sitePath,
-    stats: { mediaCount: 0 }
+    stats: { mediaCount: 0 },
   };
 }
 
@@ -131,7 +135,7 @@ async function updateContextMenus(sitePath) {
       chrome.contextMenus.create({
         id: 'add-site',
         title: 'Add this site for indexing',
-        contexts: ['all']
+        contexts: ['all'],
       }, () => {
         if (chrome.runtime.lastError) {
           console.error('[background] Error creating add-site menu:', chrome.runtime.lastError);
@@ -144,7 +148,7 @@ async function updateContextMenus(sitePath) {
       chrome.contextMenus.create({
         id: 'remove-site',
         title: 'Remove this site from indexing',
-        contexts: ['all']
+        contexts: ['all'],
       }, () => {
         if (chrome.runtime.lastError) {
           console.error('[background] Error creating remove-site menu:', chrome.runtime.lastError);
@@ -158,12 +162,33 @@ async function updateContextMenus(sitePath) {
     chrome.contextMenus.create({
       id: 'open-app',
       title: 'Open media library app',
-      contexts: ['all']
+      contexts: ['all'],
     }, () => {
       if (chrome.runtime.lastError) {
         console.error('[background] Error creating open-app menu:', chrome.runtime.lastError);
       } else {
         console.log('[background] Created "Open app" menu');
+      }
+    });
+
+    // Add separator
+    chrome.contextMenus.create({
+      id: 'separator',
+      type: 'separator',
+      contexts: ['all'],
+    });
+
+    // Add debug toggle (always visible)
+    const { debugPerf = false } = await chrome.storage.local.get('debugPerf');
+    chrome.contextMenus.create({
+      id: 'toggle-debug',
+      title: debugPerf ? '✓ Debug logging enabled' : 'Enable debug logging',
+      contexts: ['all'],
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[background] Error creating debug menu:', chrome.runtime.lastError);
+      } else {
+        console.log('[background] Created debug toggle menu');
       }
     });
   } catch (error) {
@@ -192,7 +217,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     console.log(`[background] Adding site: ${sitePath}`);
     const site = await addSite(org, repo);
 
-    // TODO: Trigger immediate check
+    // Trigger immediate index check
+    if (site.needsFullIndex) {
+      console.log('[background] Site needs full index, triggering immediate build');
+      // Run alarm wake immediately to start index building
+      processAlarmWake().catch((err) => {
+        console.error('[background] Error in immediate alarm wake:', err);
+      });
+    }
 
     // Update context menus
     await updateContextMenus(sitePath);
@@ -203,6 +235,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     await removeSiteFromTracking(sitePath);
 
     // Update context menus
+    await updateContextMenus(sitePath);
+  }
+
+  if (info.menuItemId === 'toggle-debug') {
+    // Toggle debug setting
+    const { debugPerf = false } = await chrome.storage.local.get('debugPerf');
+    const newValue = !debugPerf;
+    await chrome.storage.local.set({ debugPerf: newValue });
+
+    console.log(`[background] Debug logging ${newValue ? 'enabled' : 'disabled'}`);
+
+    // Update context menus to show new state
     await updateContextMenus(sitePath);
   }
 

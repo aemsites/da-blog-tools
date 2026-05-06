@@ -3,7 +3,19 @@
  * Displays indexing stats and status
  */
 
-import { getSites, getSite } from './adapters/storage-adapter.js';
+import { getSites, getSite, updateSite } from './adapters/storage-adapter.js';
+
+/**
+ * Format timestamp as relative time
+ */
+function formatRelativeTime(timestamp) {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
 
 /**
  * Render current site view
@@ -21,18 +33,62 @@ async function renderCurrentSite(sitePath) {
     `;
   }
 
-  const statusClass = site.status === 'ok' ? 'status-ok' :
-                      site.status === 'indexing' ? 'status-indexing' :
-                      'status-error';
+  // Fetch fresh stats if mediaCount is missing and index should exist
+  if ((site.mediaCount === 0 || site.mediaCount === undefined)
+    && site.status === 'ok'
+    && !site.needsFullIndex) {
+    try {
+      const indexStatusModule = await import('./lib/indexing/index-status.js');
+      const meta = await indexStatusModule.loadIndexMeta(sitePath, site.org, site.repo);
+
+      if (meta?.entriesCount > 0) {
+        site.mediaCount = meta.entriesCount;
+        await updateSite(site);
+      }
+    } catch (error) {
+      console.warn('[popup] Could not fetch fresh count:', error);
+    }
+  }
+
+  let statusClass;
+  if (site.status === 'ok') {
+    statusClass = 'status-ok';
+  } else if (site.status === 'indexing') {
+    statusClass = 'status-indexing';
+  } else if (site.status === 'auth_required') {
+    statusClass = 'status-warning';
+  } else {
+    statusClass = 'status-error';
+  }
 
   const lastIndexed = site.lastIndexed
     ? formatRelativeTime(site.lastIndexed)
     : 'Never';
 
+  // Read media count from cached value (updated during indexing)
+  const mediaCount = site.mediaCount || 0;
+
+  // Format sitePath: /org/repo → org > repo
+  const formattedPath = site.sitePath.substring(1).replace('/', ' > ');
+
+  // Format status display
+  let statusDisplay;
+  if (site.status === 'ok') {
+    statusDisplay = 'OK';
+  } else if (site.status === 'auth_required') {
+    statusDisplay = 'AUTH NEEDED';
+  } else {
+    statusDisplay = site.status.toUpperCase();
+  }
+
   return `
     <div class="site-info">
-      <div class="site-path">${site.sitePath}</div>
-      <div class="status ${statusClass}">${site.status}</div>
+      <div class="site-path">${formattedPath}</div>
+
+      <div class="stat">
+        <span class="stat-label">Indexing Status:</span>
+        <span class="stat-value ${statusClass}">${statusDisplay}</span>
+      </div>
 
       <div class="stat">
         <span class="stat-label">Last indexed:</span>
@@ -41,7 +97,7 @@ async function renderCurrentSite(sitePath) {
 
       <div class="stat">
         <span class="stat-label">Total media:</span>
-        <span class="stat-value">${site.stats.mediaCount}</span>
+        <span class="stat-value">${mediaCount}</span>
       </div>
     </div>
   `;
@@ -62,13 +118,15 @@ async function renderAllSites() {
     `;
   }
 
-  const items = sites.map(site => {
+  // Use cached media counts from site objects
+  const items = sites.map((site) => {
     const lastActive = formatRelativeTime(site.lastActive);
+    const mediaCount = site.mediaCount || 0;
     return `
       <li class="site-item">
         <div>
           <div class="site-item-path">${site.sitePath}</div>
-          <div class="site-item-stats">${site.status} · ${site.stats.mediaCount} items · ${lastActive}</div>
+          <div class="site-item-stats">${site.status} · ${mediaCount} items · ${lastActive}</div>
         </div>
       </li>
     `;
@@ -82,18 +140,6 @@ async function renderAllSites() {
       ${items}
     </ul>
   `;
-}
-
-/**
- * Format timestamp as relative time
- */
-function formatRelativeTime(timestamp) {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-
-  if (seconds < 60) return 'Just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
 }
 
 /**
@@ -120,16 +166,26 @@ async function getCurrentSitePath() {
 async function init() {
   const contentEl = document.getElementById('content');
 
-  const currentSitePath = await getCurrentSitePath();
+  try {
+    const currentSitePath = await getCurrentSitePath();
 
-  let html;
-  if (currentSitePath) {
-    html = await renderCurrentSite(currentSitePath);
-  } else {
-    html = await renderAllSites();
+    let html;
+    if (currentSitePath) {
+      html = await renderCurrentSite(currentSitePath);
+    } else {
+      html = await renderAllSites();
+    }
+
+    contentEl.innerHTML = html;
+  } catch (error) {
+    console.error('[popup] Failed to initialize:', error);
+    contentEl.innerHTML = `
+      <div class="empty">
+        <p style="color: #d32f2f;">Error loading popup</p>
+        <p style="margin-top: 8px; font-size: 12px; color: #666;">${error.message}</p>
+      </div>
+    `;
   }
-
-  contentEl.innerHTML = html;
 }
 
 // Run on load

@@ -8,7 +8,7 @@
  * @returns {object|null} - { org, repo, sitePath } or null
  */
 function parseOrgSiteFromHash() {
-  const hash = window.location.hash;
+  const { hash } = window.location;
   const match = hash.match(/^#\/([^/]+)\/([^/]+)/);
 
   if (!match) return null;
@@ -19,7 +19,7 @@ function parseOrgSiteFromHash() {
   return {
     org,
     repo,
-    sitePath: `/${org}/${repo}`
+    sitePath: `/${org}/${repo}`,
   };
 }
 
@@ -34,18 +34,18 @@ function notifyTabActive() {
       type: 'TAB_ACTIVE',
       org: parsed.org,
       repo: parsed.repo,
-      sitePath: parsed.sitePath
+      sitePath: parsed.sitePath,
     });
 
     // Also update icon state
     chrome.runtime.sendMessage({
       type: 'UPDATE_ICON',
-      state: 'active'
+      state: 'active',
     });
   } else {
     chrome.runtime.sendMessage({
       type: 'UPDATE_ICON',
-      state: 'inactive'
+      state: 'inactive',
     });
   }
 }
@@ -56,7 +56,7 @@ function notifyTabActive() {
  */
 function getImsTokenFromStorage() {
   try {
-    const keys = Object.keys(localStorage).filter(k => k.startsWith('adobeid_ims_access_token'));
+    const keys = Object.keys(localStorage).filter((k) => k.startsWith('adobeid_ims_access_token'));
 
     if (keys.length === 0) {
       console.warn('[content] No IMS token keys found in localStorage');
@@ -89,13 +89,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     sendResponse({
       type: 'AUTH_TOKEN',
-      token: token,
+      token,
       org: msg.org,
-      repo: msg.repo
+      repo: msg.repo,
     });
 
     return false; // Synchronous response
   }
+
+  return false; // Return false for unhandled messages
 });
 
 // Notify on load
