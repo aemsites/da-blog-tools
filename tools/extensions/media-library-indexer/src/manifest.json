@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Media Library Indexer",
   "version": "0.1.0",
-  "description": "Background indexer for DA Media Library",
+  "description": "Automatically builds and maintains media library indexes for AEM Edge Delivery Services sites",
   "permissions": [
     "alarms",
     "storage",
