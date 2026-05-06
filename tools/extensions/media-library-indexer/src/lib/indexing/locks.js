@@ -1,214 +1,224 @@
 /**
- * Lock Management
- * Copied from da-nx/nx/blocks/media-library/indexing/locks.js
- * Adapted for Chrome extension service worker context
+ * Lock Management - Worker-safe version
+ * Imports lock logic from da.live CDN, adapted for Chrome extension service worker
+ *
+ * Based on: https://da.live/nx/blocks/media-library/indexing/locks.js
  */
 
-import { daFetch, DA_ORIGIN } from '../../adapters/fetch-adapter.js';
+import { IndexConfig, IndexFiles } from 'https://da.live/nx/blocks/media-library/core/constants.js';
+import { getImsToken } from '../../adapters/auth-adapter.js';
 
-const LOCK_HEARTBEAT_INTERVAL_MS = 60_000; // 60s
-const LOCK_STALE_THRESHOLD_MS = 600_000;   // 10min
+// Import constants directly from da.live CDN (pure, no dependencies)
 
-// In-memory lock owner ID (replaces sessionStorage in browser context)
+const DA_ORIGIN = 'https://admin.da.live';
+const { LOCK_STALE_THRESHOLD_MS } = IndexConfig;
+
+// In-memory lock owner ID (replaces window.sessionStorage)
 let lockOwnerId = null;
 
 /**
- * Get or create lock owner ID
- * @returns {string} - Unique owner ID for this service worker instance
+ * Worker-safe createSheet - extracted from admin-api.js
+ * Creates FormData with sheet metadata format
  */
-function getLockOwnerId() {
+function createSheet(data, type = 'sheet') {
+  const sheetMeta = {
+    total: data.length,
+    limit: data.length,
+    offset: 0,
+    data,
+    ':type': type,
+  };
+  const blob = new Blob([JSON.stringify(sheetMeta, null, 2)], { type: 'application/json' });
+  const formData = new FormData();
+  formData.append('data', blob);
+  return formData;
+}
+
+/**
+ * Worker-safe daFetch - uses IMS token from auth-adapter
+ */
+async function workerDaFetch(url, org, repo, options = {}) {
+  const imsToken = await getImsToken(org, repo);
+
+  if (!imsToken) {
+    throw new Error('[locks] No IMS token available');
+  }
+
+  const headers = options.headers || {};
+  headers.Authorization = `Bearer ${imsToken}`;
+
+  const resp = await fetch(url, {
+    ...options,
+    headers,
+  });
+
+  return resp;
+}
+
+/**
+ * Get media library folder path
+ * From locks.js:16-18
+ */
+function getMediaLibraryPath(sitePath) {
+  return `${sitePath}/${IndexFiles.FOLDER}`;
+}
+
+/**
+ * Get index lock file path
+ * From locks.js:20-22
+ */
+export function getIndexLockPath(sitePath) {
+  return `${getMediaLibraryPath(sitePath)}/${IndexFiles.INDEX_LOCK}`;
+}
+
+/**
+ * Get or create lock owner ID
+ * From locks.js:70-78 (adapted for service worker - no sessionStorage)
+ */
+export function getIndexLockOwnerId() {
   if (!lockOwnerId) {
-    const timestamp = Date.now().toString(36);
-    const random = Math.random().toString(36).substring(2, 10);
-    lockOwnerId = `ml-${timestamp}-${random}`;
+    lockOwnerId = `ml-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   }
   return lockOwnerId;
 }
 
 /**
- * Check if lock is fresh (updated within threshold)
- * @param {object} lock - Lock object
- * @param {number} now - Current timestamp
- * @returns {boolean} - True if lock is fresh
+ * Check if lock is fresh (< 10 min old)
+ * From locks.js:63-68
  */
 export function isFreshIndexLock(lock, now = Date.now()) {
-  if (!lock || !lock.lastUpdated) return false;
-  return (now - lock.lastUpdated) < LOCK_STALE_THRESHOLD_MS;
+  if (!(lock?.exists && lock?.locked)) return false;
+  const heartbeat = lock.lastUpdated || lock.timestamp || lock.startedAt;
+  if (!heartbeat) return false;
+  return (now - heartbeat) < LOCK_STALE_THRESHOLD_MS;
 }
 
 /**
  * Check if index lock exists
- * Copied from da-nx locks.js::checkIndexLock
- *
- * @param {string} sitePath - Site path (e.g., '/org/repo')
- * @param {string} org - Organization
- * @param {string} repo - Repository
- * @returns {Promise<object>} - Lock object or {exists: false}
+ * From locks.js:24-61
  */
 export async function checkIndexLock(sitePath, org, repo) {
+  const path = getIndexLockPath(sitePath);
   try {
-    const lockPath = `${sitePath}/.da/media-insights/index-lock.json`;
-    const resp = await daFetch(`${DA_ORIGIN}/source${lockPath}`, org, repo);
-
-    if (!resp.ok) {
-      return { exists: false };
+    const resp = await workerDaFetch(`${DA_ORIGIN}/source${path}`, org, repo);
+    if (resp.ok) {
+      const data = await resp.json();
+      const lockData = data.data?.[0] || data;
+      return {
+        exists: true,
+        locked: lockData.locked || false,
+        timestamp: lockData.timestamp || null,
+        startedAt: lockData.startedAt || lockData.timestamp || null,
+        lastUpdated: lockData.lastUpdated || lockData.timestamp || null,
+        ownerId: lockData.ownerId || '',
+        mode: lockData.mode || '',
+      };
     }
-
-    const result = await resp.json();
-    const lock = result.data?.[0] || result;
-
-    if (!lock || !lock.locked) {
-      return { exists: false };
-    }
-
+  } catch (e) {
     return {
-      exists: true,
-      ownerId: lock.ownerId,
-      timestamp: lock.timestamp,
-      startedAt: lock.startedAt,
-      lastUpdated: lock.lastUpdated,
-      locked: lock.locked
+      exists: false,
+      locked: false,
+      timestamp: null,
+      startedAt: null,
+      lastUpdated: null,
+      ownerId: '',
+      mode: '',
     };
-  } catch (error) {
-    console.error('[locks] Error checking lock:', error);
-    return { exists: false };
   }
+  return {
+    exists: false,
+    locked: false,
+    timestamp: null,
+    startedAt: null,
+    lastUpdated: null,
+    ownerId: '',
+    mode: '',
+  };
 }
 
 /**
  * Create index lock
- * Copied from da-nx locks.js::createIndexLock
- *
- * @param {string} sitePath - Site path
- * @param {string} org - Organization
- * @param {string} repo - Repository
- * @returns {Promise<object>} - Created lock object
+ * From locks.js:81-104 (simplified error handling for worker)
  */
-export async function createIndexLock(sitePath, org, repo) {
+export async function createIndexLock(sitePath, org, repo, mode = 'full') {
+  const path = getIndexLockPath(sitePath);
+  const ownerId = getIndexLockOwnerId();
   const now = Date.now();
-  const ownerId = getLockOwnerId();
-
-  const lockData = {
+  const lockData = [{
     timestamp: now,
     startedAt: now,
     lastUpdated: now,
     ownerId,
-    locked: true
-  };
-
-  // Create sheet with lock data
-  const sheetData = {
-    total: 1,
-    limit: 1,
-    offset: 0,
-    data: [lockData],
-    ':type': 'sheet'
-  };
-
-  const blob = new Blob([JSON.stringify(sheetData, null, 2)], {
-    type: 'application/json'
+    locked: true,
+    mode,
+  }];
+  const formData = createSheet(lockData);
+  const resp = await workerDaFetch(`${DA_ORIGIN}/source${path}`, org, repo, {
+    method: 'PUT',
+    body: formData,
   });
-
-  const formData = new FormData();
-  formData.append('data', blob);
-
-  const lockPath = `${sitePath}/.da/media-insights/index-lock.json`;
-
-  try {
-    const resp = await daFetch(`${DA_ORIGIN}/source${lockPath}`, org, repo, {
-      method: 'PUT',
-      body: formData
-    });
-
-    if (!resp.ok) {
-      throw new Error(`Failed to create lock: ${resp.status}`);
+  if (!resp.ok) {
+    let errorDetail = '';
+    try {
+      errorDetail = await resp.text();
+    } catch (e) {
+      errorDetail = 'Could not read error response';
     }
-
-    console.log('[locks] Created lock:', ownerId);
-    return lockData;
-  } catch (error) {
-    console.error('[locks] Error creating lock:', error);
-    throw error;
+    throw new Error(`Failed to create lock: ${resp.status} ${resp.statusText} - ${errorDetail}`);
   }
+
+  console.log(`[locks] Created lock: ${ownerId} (mode: ${mode})`);
+  return resp;
 }
 
 /**
  * Refresh index lock (heartbeat)
- * Copied from da-nx locks.js::refreshIndexLock
- *
- * @param {string} sitePath - Site path
- * @param {object} lockData - Current lock data
- * @param {string} org - Organization
- * @param {string} repo - Repository
- * @returns {Promise<void>}
+ * From locks.js:106-128 (simplified error handling for worker)
  */
 export async function refreshIndexLock(sitePath, lockData, org, repo) {
-  const updatedLock = {
-    ...lockData,
-    lastUpdated: Date.now()
-  };
-
-  const sheetData = {
-    total: 1,
-    limit: 1,
-    offset: 0,
-    data: [updatedLock],
-    ':type': 'sheet'
-  };
-
-  const blob = new Blob([JSON.stringify(sheetData, null, 2)], {
-    type: 'application/json'
+  const path = getIndexLockPath(sitePath);
+  const now = Date.now();
+  const formData = createSheet([{
+    locked: true,
+    timestamp: lockData.timestamp || lockData.startedAt || now,
+    startedAt: lockData.startedAt || lockData.timestamp || now,
+    lastUpdated: now,
+    ownerId: lockData.ownerId || getIndexLockOwnerId(),
+    mode: lockData.mode || '',
+  }]);
+  const resp = await workerDaFetch(`${DA_ORIGIN}/source${path}`, org, repo, {
+    method: 'PUT',
+    body: formData,
   });
-
-  const formData = new FormData();
-  formData.append('data', blob);
-
-  const lockPath = `${sitePath}/.da/media-insights/index-lock.json`;
-
-  try {
-    const resp = await daFetch(`${DA_ORIGIN}/source${lockPath}`, org, repo, {
-      method: 'PUT',
-      body: formData
-    });
-
-    if (!resp.ok) {
-      throw new Error(`Failed to refresh lock: ${resp.status}`);
+  if (!resp.ok) {
+    let errorDetail = '';
+    try {
+      errorDetail = await resp.text();
+    } catch (e) {
+      errorDetail = 'Could not read error response';
     }
-
-    console.log('[locks] Refreshed lock');
-  } catch (error) {
-    console.error('[locks] Error refreshing lock:', error);
-    throw error;
+    throw new Error(`Failed to refresh lock: ${resp.status} ${resp.statusText} - ${errorDetail}`);
   }
+
+  console.log('[locks] Refreshed lock');
+  return resp;
 }
 
 /**
  * Remove index lock
- * Copied from da-nx locks.js::removeIndexLock
- *
- * @param {string} sitePath - Site path
- * @param {string} org - Organization
- * @param {string} repo - Repository
- * @returns {Promise<void>}
+ * From locks.js:130-139
  */
 export async function removeIndexLock(sitePath, org, repo) {
-  const lockPath = `${sitePath}/.da/media-insights/index-lock.json`;
-
-  try {
-    const resp = await daFetch(`${DA_ORIGIN}/source${lockPath}`, org, repo, {
-      method: 'DELETE'
-    });
-
-    if (!resp.ok && resp.status !== 404) {
-      throw new Error(`Failed to remove lock: ${resp.status}`);
-    }
-
-    console.log('[locks] Removed lock');
-  } catch (error) {
-    console.error('[locks] Error removing lock:', error);
-    throw error;
+  const path = getIndexLockPath(sitePath);
+  const resp = await workerDaFetch(`${DA_ORIGIN}/source${path}`, org, repo, { method: 'DELETE' });
+  if (!resp.ok) {
+    if (resp.status === 404) return resp;
+    throw new Error(`Failed to remove lock: ${resp.status}`);
   }
+
+  console.log('[locks] Removed lock');
+  return resp;
 }
 
-// Export for testing
-export { getLockOwnerId, LOCK_HEARTBEAT_INTERVAL_MS, LOCK_STALE_THRESHOLD_MS };
+// Export constants for testing
+export { LOCK_STALE_THRESHOLD_MS };
