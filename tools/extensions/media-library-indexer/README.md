@@ -1,55 +1,74 @@
 # Media Library Indexer Chrome Extension
 
-Background indexer for DA Media Library.
+Automatically builds and maintains media library indexes for AEM Edge Delivery Services sites.
 
-## Development
+## What It Does
 
-### Build
+- Monitors tracked sites for media changes when da.live tab is open
+- Builds full index for new sites or when index is missing
+- Runs incremental builds when content changes detected
+- Only processes sites when you have da.live open (requires auth tokens)
 
-From repo root:
-```bash
-npm run build:extension
-```
+## Installation
 
-Or from extension directory:
+### Development
+
+1. Build the extension:
 ```bash
 cd tools/extensions/media-library-indexer
 ./scripts/build.sh
 ```
 
-### Install
+2. Load in Chrome:
+   - Open `chrome://extensions`
+   - Enable "Developer mode"
+   - Click "Load unpacked"
+   - Select `dist/` folder
 
-1. Build the extension (see above)
-2. Open Chrome: `chrome://extensions`
-3. Enable "Developer mode"
-4. Click "Load unpacked"
-5. Select `tools/extensions/media-library-indexer/dist/` directory
+### Production
 
-### Package for Distribution
+Chrome Web Store: *Coming soon*
 
-From repo root:
-```bash
-npm run package:extension
-```
+## Usage
 
-Creates: `media-library-indexer-v{version}.zip`
+### Add a Site
 
-## Testing
+1. Open `https://da.live/#/{org}/{repo}` in Chrome
+2. Right-click → "Add this site for indexing"
+3. Index builds automatically in background
 
-1. Navigate to `https://da.live/#/{org}/{site}`
-2. Icon should turn green
-3. Right-click → "Add this site for indexing"
-4. Open service worker console: Extensions → Media Library Indexer → "Inspect service worker"
-5. Watch indexing logs
+### Remove a Site
 
-## Storage Inspection
+Right-click on da.live page → "Remove this site from indexing"
 
-Service worker console:
+### Check Status
+
+Click the extension icon to see:
+- Indexing status
+- Last indexed time
+- Total media count
+
+## Viewing Debug Logs
+
+1. Go to `chrome://extensions`
+2. Find "Media Library Indexer"
+3. Click "Inspect service worker"
+4. View console logs
+
+**Enable detailed token logging:**
 ```javascript
-chrome.storage.local.get('sites', console.log)
+chrome.storage.local.set({ debugPerf: true });
 ```
 
-## References
+## Troubleshooting
 
-- Design doc: `/Users/kiranm/Downloads/medialib-ext/2026-05-01-media-library-chrome-extension-design.md`
-- Manifest V3: https://developer.chrome.com/docs/extensions/mv3/
+**"AUTH NEEDED" status**: Open da.live in a browser tab
+
+**Extension not processing**: Keep a da.live tab open while working
+
+**View tracked sites:**
+```javascript
+chrome.storage.local.get('sites', (result) => {
+  console.table(result.sites);
+});
+```
