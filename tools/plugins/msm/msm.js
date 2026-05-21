@@ -39,12 +39,14 @@ const ACTION_SCOPE = {
 // (see helpers/parseDeepLink in tools/apps/msm/msm.js).
 const MSM_APP_URL = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/msm/msm';
 
-// Icons are referenced as absolute URLs to da.live so they resolve correctly
-// even though the plugin is served from a different origin (e.g. da-blog-tools).
-// All icons in the plugin use the Spectrum 2 workflow icons hosted there via
-// `<svg><use href="${ICON_BASE}/S2_Icon_X_20_N.svg#S2_Icon_X"/></svg>` — see
-// `renderStatusIcon` for the canonical pattern.
-const ICON_BASE = 'https://da.live/blocks/edit/img';
+// All icons in the plugin use Spectrum 2 workflow icons (originally from
+// https://da.live/blocks/edit/img) via
+// `<svg><use href="${ICON_BASE}/S2_Icon_X_20_N.svg#S2_Icon_X"/></svg>`
+// — see `renderStatusIcon` for the canonical pattern. The icons are vendored
+// into ./img/ because Chromium blocks cross-origin SVG `<use href>` for
+// security ("Unsafe attempt to load URL …"), and the plugin is served from a
+// different origin (aem.page) than da.live in production.
+const ICON_BASE = './img';
 
 // Component / style pipeline. We pull two element families to mirror OOTB:
 //   • sl-* — older "Super Lite" controls; the Apply button uses <sl-button>,
