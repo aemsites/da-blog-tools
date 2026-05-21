@@ -272,8 +272,15 @@ class DaMsm extends LitElement {
   }
 
   _getAppDeepLink() {
-    const { org, site, path } = this.details;
+    const {
+      org, site, path, ref,
+    } = this.details;
     const params = new URLSearchParams({ org, site, path });
+    // `ref` routes the DA shell at da.live/app/... to the matching branch
+    // of the tool's source so feature-branch authoring stays on that branch
+    // after hand-off. Only append when present so the default (main) link
+    // stays clean.
+    if (ref) params.set('ref', ref);
     return `${MSM_APP_URL}?${params.toString()}`;
   }
 
@@ -1010,9 +1017,11 @@ export default function render(details) {
     const { context, actions } = await DA_SDK;
     // The DA Prepare host posts `context = { view, org, site, ref, path }`.
     // Fall back to `repo` for hosts that still use the older field name.
-    const { org, path } = context;
+    const { org, path, ref } = context;
     const site = context.site || context.repo;
-    console.log('[MSM Plugin] Init context:', { org, site, path });
+    console.log('[MSM Plugin] Init context:', {
+      org, site, path, ref,
+    });
     console.log('[MSM Plugin] actions.daFetch available?', typeof actions?.daFetch);
 
     // Wire host-supplied daFetch into both helper modules.
@@ -1030,7 +1039,9 @@ export default function render(details) {
     }
 
     const cmp = document.createElement('da-msm');
-    cmp.details = { org, site, path };
+    cmp.details = {
+      org, site, path, ref,
+    };
     document.body.append(cmp);
   } catch (error) {
     console.error('[MSM Plugin] Initialization error:', error);
