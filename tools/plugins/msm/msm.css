@@ -424,6 +424,32 @@
   margin: 0;
 }
 
+/* --- Inline cascade toggle ---
+ * Sits between the primary buttons and the chip section. Governs whether
+ * preview/publish push through the inheritance tree to nested satellites,
+ * or stop at the direct chips below. Only rendered when nested sites
+ * exist; otherwise this row collapses entirely. */
+
+.cascade-toggle-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--s2-gray-700, #4b4b4b);
+}
+
+.cascade-toggle-inline input[type="checkbox"] {
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--s2-gray-800, #292929);
+  cursor: pointer;
+}
+
+.cascade-toggle-inline-label {
+  cursor: pointer;
+}
+
 /* --- Status icons --- */
 
 .result-icon {

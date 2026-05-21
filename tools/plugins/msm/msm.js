@@ -4,6 +4,7 @@ import { LitElement, html, nothing } from 'da-lit';
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import {
   getSiteConfig,
+  getSubtreeSatellites,
   isPageLocal,
   checkOverrides,
   setSdkFetch as setConfigSdkFetch,
@@ -103,6 +104,7 @@ class DaMsm extends LitElement {
     _hasOverride: { state: true },
     _satStatus: { state: true },
     _showAdvanced: { state: true },
+    _includeDescendants: { state: true },
   };
 
   connectedCallback() {
@@ -114,6 +116,10 @@ class DaMsm extends LitElement {
     this._syncMode = SYNC_MODE.merge;
     this._busy = false;
     this._showAdvanced = false;
+    // Cascade preview/publish through the inheritance tree by default — see
+    // the comment above runAction's preview/publish case. Authors can opt out
+    // via the checkbox in "More options" to limit a rollout to direct sites.
+    this._includeDescendants = true;
     this.loadConfig();
   }
 
@@ -256,6 +262,15 @@ class DaMsm extends LitElement {
     this._showAdvanced = opening;
   }
 
+  _setIncludeDescendants(value) {
+    // Toggle persists for the session — authors who explicitly opt out of
+    // cascade shouldn't have it silently re-enabled by subsequent renders.
+    this._includeDescendants = !!value;
+    // Clear stale per-chip success/error markers since the previous run's
+    // results no longer match the new scope.
+    this.clearStatuses();
+  }
+
   _getAppDeepLink() {
     const { org, site, path } = this.details;
     const params = new URLSearchParams({ org, site, path });
@@ -363,7 +378,6 @@ class DaMsm extends LitElement {
     const { org, site, path } = this.details;
 
     const directTargets = this._directTargets;
-    const targetSites = directTargets.map((s) => s.site);
 
     directTargets.forEach((s) => this.updateSatStatus(s.site, STATUS.pending));
 
@@ -371,13 +385,37 @@ class DaMsm extends LitElement {
       case 'preview':
       case 'publish': {
         const fn = action === 'publish' ? publishSatellite : previewSatellite;
+        // Cascade (when `_includeDescendants` is on): each direct target's
+        // subtree gets the rollout too, because content inheritance flows
+        // through the whole tree (A → B → C). Without cascading, C would
+        // render stale content even after A is updated. When the author has
+        // opted out of cascade via the "More options" checkbox, the action
+        // stops at the direct sites. Per-direct status on the chips is
+        // aggregated all-or-nothing across its subtree since descendants
+        // aren't visible in the chip list.
+        const subtreeMap = new Map();
+        await Promise.all(directTargets.map(async (target) => {
+          const subtree = this._includeDescendants
+            ? await getSubtreeSatellites(org, target.site)
+            : [];
+          subtreeMap.set(
+            target.site,
+            [target.site, ...subtree.map((s) => s.site)],
+          );
+        }));
+        const sitesToCall = [...new Set([...subtreeMap.values()].flat())];
         const results = await Promise.allSettled(
-          targetSites.map((satSite) => fn(org, satSite, path)),
+          sitesToCall.map((satSite) => fn(org, satSite, path)),
         );
+        const statusBySite = new Map();
         results.forEach((r, idx) => {
-          const satSite = targetSites[idx];
           const ok = r.status === 'fulfilled' && !r.value?.error;
-          this.updateSatStatus(satSite, ok ? STATUS.success : STATUS.error);
+          statusBySite.set(sitesToCall[idx], ok);
+        });
+        directTargets.forEach((target) => {
+          const sites = subtreeMap.get(target.site) || [target.site];
+          const allOk = sites.every((s) => statusBySite.get(s) === true);
+          this.updateSatStatus(target.site, allOk ? STATUS.success : STATUS.error);
         });
         break;
       }
@@ -571,15 +609,26 @@ class DaMsm extends LitElement {
     if (inheritedCount === 0) return nothing;
 
     const isInheritedScope = ACTION_SCOPE[this._action] === 'inherited';
-    const selectedInherited = this._inherited.filter((s) => this._selected.has(s.site)).length;
     // When the picker (in Advanced) is on a custom-scope action, `_selected`
     // holds custom sites — but clicking a primary button re-seeds to all
-    // inherited via runQuickAction, so the button is never disabled in that
-    // case.
-    const noSelection = isInheritedScope && selectedInherited === 0;
+    // inherited via runQuickAction. When already in inherited scope, the
+    // current selection is what runs (no re-seed).
+    const willRunOn = isInheritedScope
+      ? this._inherited.filter((s) => this._selected.has(s.site))
+      : this._inherited;
+    const directCount = willRunOn.length;
+    const cascadeCount = this._includeDescendants
+      ? willRunOn.reduce((acc, s) => acc + (s.descendantCount || 0), 0)
+      : 0;
+    const totalCount = directCount + cascadeCount;
+    const noSelection = isInheritedScope && directCount === 0;
     const disabled = this._busy || noSelection;
 
-    const countLabel = `${inheritedCount} site${inheritedCount !== 1 ? 's' : ''} following base`;
+    const directLabel = `${directCount} site${directCount !== 1 ? 's' : ''} following base`;
+    const cascadeLabel = cascadeCount > 0
+      ? ` + ${cascadeCount} nested = ${totalCount} total`
+      : '';
+    const countLabel = `${directLabel}${cascadeLabel}`;
     const reason = noSelection ? 'Select at least one site below' : countLabel;
     const previewTitle = `Roll out to preview — ${reason}`;
     const liveTitle = `Roll out to live — ${reason}`;
@@ -684,6 +733,11 @@ class DaMsm extends LitElement {
     const custom = this._custom;
     if (!inherited.length && !custom.length) return nothing;
 
+    // Note: cascade communication lives in the inline toggle above the chips
+    // (renderCascadeToggleInline) and in the per-chip "+N" badges below —
+    // the heading stays a plain section label so the three signals don't
+    // compete for the same screen real estate.
+
     return html`
       ${inherited.length ? html`
         <div class="chips-section">
@@ -709,6 +763,18 @@ class DaMsm extends LitElement {
     const dc = sat.descendantCount || 0;
     const statusClass = sat.status ? `status-${sat.status}` : '';
 
+    // When this chip is in scope for a recursive action (preview/publish)
+    // AND the author hasn't disabled cascade in "More options", the "+N"
+    // badge represents sites that will ALSO receive the rollout. Otherwise
+    // it just describes the site's subtree.
+    const cascades = inScope
+      && RECURSIVE_ACTIONS.has(this._action)
+      && this._includeDescendants;
+    const dcSuffix = dc === 1 ? '' : 's';
+    const dcTitle = cascades
+      ? `Also rolls out to ${dc} nested site${dcSuffix}`
+      : `${dc} nested site${dcSuffix}`;
+
     if (inScope) {
       return html`
         <button class="site-chip ${isSelected ? 'selected' : ''} ${statusClass}"
@@ -717,7 +783,7 @@ class DaMsm extends LitElement {
           @click=${() => this.handleToggle(sat.site)}>
           ${isSelected ? html`<span class="chip-check" aria-hidden="true">\u2713</span>` : nothing}
           <span class="chip-label">${sat.label}</span>
-          ${dc > 0 ? html`<span class="chip-descendants" title="${dc} nested site${dc === 1 ? '' : 's'}">+${dc}</span>` : nothing}
+          ${dc > 0 ? html`<span class="chip-descendants" title=${dcTitle}>+${dc}</span>` : nothing}
           ${sat.status ? this.renderStatusIcon(sat.status) : nothing}
         </button>`;
     }
@@ -732,7 +798,7 @@ class DaMsm extends LitElement {
           rel="noopener"
           title="Open in editor">
           <span class="chip-label">${sat.label}</span>
-          ${dc > 0 ? html`<span class="chip-descendants" title="${dc} nested site${dc === 1 ? '' : 's'}">+${dc}</span>` : nothing}
+          ${dc > 0 ? html`<span class="chip-descendants" title=${dcTitle}>+${dc}</span>` : nothing}
           ${sat.status ? this.renderStatusIcon(sat.status) : nothing}
           <svg class="chip-link-icon" viewBox="0 0 20 20" aria-hidden="true">
             <use href="${ICON_BASE}/S2_Icon_ChevronRight_20_N.svg#S2_Icon_ChevronRight"/>
@@ -743,7 +809,7 @@ class DaMsm extends LitElement {
     return html`
       <span class="site-chip out-of-scope ${statusClass}">
         <span class="chip-label">${sat.label}</span>
-        ${dc > 0 ? html`<span class="chip-descendants" title="${dc} nested site${dc === 1 ? '' : 's'}">+${dc}</span>` : nothing}
+        ${dc > 0 ? html`<span class="chip-descendants" title=${dcTitle}>+${dc}</span>` : nothing}
         ${sat.status ? this.renderStatusIcon(sat.status) : nothing}
       </span>`;
   }
@@ -770,6 +836,33 @@ class DaMsm extends LitElement {
             ${this.renderAdvancedFooter()}
           </div>
         ` : nothing}
+      </div>`;
+  }
+
+  // Inline checkbox that governs whether preview/publish cascade through the
+  // inheritance tree. Lives right below the primary buttons so the scope
+  // control sits next to the action it modifies — authors can see and adjust
+  // it in a single glance instead of opening "More options". Default on
+  // (matches the chip-section heading and button-tooltip totals). Hidden when
+  // the page has no nested satellites — otherwise it would be a no-op.
+  renderCascadeToggleInline() {
+    if (!this._asBase || this._isUpwardMode) return nothing;
+    const totalDescendants = this._inherited.reduce(
+      (acc, s) => acc + (s.descendantCount || 0),
+      0,
+    );
+    if (totalDescendants === 0) return nothing;
+    const id = 'msm-cascade-toggle';
+    const sitesWord = `nested site${totalDescendants === 1 ? '' : 's'}`;
+    return html`
+      <div class="cascade-toggle-inline">
+        <input id=${id}
+          type="checkbox"
+          ?checked=${this._includeDescendants}
+          @change=${(e) => this._setIncludeDescendants(e.target.checked)}>
+        <label class="cascade-toggle-inline-label" for=${id}>
+          Also roll out to ${totalDescendants} ${sitesWord}
+        </label>
       </div>`;
   }
 
@@ -860,6 +953,7 @@ class DaMsm extends LitElement {
   renderDownwardView() {
     return html`
       ${this.renderPrimaryButtons()}
+      ${this.renderCascadeToggleInline()}
       ${this.renderSiteChips()}`;
   }
 
