@@ -4,7 +4,6 @@ import { LitElement, html, nothing } from 'da-lit';
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import {
   getSiteConfig,
-  getSubtreeSatellites,
   isPageLocal,
   checkOverrides,
   setSdkFetch as setConfigSdkFetch,
@@ -35,8 +34,16 @@ const ACTION_SCOPE = {
   reset: 'custom',
 };
 
+// Hosted location of the full-page MSM app. The "Manage variants in MSM"
+// hand-off deep-links into it with the current org/site/path pre-loaded
+// (see helpers/parseDeepLink in tools/apps/msm/msm.js).
+const MSM_APP_URL = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/msm/msm';
+
 // Icons are referenced as absolute URLs to da.live so they resolve correctly
 // even though the plugin is served from a different origin (e.g. da-blog-tools).
+// All icons in the plugin use the Spectrum 2 workflow icons hosted there via
+// `<svg><use href="${ICON_BASE}/S2_Icon_X_20_N.svg#S2_Icon_X"/></svg>` — see
+// `renderStatusIcon` for the canonical pattern.
 const ICON_BASE = 'https://da.live/blocks/edit/img';
 
 // Component / style pipeline. We pull two element families to mirror OOTB:
@@ -93,7 +100,7 @@ class DaMsm extends LitElement {
     _asSatellite: { state: true },
     _hasOverride: { state: true },
     _satStatus: { state: true },
-    _includeDescendants: { state: true },
+    _showAdvanced: { state: true },
   };
 
   connectedCallback() {
@@ -104,8 +111,21 @@ class DaMsm extends LitElement {
     this._action = 'preview';
     this._syncMode = SYNC_MODE.merge;
     this._busy = false;
-    this._includeDescendants = false;
+    this._showAdvanced = false;
     this.loadConfig();
+  }
+
+  updated(changedProperties) {
+    // When the user expands "More options", scroll the newly-rendered panel
+    // into view so the picker and Apply button are visible without manually
+    // scrolling the 400px-tall iframe. requestAnimationFrame defers the call
+    // until after the browser has laid out the freshly-mounted content.
+    if (changedProperties.has('_showAdvanced') && this._showAdvanced) {
+      requestAnimationFrame(() => {
+        const panel = this.shadowRoot?.querySelector('.advanced-content');
+        panel?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    }
   }
 
   async loadConfig() {
@@ -137,8 +157,14 @@ class DaMsm extends LitElement {
       this._action = 'sync-from-base';
     }
 
+    // Auto-select all in-scope satellites for the default action so authors
+    // don't have to tick boxes for the common "roll out to everyone" flow.
+    this._seedSelectionForAction(this._action);
+
     this._loading = undefined;
   }
+
+  // ── Derived state ───────────────────────────────────────────────────
 
   get _inherited() {
     return this._satellites?.filter((s) => !s.hasOverride) || [];
@@ -162,51 +188,79 @@ class DaMsm extends LitElement {
     return SYNC_ACTIONS.has(this._action);
   }
 
-  get _isRecursiveActive() {
-    return RECURSIVE_ACTIONS.has(this._action);
-  }
-
   get _hasDualRole() {
     return !!(this._asBase && this._asSatellite);
   }
 
-  get _totalDescendants() {
-    // Only count descendants of satellites that are in scope for the active
-    // action. A custom-overridden satellite with nested children is not
-    // reachable from an inherited-scope action (e.g. Roll out to preview), so
-    // its descendants must not trigger the cascade UI.
-    const scope = ACTION_SCOPE[this._action];
-    if (!scope) return 0;
-    const pool = scope === 'custom' ? this._custom : this._inherited;
-    return pool.reduce((acc, s) => acc + (s.descendantCount || 0), 0);
+  get _isSatelliteOnly() {
+    return !!(this._asSatellite && !this._asBase);
   }
 
-  async _expandedTargetSites() {
-    if (!this._includeDescendants || !RECURSIVE_ACTIONS.has(this._action)) {
-      return this._directTargets.map((s) => s.site);
-    }
-    const { org } = this.details;
-    const seen = new Set();
-    const ordered = [];
-    await Promise.all(this._directTargets.map(async (target) => {
-      if (!seen.has(target.site)) {
-        seen.add(target.site);
-        ordered.push(target.site);
-      }
-      const subtree = await getSubtreeSatellites(org, target.site);
-      subtree.forEach((s) => {
-        if (!seen.has(s.site)) {
-          seen.add(s.site);
-          ordered.push(s.site);
-        }
-      });
-    }));
-    return ordered;
+  // The upward primary view (Pull / Revert buttons) is shown when the page
+  // is satellite-only OR when the author has flipped a dual-role page to
+  // "Update from parent instead".
+  get _showUpwardView() {
+    return this._isSatelliteOnly || (this._hasDualRole && this._isUpwardMode);
   }
 
   get _canApplyDownward() {
     return !this._busy && this._directTargets.length > 0;
   }
+
+  // True when `sat` belongs to the pool the current action affects. Drives
+  // chip interactivity: in-scope chips are toggleable, out-of-scope chips
+  // either link to the editor (customized) or render as plain decoration
+  // (inherited).
+  _isInScope(sat) {
+    const scope = ACTION_SCOPE[this._action];
+    if (!scope) return false;
+    return scope === 'custom' ? !!sat.hasOverride : !sat.hasOverride;
+  }
+
+  // ── Selection / advanced toggle / app deep-link helpers ─────────────
+
+  // Seeds `_selected` with every satellite whose override state matches the
+  // given action's scope. Upward actions (which target the satellite itself,
+  // not its children) clear the selection.
+  _seedSelectionForAction(action) {
+    if (!this._satellites) {
+      this._selected = new Set();
+      return;
+    }
+    const scope = ACTION_SCOPE[action];
+    if (!scope) {
+      this._selected = new Set();
+      return;
+    }
+    const pool = scope === 'custom' ? this._custom : this._inherited;
+    this._selected = new Set(pool.map((s) => s.site));
+  }
+
+  _toggleAdvanced() {
+    const opening = !this._showAdvanced;
+    if (opening) {
+      // Picker doesn't include preview/publish (covered by primary buttons),
+      // so when opening from a primary action, default to the first advanced
+      // action so the picker has a valid selection.
+      if (RECURSIVE_ACTIONS.has(this._action)) {
+        this.onActionChange('break');
+      }
+    } else if (!RECURSIVE_ACTIONS.has(this._action)) {
+      // Closing: snap back to the primary action so the chips above reflect
+      // what the visible primary buttons will do (instead of leaving them
+      // wired up to whatever advanced action the user last picked).
+      this.onActionChange('preview');
+    }
+    this._showAdvanced = opening;
+  }
+
+  _getAppDeepLink() {
+    const { org, site, path } = this.details;
+    const params = new URLSearchParams({ org, site, path });
+    return `${MSM_APP_URL}?${params.toString()}`;
+  }
+
+  // ── Handlers ────────────────────────────────────────────────────────
 
   handleToggle(site) {
     const next = new Set(this._selected);
@@ -229,12 +283,44 @@ class DaMsm extends LitElement {
     this._action = value;
     this.clearStatuses();
     this._satStatus = undefined;
+    // Re-seed selection so chips/list reflect what the new action can target.
+    this._seedSelectionForAction(value);
   }
 
-  // Direction switch flips the action picker between upward (parent) and
-  // downward (children) modes. The picker's options are filtered to match.
+  // Flips between downward (children) and upward (parent) directions for
+  // dual-role pages. The next action depends on which surface will be
+  // visible after the flip — the Advanced picker (only shown in downward
+  // mode) doesn't expose 'preview'/'publish', so we must snap to one of
+  // its options ('break') when Advanced will remain open, otherwise to the
+  // primary-button default.
   onDirectionToggle(toUpward) {
-    this.onActionChange(toUpward ? 'sync-from-base' : 'preview');
+    let nextAction;
+    if (toUpward) {
+      nextAction = 'sync-from-base';
+    } else if (this._showAdvanced) {
+      nextAction = 'break';
+    } else {
+      nextAction = 'preview';
+    }
+    this.onActionChange(nextAction);
+  }
+
+  // Quick-action triggered by the big primary buttons. Sets the action,
+  // ensures selection is seeded, and runs the same `apply()` flow as the
+  // advanced UI would.
+  async runQuickAction(action) {
+    if (this._busy) return;
+    const oldScope = ACTION_SCOPE[this._action];
+    const newScope = ACTION_SCOPE[action];
+    this._action = action;
+    this.clearStatuses();
+    this._satStatus = undefined;
+    // Re-seed when the scope changed, or when the user previously cleared
+    // the chips — both cases mean "do this action with the natural defaults".
+    if (oldScope !== newScope || (newScope && this._selected.size === 0)) {
+      this._seedSelectionForAction(action);
+    }
+    await this.apply();
   }
 
   async apply() {
@@ -247,17 +333,7 @@ class DaMsm extends LitElement {
 
     if (this._action === 'reset') {
       const names = this._directTargets.map((s) => s.label).join(', ');
-      this._confirmAction = { message: `Resume inheritance for ${names}? This deletes local overrides.` };
-      return;
-    }
-
-    if (this._includeDescendants && RECURSIVE_ACTIONS.has(this._action)) {
-      const directLabels = this._directTargets.map((s) => s.label).join(', ');
-      const surface = this._action === 'preview' ? 'preview' : 'live';
-      this._confirmAction = {
-        message: `Roll out ${directLabels} and all their descendants to ${surface}? Inherited content will be served at every site in the subtree.`,
-        confirmedAction: this._action,
-      };
+      this._confirmAction = { message: `Discard local copy on ${names}? Removes the satellite override.` };
       return;
     }
 
@@ -285,8 +361,7 @@ class DaMsm extends LitElement {
     const { org, site, path } = this.details;
 
     const directTargets = this._directTargets;
-    const expandedSites = await this._expandedTargetSites();
-    const recursive = RECURSIVE_ACTIONS.has(action) && this._includeDescendants;
+    const targetSites = directTargets.map((s) => s.site);
 
     directTargets.forEach((s) => this.updateSatStatus(s.site, STATUS.pending));
 
@@ -295,21 +370,13 @@ class DaMsm extends LitElement {
       case 'publish': {
         const fn = action === 'publish' ? publishSatellite : previewSatellite;
         const results = await Promise.allSettled(
-          expandedSites.map((satSite) => fn(org, satSite, path)),
+          targetSites.map((satSite) => fn(org, satSite, path)),
         );
-        if (recursive) {
-          const allOk = results.every((r) => r.status === 'fulfilled' && !r.value?.error);
-          directTargets.forEach((s) => this.updateSatStatus(
-            s.site,
-            allOk ? STATUS.success : STATUS.error,
-          ));
-        } else {
-          results.forEach((r, idx) => {
-            const satSite = expandedSites[idx];
-            const ok = r.status === 'fulfilled' && !r.value?.error;
-            this.updateSatStatus(satSite, ok ? STATUS.success : STATUS.error);
-          });
-        }
+        results.forEach((r, idx) => {
+          const satSite = targetSites[idx];
+          const ok = r.status === 'fulfilled' && !r.value?.error;
+          this.updateSatStatus(satSite, ok ? STATUS.success : STATUS.error);
+        });
         break;
       }
 
@@ -385,7 +452,7 @@ class DaMsm extends LitElement {
 
     if (this._action === 'resume-inheritance') {
       this._confirmAction = {
-        message: 'Resume inheritance? This deletes the local override.',
+        message: 'Revert to base? This deletes the local copy on this satellite.',
         confirmedAction: 'resume-inheritance',
       };
       return;
@@ -403,7 +470,13 @@ class DaMsm extends LitElement {
     try {
       let result;
       if (action === 'sync-from-base') {
-        result = this._syncMode === SYNC_MODE.merge
+        // Smart sync mode: merge when there's a local copy to preserve any
+        // edits, override when there's nothing local to merge against. Read
+        // `_hasOverride` at execution time so repeated pulls do the right
+        // thing after the first one materialises a local copy. Authors who
+        // need explicit control over merge vs override should use the app.
+        const useMerge = this._hasOverride;
+        result = useMerge
           ? await mergeFromBase(org, baseSite, site, path)
           : await createOverride(org, baseSite, site, path);
       } else if (action === 'resume-inheritance') {
@@ -453,35 +526,6 @@ class DaMsm extends LitElement {
     </svg>`;
   }
 
-  renderSatellite(sat) {
-    const scope = ACTION_SCOPE[this._action];
-    const isBaseAction = scope === 'inherited' || scope === 'custom';
-    const outOfScope = isBaseAction && ((scope === 'inherited') === sat.hasOverride);
-    const showDescendantBadge = sat.descendantCount > 0;
-    const fallbackEditUrl = `https://da.live/edit#/${this.details.org}/${sat.site}${this.details.path}`;
-
-    return html`
-      <li class="sat-row ${outOfScope ? 'out-of-scope' : ''}">
-        <label>
-          <input type="checkbox"
-            .checked=${this._selected.has(sat.site)}
-            ?disabled=${this._busy || outOfScope}
-            @change=${() => this.handleToggle(sat.site)} />
-          <span>${sat.label}</span>
-          ${showDescendantBadge ? html`
-            <span class="descendant-badge" title="${sat.descendantCount} descendant site${sat.descendantCount === 1 ? '' : 's'}">
-              +${sat.descendantCount}
-            </span>
-          ` : nothing}
-        </label>
-        ${this.renderStatusIcon(sat.status)}
-        ${sat.hasOverride ? html`
-          <a class="icon-btn" href=${sat.editUrl || fallbackEditUrl} target="_blank" title="Open in editor">
-            <svg viewBox="0 0 20 20"><path fill="currentColor" d="M18.16 15.62V4.12c0-1.24-1.01-2.25-2.25-2.25H4.41c-1.24 0-2.25 1.01-2.25 2.25v3.72c0 .41.34.75.75.75s.75-.34.75-.75v-3.72c0-.41.34-.75.75-.75h11.5c.41 0 .75.34.75.75v11.5c0 .41-.34.75-.75.75h-3.81c-.41 0-.75.34-.75.75s.34.75.75.75h3.81c1.24 0 2.25-1.01 2.25-2.25z"/><path fill="currentColor" d="M11.16 9.62v4.24c0 .41-.34.75-.75.75s-.75-.34-.75-.75v-2.43l-6.47 6.47c-.15.15-.34.22-.53.22s-.38-.07-.53-.22a.754.754 0 010-1.06l6.47-6.47H6.17c-.41 0-.75-.34-.75-.75s.34-.75.75-.75h4.24c.41 0 .75.34.75.75z"/></svg>
-          </a>` : nothing}
-      </li>`;
-  }
-
   renderConfirm() {
     if (!this._confirmAction) return nothing;
     return html`
@@ -492,85 +536,6 @@ class DaMsm extends LitElement {
           <button class="confirm-btn danger" @click=${() => this.doConfirmedAction()}>Confirm</button>
         </div>
       </div>`;
-  }
-
-  renderSyncModeSelect() {
-    return html`
-      <se-select
-        label="Sync mode"
-        name="syncMode"
-        .value=${this._syncMode}
-        ?disabled=${this._busy}
-        @change=${(e) => { this._syncMode = e.target.value; }}>
-        <option value="merge">Merge</option>
-        <option value="override">Override</option>
-      </se-select>`;
-  }
-
-  renderActionPicker() {
-    const groups = [];
-
-    // The picker shows only the optgroups relevant to the active direction.
-    // The Sync-from-parent switch (or absence of one of the roles) decides
-    // which direction is active.
-    if (this._asSatellite && this._isUpwardMode) {
-      groups.push({
-        label: 'From parent',
-        items: [
-          { value: 'sync-from-base', label: 'Sync from base' },
-          { value: 'resume-inheritance', label: 'Resume inheritance' },
-        ],
-      });
-    }
-
-    if (this._asBase && !this._isUpwardMode) {
-      groups.push({
-        label: 'Inherited sites',
-        items: [
-          { value: 'preview', label: 'Roll out to preview' },
-          { value: 'publish', label: 'Roll out to live' },
-          { value: 'break', label: 'Cancel inheritance' },
-        ],
-      });
-      groups.push({
-        label: 'Custom sites',
-        items: [
-          { value: 'sync', label: 'Sync to satellite' },
-          { value: 'reset', label: 'Resume inheritance' },
-        ],
-      });
-    }
-
-    return html`
-      <se-select
-        label="Action"
-        name="action"
-        .value=${this._action}
-        ?disabled=${this._busy}
-        @change=${(e) => this.onActionChange(e.target.value)}>
-        ${groups.map((group) => html`
-          <optgroup label=${group.label}>
-            ${group.items.map((opt) => html`
-              <option value=${opt.value}>${opt.label}</option>
-            `)}
-          </optgroup>
-        `)}
-      </se-select>`;
-  }
-
-  renderDirectionSwitch() {
-    if (!this._hasDualRole) return nothing;
-    return html`
-      <label class="direction-switch">
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label="Sync from parent"
-          .checked=${this._isUpwardMode}
-          ?disabled=${this._busy}
-          @change=${(e) => this.onDirectionToggle(e.target.checked)} />
-        <span>Sync from parent</span>
-      </label>`;
   }
 
   renderBreadcrumb() {
@@ -591,86 +556,315 @@ class DaMsm extends LitElement {
       </div>`;
   }
 
-  renderUpwardSummary() {
-    // Skip for base-only pages or when a downward action is selected.
-    if (!this._asSatellite) return nothing;
-    if (!this._isUpwardMode) return nothing;
+  // ── Primary buttons: downward (base / dual-downward) ──
+  //
+  // Side-by-side, Spectrum-style pill buttons (fill + outline). The chip
+  // section below shows what they target and how many — no in-button
+  // subtitle. The `title` attribute carries the tooltip / disabled reason.
 
-    const baseLabel = this._asSatellite.baseLabel || this._asSatellite.base;
-    const targetLabel = this.details.site;
-    const overrideText = this._hasOverride ? 'Yes — overridden' : 'None — inherited';
-    const overrideMuted = !this._hasOverride;
+  renderPrimaryButtons() {
+    if (!this._asBase || this._isUpwardMode) return nothing;
+
+    const inheritedCount = this._inherited.length;
+    if (inheritedCount === 0) return nothing;
+
+    const isInheritedScope = ACTION_SCOPE[this._action] === 'inherited';
+    const selectedInherited = this._inherited.filter((s) => this._selected.has(s.site)).length;
+    // When the picker (in Advanced) is on a custom-scope action, `_selected`
+    // holds custom sites — but clicking a primary button re-seeds to all
+    // inherited via runQuickAction, so the button is never disabled in that
+    // case.
+    const noSelection = isInheritedScope && selectedInherited === 0;
+    const disabled = this._busy || noSelection;
+
+    const countLabel = `${inheritedCount} site${inheritedCount !== 1 ? 's' : ''} following base`;
+    const reason = noSelection ? 'Select at least one site below' : countLabel;
+    const previewTitle = `Roll out to preview — ${reason}`;
+    const liveTitle = `Roll out to live — ${reason}`;
 
     return html`
-      <section class="upward-summary">
-        <div class="row">
-          <span class="label">Source</span>
-          <span class="value">${baseLabel}</span>
-        </div>
-        <div class="row">
-          <span class="label">Target</span>
-          <span class="value">${targetLabel} ${this.renderStatusIcon(this._satStatus)}</span>
-        </div>
-        <div class="row">
-          <span class="label">Local override</span>
-          <span class="value ${overrideMuted ? 'muted' : ''}">${overrideText}</span>
-        </div>
-      </section>`;
+      <div class="primary-buttons">
+        <button class="primary-btn fill"
+          type="button"
+          title=${previewTitle}
+          ?disabled=${disabled}
+          @click=${() => this.runQuickAction('preview')}>
+          <svg class="primary-btn-icon" viewBox="0 0 20 20" aria-hidden="true">
+            <use href="${ICON_BASE}/S2_Icon_ExperiencePreview_20_N.svg#S2_Icon_ExperiencePreview"/>
+          </svg>
+          <span class="primary-btn-label">Roll out to preview</span>
+        </button>
+        <button class="primary-btn outline"
+          type="button"
+          title=${liveTitle}
+          ?disabled=${disabled}
+          @click=${() => this.runQuickAction('publish')}>
+          <svg class="primary-btn-icon" viewBox="0 0 20 20" aria-hidden="true">
+            <use href="${ICON_BASE}/S2_Icon_Publish_20_N.svg#S2_Icon_Publish"/>
+          </svg>
+          <span class="primary-btn-label">Roll out to live</span>
+        </button>
+      </div>`;
   }
 
-  renderChildrenList() {
-    // The children list only applies to the downward direction. When the
-    // Sync-from-parent switch is on (or the page is satellite-only), hide
-    // the list entirely so the dialog focuses on the upward action.
+  // ── Primary buttons: upward (satellite-only / dual-upward) ──
+
+  renderSatellitePrimaryButtons() {
+    const baseLabel = this._asSatellite?.baseLabel || this._asSatellite?.base || 'base';
+    const canRevert = this._hasOverride === true;
+    const pullTitle = this._hasOverride
+      ? `Merge latest from ${baseLabel} into your local copy`
+      : `Copy the page from ${baseLabel} to your site`;
+    const revertTitle = `Delete your local copy and follow ${baseLabel} again`;
+
+    return html`
+      <div class="primary-buttons">
+        <button class="primary-btn fill"
+          type="button"
+          title=${pullTitle}
+          ?disabled=${this._busy}
+          @click=${() => this.runQuickAction('sync-from-base')}>
+          <svg class="primary-btn-icon" viewBox="0 0 20 20" aria-hidden="true">
+            <use href="${ICON_BASE}/S2_Icon_ExperienceAdd_20_N.svg#S2_Icon_Experience_Add"/>
+          </svg>
+          <span class="primary-btn-label">Pull latest from base</span>
+        </button>
+        ${canRevert ? html`
+          <button class="primary-btn outline"
+            type="button"
+            title=${revertTitle}
+            ?disabled=${this._busy}
+            @click=${() => this.runQuickAction('resume-inheritance')}>
+            <svg class="primary-btn-icon" viewBox="0 0 20 20" aria-hidden="true">
+              <use href="${ICON_BASE}/S2_Icon_Delete_20_N.svg#S2_Icon_Delete"/>
+            </svg>
+            <span class="primary-btn-label">Revert to base</span>
+          </button>
+        ` : nothing}
+      </div>`;
+  }
+
+  // ── Satellite status line (upward view) ──
+
+  renderSatelliteStatusLine() {
+    if (!this._asSatellite) return nothing;
+    const overrideText = this._hasOverride
+      ? 'Yes — has local copy'
+      : 'None — following base';
+    return html`
+      <div class="status-line">
+        <span class="status-label">Local override:</span>
+        <span class="status-value ${this._hasOverride ? '' : 'muted'}">${overrideText}</span>
+        ${this._satStatus ? this.renderStatusIcon(this._satStatus) : nothing}
+      </div>`;
+  }
+
+  // ── Site chips: single unified list grouped by satellite state ──
+  //
+  // Two sections are always shown (when non-empty):
+  //   • Following base — satellites with no local copy
+  //   • With local copy — satellites that have an override
+  //
+  // Each chip's interactivity is driven by the active action's scope:
+  //   • in scope  → <button>, toggles _selected
+  //   • out of scope + customized → <a>, opens in editor
+  //   • out of scope + inherited  → <span>, decorative only
+  //
+  // This is the only place satellites are listed — the Advanced expander
+  // below uses the same _selected the chips manage, so there's no second
+  // copy of the list.
+
+  renderSiteChips() {
     if (!this._asBase || this._isUpwardMode) return nothing;
+    if (!this._satellites?.length) return nothing;
+
     const inherited = this._inherited;
     const custom = this._custom;
     if (!inherited.length && !custom.length) return nothing;
 
     return html`
-      <div class="satellite-grid">
-        ${inherited.length ? html`
-          <div class="satellite-column">
-            <p class="column-heading">Inherited</p>
-            <ul class="satellite-list" role="group" aria-label="Inherited satellites">
-              ${inherited.map((sat) => this.renderSatellite(sat))}
-            </ul>
-          </div>` : nothing}
-        ${custom.length ? html`
-          <div class="satellite-column">
-            <p class="column-heading">Custom</p>
-            <ul class="satellite-list" role="group" aria-label="Custom satellites">
-              ${custom.map((sat) => this.renderSatellite(sat))}
-            </ul>
-          </div>` : nothing}
+      ${inherited.length ? html`
+        <div class="chips-section">
+          <p class="chips-label">Following base (${inherited.length})</p>
+          <div class="chips-row">
+            ${inherited.map((sat) => this.renderSiteChip(sat))}
+          </div>
+        </div>
+      ` : nothing}
+      ${custom.length ? html`
+        <div class="chips-section">
+          <p class="chips-label">With local copy (${custom.length})</p>
+          <div class="chips-row">
+            ${custom.map((sat) => this.renderSiteChip(sat))}
+          </div>
+        </div>
+      ` : nothing}`;
+  }
+
+  renderSiteChip(sat) {
+    const inScope = this._isInScope(sat);
+    const isSelected = inScope && this._selected.has(sat.site);
+    const dc = sat.descendantCount || 0;
+    const statusClass = sat.status ? `status-${sat.status}` : '';
+
+    if (inScope) {
+      return html`
+        <button class="site-chip ${isSelected ? 'selected' : ''} ${statusClass}"
+          type="button"
+          ?disabled=${this._busy}
+          @click=${() => this.handleToggle(sat.site)}>
+          ${isSelected ? html`<span class="chip-check" aria-hidden="true">\u2713</span>` : nothing}
+          <span class="chip-label">${sat.label}</span>
+          ${dc > 0 ? html`<span class="chip-descendants" title="${dc} nested site${dc === 1 ? '' : 's'}">+${dc}</span>` : nothing}
+          ${sat.status ? this.renderStatusIcon(sat.status) : nothing}
+        </button>`;
+    }
+
+    if (sat.hasOverride) {
+      const editUrl = sat.editUrl
+        || `https://da.live/edit#/${this.details.org}/${sat.site}${this.details.path}`;
+      return html`
+        <a class="site-chip out-of-scope link ${statusClass}"
+          href=${editUrl}
+          target="_blank"
+          rel="noopener"
+          title="Open in editor">
+          <span class="chip-label">${sat.label}</span>
+          ${dc > 0 ? html`<span class="chip-descendants" title="${dc} nested site${dc === 1 ? '' : 's'}">+${dc}</span>` : nothing}
+          ${sat.status ? this.renderStatusIcon(sat.status) : nothing}
+          <svg class="chip-link-icon" viewBox="0 0 20 20" aria-hidden="true">
+            <use href="${ICON_BASE}/S2_Icon_ChevronRight_20_N.svg#S2_Icon_ChevronRight"/>
+          </svg>
+        </a>`;
+    }
+
+    return html`
+      <span class="site-chip out-of-scope ${statusClass}">
+        <span class="chip-label">${sat.label}</span>
+        ${dc > 0 ? html`<span class="chip-descendants" title="${dc} nested site${dc === 1 ? '' : 's'}">+${dc}</span>` : nothing}
+        ${sat.status ? this.renderStatusIcon(sat.status) : nothing}
+      </span>`;
+  }
+
+  // ── Advanced expander (collapsed by default) ──
+
+  renderAdvancedExpander() {
+    return html`
+      <div class="advanced-section">
+        <button class="advanced-toggle"
+          type="button"
+          aria-expanded=${this._showAdvanced ? 'true' : 'false'}
+          @click=${() => this._toggleAdvanced()}>
+          <span class="advanced-chevron ${this._showAdvanced ? 'open' : ''}" aria-hidden="true">\u25B8</span>
+          More options
+        </button>
+        ${this._showAdvanced ? html`
+          <div class="advanced-content">
+            <p class="advanced-hint">Pick which action to apply, then choose the sites in the chip list above.</p>
+            <div class="action-row">
+              ${this.renderActionPicker()}
+              ${this._isSyncMode ? this.renderSyncModeSelect() : nothing}
+            </div>
+            ${this.renderAdvancedFooter()}
+          </div>
+        ` : nothing}
       </div>`;
   }
 
-  renderFooter() {
-    const showCascade = this._isRecursiveActive
-      && this._totalDescendants > 0
-      && !this._isUpwardMode;
-    // "Resume inheritance" on a satellite is a no-op if there's no local
-    // override to remove; disable Apply in that case.
-    const noOverrideToResume = this._action === 'resume-inheritance'
-      && this._asSatellite && !this._hasOverride;
-    const applyDisabled = this._busy
-      || (this._isUpwardMode ? noOverrideToResume : !this._canApplyDownward);
+  renderAdvancedFooter() {
+    const applyDisabled = this._busy || !this._canApplyDownward;
+    const count = this._directTargets.length;
+    const label = count > 0
+      ? `Apply to ${count} site${count !== 1 ? 's' : ''}`
+      : 'Apply';
 
     return html`
       <div class="form-actions">
-        ${showCascade ? html`
-          <label class="footer-cascade">
-            <input type="checkbox"
-              .checked=${this._includeDescendants}
-              ?disabled=${this._busy}
-              @change=${(e) => { this._includeDescendants = e.target.checked; }} />
-            <span>Cascade to nested sites (+${this._totalDescendants} more)</span>
-          </label>` : nothing}
         <sl-button
           @click=${() => this.apply()}
-          ?disabled=${applyDisabled}>Apply</sl-button>
+          ?disabled=${applyDisabled}>${label}</sl-button>
       </div>`;
+  }
+
+  // ── App deep-link ──
+
+  renderAppLink() {
+    return html`
+      <a class="app-link" href=${this._getAppDeepLink()} target="_blank" rel="noopener">
+        Manage variants in MSM \u2197
+      </a>`;
+  }
+
+  // ── Direction-flip link (dual role only) ──
+
+  renderDirectionFlipLink() {
+    if (!this._hasDualRole) return nothing;
+    const toUpward = !this._isUpwardMode;
+    const baseLabel = this._asSatellite?.baseLabel || this._asSatellite?.base;
+    const label = toUpward
+      ? `Update from parent (${baseLabel}) instead`
+      : 'Update children instead';
+    const arrow = toUpward ? '\u2191' : '\u2193';
+    return html`
+      <button class="direction-flip"
+        type="button"
+        ?disabled=${this._busy}
+        @click=${() => this.onDirectionToggle(toUpward)}>
+        ${arrow} ${label}
+      </button>`;
+  }
+
+  // ── Action picker (used inside Advanced) ──
+
+  renderActionPicker() {
+    // The picker only exposes actions the primary buttons don't already cover.
+    // For base/dual-downward (the only mode that shows Advanced) that's the
+    // three "manage local copies" actions; preview / publish stay in the
+    // primary buttons above so they're not duplicated here.
+    const options = [
+      { value: 'break', label: 'Make a local copy on selected sites' },
+      { value: 'sync', label: 'Push update to customized sites' },
+      { value: 'reset', label: 'Discard local copy on customized sites' },
+    ];
+
+    return html`
+      <se-select
+        label="Action"
+        name="action"
+        .value=${this._action}
+        ?disabled=${this._busy}
+        @change=${(e) => this.onActionChange(e.target.value)}>
+        ${options.map((opt) => html`
+          <option value=${opt.value}>${opt.label}</option>
+        `)}
+      </se-select>`;
+  }
+
+  renderSyncModeSelect() {
+    return html`
+      <se-select
+        label="Sync mode"
+        name="syncMode"
+        .value=${this._syncMode}
+        ?disabled=${this._busy}
+        @change=${(e) => { this._syncMode = e.target.value; }}>
+        <option value="merge">Keep local edits (merge)</option>
+        <option value="override">Replace with base (override)</option>
+      </se-select>`;
+  }
+
+  // ── Composed views ──
+
+  renderDownwardView() {
+    return html`
+      ${this.renderPrimaryButtons()}
+      ${this.renderSiteChips()}`;
+  }
+
+  renderUpwardView() {
+    return html`
+      ${this.renderSatelliteStatusLine()}
+      ${this.renderSatellitePrimaryButtons()}`;
   }
 
   render() {
@@ -682,17 +876,17 @@ class DaMsm extends LitElement {
       return html`<p class="no-satellites">No satellite sites configured.</p>`;
     }
 
+    const isUpward = this._showUpwardView;
+
     return html`
-      ${this.renderBreadcrumb()}
-      ${this.renderDirectionSwitch()}
-      <div class="action-row">
-        ${this.renderActionPicker()}
-        ${this._isSyncMode ? this.renderSyncModeSelect() : nothing}
-      </div>
-      ${this.renderUpwardSummary()}
-      ${this.renderChildrenList()}
-      ${this.renderFooter()}
-      ${this.renderConfirm()}`;
+      ${this._asSatellite ? this.renderBreadcrumb() : nothing}
+      ${isUpward ? this.renderUpwardView() : this.renderDownwardView()}
+      ${this.renderConfirm()}
+      <div class="bottom-section">
+        ${!isUpward && this._asBase ? this.renderAdvancedExpander() : nothing}
+        ${this._hasDualRole ? this.renderDirectionFlipLink() : nothing}
+        ${this.renderAppLink()}
+      </div>`;
   }
 }
 
