@@ -189,6 +189,43 @@
   color: var(--s2-gray-500);
 }
 
+/* ===== Inherited item (page or folder served via MSM fallback) ===== */
+
+.item.inherited .item-label {
+  color: var(--s2-gray-600, #6e6e6e);
+}
+
+.item.inherited .item-icon {
+  opacity: 0.7;
+}
+
+.inherited-badge {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-left: -2px;
+  color: var(--s2-gray-700, #505050);
+}
+
+/* ===== Blocked item (selection mutex: different category from current) ===== */
+
+.item.blocked {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.item.blocked .item-label,
+.item.blocked .item-icon,
+.item.blocked .inherited-badge {
+  pointer-events: none;
+}
+
+.item.blocked input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  border-color: var(--s2-gray-400, #b1b1b1);
+  background: transparent;
+}
+
 /* ===== Override dot indicator ===== */
 
 .override-dot {
