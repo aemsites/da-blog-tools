@@ -25,7 +25,6 @@ const SUCCESS_ICON = html`<svg class="result-icon success" viewBox="0 0 16 16" f
 const ERROR_ICON = html`<svg class="result-icon error" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`;
 const EDIT_ICON = html`<svg viewBox="0 0 20 20"><path fill="currentColor" d="M18.16 15.62V4.12c0-1.24-1.01-2.25-2.25-2.25H4.41c-1.24 0-2.25 1.01-2.25 2.25v3.72c0 .41.34.75.75.75s.75-.34.75-.75v-3.72c0-.41.34-.75.75-.75h11.5c.41 0 .75.34.75.75v11.5c0 .41-.34.75-.75.75h-3.81c-.41 0-.75.34-.75.75s.34.75.75.75h3.81c1.24 0 2.25-1.01 2.25-2.25z"/><path fill="currentColor" d="M11.16 9.62v4.24c0 .41-.34.75-.75.75s-.75-.34-.75-.75v-2.43l-6.47 6.47c-.15.15-.34.22-.53.22s-.38-.07-.53-.22a.754.754 0 010-1.06l6.47-6.47H6.17c-.41 0-.75-.34-.75-.75s.34-.75.75-.75h4.24c.41 0 .75.34.75.75z"/></svg>`;
 
-// Labels match tools/plugins/msm/msm.js (Prepare plugin) for consistent author wording.
 const DOWNWARD_ACTIONS = [
   {
     heading: 'Following base',
@@ -44,11 +43,6 @@ const DOWNWARD_ACTIONS = [
   },
 ];
 
-// Upward action lists, scoped to the page's inheritance category. The picker
-// surfaces only the actions that make sense for the selection:
-//   - inherited  : following base; Pull latest from base materializes a local copy.
-//   - overridden : has a local copy; pull merges or override replaces from base.
-//   - local      : no base counterpart; no upward operations are meaningful.
 const UPWARD_ACTIONS_INHERITED = [
   {
     heading: 'From parent',
@@ -199,10 +193,6 @@ class MsmActionPanel extends LitElement {
     }
   }
 
-  // When the selection is uniformly inherited (no local overrides at the
-  // current site), default the sync mode to 'override' — there's nothing
-  // local to merge against, and merge-mode would unnecessarily pull in the
-  // mergeCopy machinery. Mixed selections keep 'merge' as today.
   _applySyncModeDefault() {
     if (!this.pages?.length) return;
     const allInherited = this.pages.every((p) => {
@@ -214,11 +204,6 @@ class MsmActionPanel extends LitElement {
     }
   }
 
-  // Ensure `_globalAction` is valid for the current selection's category. If
-  // the action isn't in the allowed list for the new category, fall back to
-  // the first option for that category. For the 'local' category (no upward
-  // actions available) we leave the action as-is and rely on Apply being
-  // disabled and the empty-state message to communicate.
   _validateActionForCategory() {
     if (!this._isUpwardMode) return;
     const options = this._upwardActionsForCategory(this._selectionCategory);
@@ -282,16 +267,10 @@ class MsmActionPanel extends LitElement {
     if (category === 'inherited') return UPWARD_ACTIONS_INHERITED;
     if (category === 'overridden') return UPWARD_ACTIONS_OVERRIDDEN;
     if (category === 'local') return UPWARD_ACTIONS_LOCAL;
-    // 'mixed' or null: fall back to the union (overridden) so the picker
-    // still renders something sensible. The column-browser mutex normally
-    // prevents reaching 'mixed' in practice.
+
     return UPWARD_ACTIONS_OVERRIDDEN;
   }
 
-  // Categorize a single page based on its self-entry in `overrides`:
-  //   - inherited  : the page is served from an ancestor (no local copy here)
-  //   - overridden : the page has a local copy AND a base counterpart
-  //   - local      : the page exists only on this site
   _categorizePage(page) {
     const self = this.getPageOverrides(page.path).find((o) => o.site === this.site);
     if (!self) return 'local';
@@ -300,9 +279,6 @@ class MsmActionPanel extends LitElement {
     return 'local';
   }
 
-  // Returns the common category across all currently selected pages, or
-  // 'mixed' when the selection spans multiple categories (rare given the
-  // column-browser enforces single-category selection upstream).
   get _selectionCategory() {
     if (!this.pages?.length) return null;
     const cats = new Set(this.pages.map((p) => this._categorizePage(p)));
@@ -310,17 +286,12 @@ class MsmActionPanel extends LitElement {
     return 'mixed';
   }
 
-  // True when the sync-mode picker (merge/override) should be visible for
-  // `action`. Inherited pages always use override, so the picker is hidden.
   _shouldShowSyncPicker(action) {
     if (!SYNC_ACTIONS.has(action)) return false;
     if (this._isUpwardMode && this._selectionCategory === 'inherited') return false;
     return true;
   }
 
-  // True when the panel is in upward mode but the selection consists only of
-  // local-only pages (no base counterpart). No upward action is meaningful;
-  // we render an empty-state message instead of the action pickers.
   get _isLocalUpwardEmpty() {
     return this._isUpwardMode && this._selectionCategory === 'local';
   }
@@ -673,6 +644,21 @@ class MsmActionPanel extends LitElement {
       };
       return;
     }
+    if (action === 'resume-inheritance') {
+      this._confirmAction = {
+        message: `Resume inheritance for ${this.site}? This deletes the local override of ${page.name} so it inherits from ${this.parentBase}.`,
+        onConfirm: () => this.doExecuteSingle(page, action),
+      };
+      return;
+    }
+    if (action === 'cancel-inheritance') {
+      const src = this._resolveSourceSite(page);
+      this._confirmAction = {
+        message: `Cancel inheritance for ${page.name} on ${this.site}? This creates a local copy from ${src}, breaking the inheritance link.`,
+        onConfirm: () => this.doExecuteSingle(page, action),
+      };
+      return;
+    }
 
     this.doExecuteSingle(page, action);
   }
@@ -736,6 +722,21 @@ class MsmActionPanel extends LitElement {
       const src = this._resolveSourceSite(page);
       this._confirmAction = {
         message: `Copy ${page.name} from ${src} to ${this.site}? This creates a local copy on your site.`,
+        onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
+      };
+      return;
+    }
+    if (action === 'resume-inheritance') {
+      this._confirmAction = {
+        message: `Resume inheritance for ${page.name} on ${this.site}? This deletes the local override so it inherits from ${this.parentBase}.`,
+        onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
+      };
+      return;
+    }
+    if (action === 'cancel-inheritance') {
+      const src = this._resolveSourceSite(page);
+      this._confirmAction = {
+        message: `Cancel inheritance for ${page.name} on ${this.site}? This creates a local copy from ${src}, breaking the inheritance link.`,
         onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
       };
       return;

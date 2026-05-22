@@ -1,18 +1,10 @@
-/*
- * MSM plugin styles
- *
- * The plugin fills the 400×400 iframe that DA-Prepare locks it to.
- * The default view is "two big primary buttons + chips of in-scope sites";
- * power-user controls live under a "More options" expander.
- */
-
 :host {
   display: flex;
   flex-direction: column;
   gap: 14px;
   width: 100%;
   min-height: 100%;
-  padding: 0 12px 12px;
+  padding: 12px 12px;
   box-sizing: border-box;
 
   p { margin: 0; }
@@ -62,12 +54,6 @@
 .crumb-sep {
   color: var(--s2-gray-400, #b1b1b1);
 }
-
-/* --- Primary buttons (the simplified default view) ---
- * Spectrum-style pill buttons, stacked vertically so the full action label
- * fits without truncation. Both buttons share the same neutral palette (no
- * brand accent / no destructive red) — hierarchy comes from treatment
- * (first is `fill`, second is `outline`) and from icon. */
 
 .primary-buttons {
   display: flex;
@@ -141,120 +127,156 @@
   text-overflow: ellipsis;
 }
 
-/* --- Site chips (in-scope satellites) --- */
+/* --- Satellite grid (two columns, matches MSM app) --- */
 
-.chips-section {
+.satellite-grid {
+  display: flex;
+  gap: 12px;
+}
+
+.satellite-column {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
-.chips-label {
-  font-size: 12px;
-  color: var(--s2-gray-700, #4b4b4b);
-  margin: 0;
-}
-
-.chips-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.site-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  font-size: 12px;
-  font-family: inherit;
-  line-height: 1.2;
-  border: 1px solid var(--s2-gray-300, #d4d4d4);
-  background: #fff;
-  color: var(--s2-gray-800, #292929);
-  border-radius: 14px;
-  cursor: pointer;
-  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
-}
-
-.site-chip.selected {
-  background: var(--s2-gray-200, #e1e1e1);
-  border-color: var(--s2-gray-600, #717171);
-  color: var(--s2-gray-900, #292929);
+.column-heading {
+  font-size: 10px;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--s2-gray-500, #929292);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--s2-gray-200, #e1e1e1);
+  margin-bottom: 2px;
 }
 
-.site-chip:disabled {
-  opacity: 0.5;
-  cursor: default;
+.satellite-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 140px;
+  overflow-y: auto;
 }
 
-.site-chip:focus-visible {
-  outline: 2px solid var(--s2-blue-700, #393dba);
-  outline-offset: 2px;
+.satellite-list::-webkit-scrollbar { width: 5px; }
+.satellite-list::-webkit-scrollbar-track { background: transparent; }
+
+.satellite-list::-webkit-scrollbar-thumb {
+  background: var(--s2-gray-300, #d4d4d4);
+  border-radius: 3px;
 }
 
-.site-chip:hover:not(:disabled) {
-  border-color: var(--s2-gray-500, #929292);
+.sat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 2px;
+  border-radius: 4px;
+  transition: background-color 0.1s;
 }
 
-.site-chip.selected:hover:not(:disabled) {
+.sat-row:hover:not(.out-of-scope) {
+  background: var(--s2-gray-100, #f5f5f5);
+}
+
+.sat-row.out-of-scope {
+  opacity: 0.38;
+}
+
+.sat-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--s2-gray-900, #292929);
+}
+
+.sat-row label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sat-row input[type="checkbox"] {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 2px solid var(--s2-gray-600, #717171);
+  border-radius: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  background: transparent;
+  transition: background-color 0.13s, border-color 0.13s;
+}
+
+.sat-row input[type="checkbox"]:checked {
+  background: var(--s2-gray-800, #292929);
   border-color: var(--s2-gray-800, #292929);
 }
 
-.chip-check {
-  color: var(--s2-gray-800, #292929);
-  font-weight: 700;
-  font-size: 11px;
-  line-height: 1;
+.sat-row input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  margin-top: -1px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
-.chip-descendants {
-  margin-left: 2px;
+.sat-row input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--s2-gray-800, #292929);
+}
+
+.sat-row input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.descendant-badge {
+  display: inline-block;
   padding: 0 5px;
   font-size: 10px;
   font-weight: 600;
   color: var(--s2-gray-700, #4b4b4b);
   background: var(--s2-gray-200, #e1e1e1);
   border-radius: 6px;
-}
-
-.site-chip.selected .chip-descendants {
-  background: #fff;
-}
-
-/* --- Out-of-scope chip variants ---
- * Shown for sites that exist but aren't affected by the current action.
- * Customized out-of-scope chips link to the editor (an <a>); inherited
- * out-of-scope chips are decorative (a <span>). */
-
-.site-chip.out-of-scope {
-  opacity: 0.45;
-  background: #fff;
-  border-color: var(--s2-gray-300, #d4d4d4);
-  color: var(--s2-gray-700, #4b4b4b);
-  font-weight: 400;
-  cursor: default;
-}
-
-.site-chip.out-of-scope.link {
-  opacity: 0.7;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.site-chip.out-of-scope.link:hover {
-  opacity: 1;
-  border-color: var(--s2-gray-500, #929292);
-  background: var(--s2-gray-50, #f8f8f8);
-}
-
-.chip-link-icon {
-  width: 12px;
-  height: 12px;
-  margin-left: 2px;
   flex-shrink: 0;
-  color: var(--s2-gray-600, #717171);
+  line-height: 14px;
+}
+
+.edit-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  color: var(--s2-gray-500, #929292);
+  text-decoration: none;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.edit-link:hover {
+  background: var(--s2-gray-200, #e1e1e1);
+  color: var(--s2-gray-900, #292929);
+}
+
+.edit-link svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 /* --- Status line (upward / satellite view) --- */
@@ -424,12 +446,6 @@
   margin: 0;
 }
 
-/* --- Inline cascade toggle ---
- * Sits between the primary buttons and the chip section. Governs whether
- * preview/publish push through the inheritance tree to nested satellites,
- * or stop at the direct chips below. Only rendered when nested sites
- * exist; otherwise this row collapses entirely. */
-
 .cascade-toggle-inline {
   display: inline-flex;
   align-items: center;
@@ -458,10 +474,9 @@
   flex-shrink: 0;
 }
 
-.site-chip .result-icon {
-  width: 12px;
-  height: 12px;
-  margin-left: 2px;
+.sat-row .result-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .result-icon.success { color: #0d6e31; }

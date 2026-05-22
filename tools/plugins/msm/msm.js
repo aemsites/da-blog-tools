@@ -35,30 +35,10 @@ const ACTION_SCOPE = {
   reset: 'custom',
 };
 
-// Hosted location of the full-page MSM app. The "Manage variants in MSM"
-// hand-off deep-links into it with the current org/site/path pre-loaded
-// (see helpers/parseDeepLink in tools/apps/msm/msm.js).
 const MSM_APP_URL = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/msm/msm';
-
-// All icons in the plugin use Spectrum 2 workflow icons (originally from
-// https://da.live/blocks/edit/img) via
-// `<svg><use href="${ICON_BASE}/S2_Icon_X_20_N.svg#S2_Icon_X"/></svg>`
-// — see `renderStatusIcon` for the canonical pattern. The icons are vendored
-// into ./img/ because Chromium blocks cross-origin SVG `<use href>` for
-// security ("Unsafe attempt to load URL …"), and the plugin is served from a
-// different origin (aem.page) than da.live in production.
 const ICON_BASE = './img';
-
-// Component / style pipeline. We pull two element families to mirror OOTB:
-//   • sl-* — older "Super Lite" controls; the Apply button uses <sl-button>,
-//             loaded from da.live's nx CDN.
-//   • se-* — newer "Spectrum Express" controls; the action picker uses
-//             <se-select>, which renders a fully custom dropdown that matches
-//             the OOTB MSM Prepare menu. Vendored in ./vendor/se/ because
-//             se hasn't shipped to any public da.live path yet, and the
-//             plugin can be loaded into an HTTPS shell that can't fall back
-//             to http://localhost:6456 (mixed-content blocked).
 const NX = 'https://da.live/nx';
+
 let nexter = null;
 let sl = null;
 let styles = null;
@@ -116,18 +96,11 @@ class DaMsm extends LitElement {
     this._syncMode = SYNC_MODE.merge;
     this._busy = false;
     this._showAdvanced = false;
-    // Cascade preview/publish through the inheritance tree by default — see
-    // the comment above runAction's preview/publish case. Authors can opt out
-    // via the checkbox in "More options" to limit a rollout to direct sites.
     this._includeDescendants = true;
     this.loadConfig();
   }
 
   updated(changedProperties) {
-    // When the user expands "More options", scroll the newly-rendered panel
-    // into view so the picker and Apply button are visible without manually
-    // scrolling the 400px-tall iframe. requestAnimationFrame defers the call
-    // until after the browser has laid out the freshly-mounted content.
     if (changedProperties.has('_showAdvanced') && this._showAdvanced) {
       requestAnimationFrame(() => {
         const panel = this.shadowRoot?.querySelector('.advanced-content');
@@ -165,14 +138,10 @@ class DaMsm extends LitElement {
       this._action = 'sync-from-base';
     }
 
-    // Auto-select all in-scope satellites for the default action so authors
-    // don't have to tick boxes for the common "roll out to everyone" flow.
     this._seedSelectionForAction(this._action);
 
     this._loading = undefined;
   }
-
-  // ── Derived state ───────────────────────────────────────────────────
 
   get _inherited() {
     return this._satellites?.filter((s) => !s.hasOverride) || [];
@@ -204,9 +173,6 @@ class DaMsm extends LitElement {
     return !!(this._asSatellite && !this._asBase);
   }
 
-  // The upward primary view (Pull / Revert buttons) is shown when the page
-  // is satellite-only OR when the author has flipped a dual-role page to
-  // "Update from parent instead".
   get _showUpwardView() {
     return this._isSatelliteOnly || (this._hasDualRole && this._isUpwardMode);
   }
@@ -215,21 +181,12 @@ class DaMsm extends LitElement {
     return !this._busy && this._directTargets.length > 0;
   }
 
-  // True when `sat` belongs to the pool the current action affects. Drives
-  // chip interactivity: in-scope chips are toggleable, out-of-scope chips
-  // either link to the editor (customized) or render as plain decoration
-  // (inherited).
   _isInScope(sat) {
     const scope = ACTION_SCOPE[this._action];
     if (!scope) return false;
     return scope === 'custom' ? !!sat.hasOverride : !sat.hasOverride;
   }
 
-  // ── Selection / advanced toggle / app deep-link helpers ─────────────
-
-  // Seeds `_selected` with every satellite whose override state matches the
-  // given action's scope. Upward actions (which target the satellite itself,
-  // not its children) clear the selection.
   _seedSelectionForAction(action) {
     if (!this._satellites) {
       this._selected = new Set();
@@ -247,27 +204,17 @@ class DaMsm extends LitElement {
   _toggleAdvanced() {
     const opening = !this._showAdvanced;
     if (opening) {
-      // Picker doesn't include preview/publish (covered by primary buttons),
-      // so when opening from a primary action, default to the first advanced
-      // action so the picker has a valid selection.
       if (RECURSIVE_ACTIONS.has(this._action)) {
         this.onActionChange('break');
       }
     } else if (!RECURSIVE_ACTIONS.has(this._action)) {
-      // Closing: snap back to the primary action so the chips above reflect
-      // what the visible primary buttons will do (instead of leaving them
-      // wired up to whatever advanced action the user last picked).
       this.onActionChange('preview');
     }
     this._showAdvanced = opening;
   }
 
   _setIncludeDescendants(value) {
-    // Toggle persists for the session — authors who explicitly opt out of
-    // cascade shouldn't have it silently re-enabled by subsequent renders.
     this._includeDescendants = !!value;
-    // Clear stale per-chip success/error markers since the previous run's
-    // results no longer match the new scope.
     this.clearStatuses();
   }
 
@@ -276,10 +223,6 @@ class DaMsm extends LitElement {
       org, site, path, ref,
     } = this.details;
     const params = new URLSearchParams({ org, site, path });
-    // `ref` routes the DA shell at da.live/app/... to the matching branch
-    // of the tool's source so feature-branch authoring stays on that branch
-    // after hand-off. Only append when present so the default (main) link
-    // stays clean.
     if (ref) params.set('ref', ref);
     return `${MSM_APP_URL}?${params.toString()}`;
   }
@@ -307,16 +250,9 @@ class DaMsm extends LitElement {
     this._action = value;
     this.clearStatuses();
     this._satStatus = undefined;
-    // Re-seed selection so chips/list reflect what the new action can target.
     this._seedSelectionForAction(value);
   }
 
-  // Flips between downward (children) and upward (parent) directions for
-  // dual-role pages. The next action depends on which surface will be
-  // visible after the flip — the Advanced picker (only shown in downward
-  // mode) doesn't expose 'preview'/'publish', so we must snap to one of
-  // its options ('break') when Advanced will remain open, otherwise to the
-  // primary-button default.
   onDirectionToggle(toUpward) {
     let nextAction;
     if (toUpward) {
@@ -329,9 +265,6 @@ class DaMsm extends LitElement {
     this.onActionChange(nextAction);
   }
 
-  // Quick-action triggered by the big primary buttons. Sets the action,
-  // ensures selection is seeded, and runs the same `apply()` flow as the
-  // advanced UI would.
   async runQuickAction(action) {
     if (this._busy) return;
     const oldScope = ACTION_SCOPE[this._action];
@@ -339,8 +272,6 @@ class DaMsm extends LitElement {
     this._action = action;
     this.clearStatuses();
     this._satStatus = undefined;
-    // Re-seed when the scope changed, or when the user previously cleared
-    // the chips — both cases mean "do this action with the natural defaults".
     if (oldScope !== newScope || (newScope && this._selected.size === 0)) {
       this._seedSelectionForAction(action);
     }
@@ -392,14 +323,6 @@ class DaMsm extends LitElement {
       case 'preview':
       case 'publish': {
         const fn = action === 'publish' ? publishSatellite : previewSatellite;
-        // Cascade (when `_includeDescendants` is on): each direct target's
-        // subtree gets the rollout too, because content inheritance flows
-        // through the whole tree (A → B → C). Without cascading, C would
-        // render stale content even after A is updated. When the author has
-        // opted out of cascade via the "More options" checkbox, the action
-        // stops at the direct sites. Per-direct status on the chips is
-        // aggregated all-or-nothing across its subtree since descendants
-        // aren't visible in the chip list.
         const subtreeMap = new Map();
         await Promise.all(directTargets.map(async (target) => {
           const subtree = this._includeDescendants
@@ -517,11 +440,6 @@ class DaMsm extends LitElement {
     try {
       let result;
       if (action === 'sync-from-base') {
-        // Smart sync mode: merge when there's a local copy to preserve any
-        // edits, override when there's nothing local to merge against. Read
-        // `_hasOverride` at execution time so repeated pulls do the right
-        // thing after the first one materialises a local copy. Authors who
-        // need explicit control over merge vs override should use the app.
         const useMerge = this._hasOverride;
         result = useMerge
           ? await mergeFromBase(org, baseSite, site, path)
@@ -603,12 +521,6 @@ class DaMsm extends LitElement {
       </div>`;
   }
 
-  // ── Primary buttons: downward (base / dual-downward) ──
-  //
-  // Side-by-side, Spectrum-style pill buttons (fill + outline). The chip
-  // section below shows what they target and how many — no in-button
-  // subtitle. The `title` attribute carries the tooltip / disabled reason.
-
   renderPrimaryButtons() {
     if (!this._asBase || this._isUpwardMode) return nothing;
 
@@ -616,10 +528,6 @@ class DaMsm extends LitElement {
     if (inheritedCount === 0) return nothing;
 
     const isInheritedScope = ACTION_SCOPE[this._action] === 'inherited';
-    // When the picker (in Advanced) is on a custom-scope action, `_selected`
-    // holds custom sites — but clicking a primary button re-seeds to all
-    // inherited via runQuickAction. When already in inherited scope, the
-    // current selection is what runs (no re-seed).
     const willRunOn = isInheritedScope
       ? this._inherited.filter((s) => this._selected.has(s.site))
       : this._inherited;
@@ -665,8 +573,6 @@ class DaMsm extends LitElement {
       </div>`;
   }
 
-  // ── Primary buttons: upward (satellite-only / dual-upward) ──
-
   renderSatellitePrimaryButtons() {
     const baseLabel = this._asSatellite?.baseLabel || this._asSatellite?.base || 'base';
     const canRevert = this._hasOverride === true;
@@ -702,8 +608,6 @@ class DaMsm extends LitElement {
       </div>`;
   }
 
-  // ── Satellite status line (upward view) ──
-
   renderSatelliteStatusLine() {
     if (!this._asSatellite) return nothing;
     const overrideText = this._hasOverride
@@ -717,22 +621,11 @@ class DaMsm extends LitElement {
       </div>`;
   }
 
-  // ── Site chips: single unified list grouped by satellite state ──
-  //
-  // Two sections are always shown (when non-empty):
-  //   • Following base — satellites with no local copy
-  //   • With local copy — satellites that have an override
-  //
-  // Each chip's interactivity is driven by the active action's scope:
-  //   • in scope  → <button>, toggles _selected
-  //   • out of scope + customized → <a>, opens in editor
-  //   • out of scope + inherited  → <span>, decorative only
-  //
-  // This is the only place satellites are listed — the Advanced expander
-  // below uses the same _selected the chips manage, so there's no second
-  // copy of the list.
-
   renderSiteChips() {
+    return this.renderSatelliteGrid();
+  }
+
+  renderSatelliteGrid() {
     if (!this._asBase || this._isUpwardMode) return nothing;
     if (!this._satellites?.length) return nothing;
 
@@ -740,40 +633,33 @@ class DaMsm extends LitElement {
     const custom = this._custom;
     if (!inherited.length && !custom.length) return nothing;
 
-    // Note: cascade communication lives in the inline toggle above the chips
-    // (renderCascadeToggleInline) and in the per-chip "+N" badges below —
-    // the heading stays a plain section label so the three signals don't
-    // compete for the same screen real estate.
+    const scope = ACTION_SCOPE[this._action];
 
     return html`
-      ${inherited.length ? html`
-        <div class="chips-section">
-          <p class="chips-label">Following base (${inherited.length})</p>
-          <div class="chips-row">
-            ${inherited.map((sat) => this.renderSiteChip(sat))}
+      <div class="satellite-grid">
+        ${inherited.length ? html`
+          <div class="satellite-column">
+            <div class="column-heading">Following base</div>
+            <ul class="satellite-list">
+              ${inherited.map((sat) => this.renderSatRow(sat, scope === 'custom'))}
+            </ul>
           </div>
-        </div>
-      ` : nothing}
-      ${custom.length ? html`
-        <div class="chips-section">
-          <p class="chips-label">With local copy (${custom.length})</p>
-          <div class="chips-row">
-            ${custom.map((sat) => this.renderSiteChip(sat))}
+        ` : nothing}
+        ${custom.length ? html`
+          <div class="satellite-column">
+            <div class="column-heading">With local copy</div>
+            <ul class="satellite-list">
+              ${custom.map((sat) => this.renderSatRow(sat, scope === 'inherited', true))}
+            </ul>
           </div>
-        </div>
-      ` : nothing}`;
+        ` : nothing}
+      </div>`;
   }
 
-  renderSiteChip(sat) {
+  renderSatRow(sat, outOfScope, showEdit = false) {
     const inScope = this._isInScope(sat);
     const isSelected = inScope && this._selected.has(sat.site);
     const dc = sat.descendantCount || 0;
-    const statusClass = sat.status ? `status-${sat.status}` : '';
-
-    // When this chip is in scope for a recursive action (preview/publish)
-    // AND the author hasn't disabled cascade in "More options", the "+N"
-    // badge represents sites that will ALSO receive the rollout. Otherwise
-    // it just describes the site's subtree.
     const cascades = inScope
       && RECURSIVE_ACTIONS.has(this._action)
       && this._includeDescendants;
@@ -781,47 +667,34 @@ class DaMsm extends LitElement {
     const dcTitle = cascades
       ? `Also rolls out to ${dc} nested site${dcSuffix}`
       : `${dc} nested site${dcSuffix}`;
-
-    if (inScope) {
-      return html`
-        <button class="site-chip ${isSelected ? 'selected' : ''} ${statusClass}"
-          type="button"
-          ?disabled=${this._busy}
-          @click=${() => this.handleToggle(sat.site)}>
-          ${isSelected ? html`<span class="chip-check" aria-hidden="true">\u2713</span>` : nothing}
-          <span class="chip-label">${sat.label}</span>
-          ${dc > 0 ? html`<span class="chip-descendants" title=${dcTitle}>+${dc}</span>` : nothing}
-          ${sat.status ? this.renderStatusIcon(sat.status) : nothing}
-        </button>`;
-    }
-
-    if (sat.hasOverride) {
-      const editUrl = sat.editUrl
-        || `https://da.live/edit#/${this.details.org}/${sat.site}${this.details.path}`;
-      return html`
-        <a class="site-chip out-of-scope link ${statusClass}"
-          href=${editUrl}
-          target="_blank"
-          rel="noopener"
-          title="Open in editor">
-          <span class="chip-label">${sat.label}</span>
-          ${dc > 0 ? html`<span class="chip-descendants" title=${dcTitle}>+${dc}</span>` : nothing}
-          ${sat.status ? this.renderStatusIcon(sat.status) : nothing}
-          <svg class="chip-link-icon" viewBox="0 0 20 20" aria-hidden="true">
-            <use href="${ICON_BASE}/S2_Icon_ChevronRight_20_N.svg#S2_Icon_ChevronRight"/>
-          </svg>
-        </a>`;
-    }
+    const editUrl = sat.editUrl
+      || `https://da.live/edit#/${this.details.org}/${sat.site}${this.details.path}`;
 
     return html`
-      <span class="site-chip out-of-scope ${statusClass}">
-        <span class="chip-label">${sat.label}</span>
-        ${dc > 0 ? html`<span class="chip-descendants" title=${dcTitle}>+${dc}</span>` : nothing}
+      <li class="sat-row ${outOfScope ? 'out-of-scope' : ''} ${sat.status ? `status-${sat.status}` : ''}">
+        <label>
+          <input type="checkbox"
+            .checked=${isSelected}
+            ?disabled=${outOfScope || this._busy}
+            @change=${() => { if (!outOfScope) this.handleToggle(sat.site); }} />
+          <span>${sat.label}</span>
+          ${dc > 0 ? html`<span class="descendant-badge" title=${dcTitle}>+${dc}</span>` : nothing}
+        </label>
         ${sat.status ? this.renderStatusIcon(sat.status) : nothing}
-      </span>`;
+        ${showEdit ? html`
+          <a class="edit-link"
+            href=${editUrl}
+            target="_blank"
+            rel="noopener"
+            title="Open in editor"
+            aria-label="Open ${sat.label} in editor">
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <use href="${ICON_BASE}/S2_Icon_ChevronRight_20_N.svg#S2_Icon_ChevronRight"/>
+            </svg>
+          </a>
+        ` : nothing}
+      </li>`;
   }
-
-  // ── Advanced expander (collapsed by default) ──
 
   renderAdvancedExpander() {
     return html`
@@ -835,7 +708,7 @@ class DaMsm extends LitElement {
         </button>
         ${this._showAdvanced ? html`
           <div class="advanced-content">
-            <p class="advanced-hint">Pick which action to apply, then choose the sites in the chip list above.</p>
+            <p class="advanced-hint">Pick which action to apply, then choose the sites in the list above.</p>
             <div class="action-row">
               ${this.renderActionPicker()}
               ${this._isSyncMode ? this.renderSyncModeSelect() : nothing}
@@ -846,12 +719,6 @@ class DaMsm extends LitElement {
       </div>`;
   }
 
-  // Inline checkbox that governs whether preview/publish cascade through the
-  // inheritance tree. Lives right below the primary buttons so the scope
-  // control sits next to the action it modifies — authors can see and adjust
-  // it in a single glance instead of opening "More options". Default on
-  // (matches the chip-section heading and button-tooltip totals). Hidden when
-  // the page has no nested satellites — otherwise it would be a no-op.
   renderCascadeToggleInline() {
     if (!this._asBase || this._isUpwardMode) return nothing;
     const totalDescendants = this._inherited.reduce(
@@ -888,16 +755,12 @@ class DaMsm extends LitElement {
       </div>`;
   }
 
-  // ── App deep-link ──
-
   renderAppLink() {
     return html`
       <a class="app-link" href=${this._getAppDeepLink()} target="_blank" rel="noopener">
         Manage variants in MSM \u2197
       </a>`;
   }
-
-  // ── Direction-flip link (dual role only) ──
 
   renderDirectionFlipLink() {
     if (!this._hasDualRole) return nothing;
@@ -916,13 +779,7 @@ class DaMsm extends LitElement {
       </button>`;
   }
 
-  // ── Action picker (used inside Advanced) ──
-
   renderActionPicker() {
-    // The picker only exposes actions the primary buttons don't already cover.
-    // For base/dual-downward (the only mode that shows Advanced) that's the
-    // three "manage local copies" actions; preview / publish stay in the
-    // primary buttons above so they're not duplicated here.
     const options = [
       { value: 'break', label: 'Make a local copy on selected sites' },
       { value: 'sync', label: 'Push update to customized sites' },
@@ -954,8 +811,6 @@ class DaMsm extends LitElement {
         <option value="override">Replace with base (override)</option>
       </se-select>`;
   }
-
-  // ── Composed views ──
 
   renderDownwardView() {
     return html`
@@ -995,28 +850,17 @@ class DaMsm extends LitElement {
 
 customElements.define('da-msm', DaMsm);
 
-// Default export keeps parity with the OOTB da-live entry point in case
-// another host wants to embed the component without going through the
-// self-initialising iframe flow.
 export default function render(details) {
   const cmp = document.createElement('da-msm');
   cmp.details = details;
   return cmp;
 }
 
-/**
- * Self-initialising entry. Runs when msm.js is loaded directly by msm.html
- * inside the da-prepare iframe. Subscribes to DA_SDK, wires the host's
- * `actions.daFetch` into our helpers, derives the parent origin for edit
- * URLs, then mounts the component.
- */
 (async function initAsDialog() {
   if (typeof window === 'undefined' || !document.body) return;
 
   try {
     const { context, actions } = await DA_SDK;
-    // The DA Prepare host posts `context = { view, org, site, ref, path }`.
-    // Fall back to `repo` for hosts that still use the older field name.
     const { org, path, ref } = context;
     const site = context.site || context.repo;
     console.log('[MSM Plugin] Init context:', {
@@ -1024,12 +868,9 @@ export default function render(details) {
     });
     console.log('[MSM Plugin] actions.daFetch available?', typeof actions?.daFetch);
 
-    // Wire host-supplied daFetch into both helper modules.
     setConfigSdkFetch(actions.daFetch);
     setUtilsSdkFetch(actions.daFetch);
 
-    // Derive the edit-URL origin from the parent (e.g. https://da.live or
-    // https://da.page). Falls back to da.live if document.referrer is empty.
     if (document.referrer) {
       try {
         setEditUrlOrigin(new URL(document.referrer).origin);
