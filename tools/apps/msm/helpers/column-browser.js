@@ -212,29 +212,85 @@ class MsmColumnBrowser extends LitElement {
     }
   }
 
+  _findItemElement(colIdx, path, site = '') {
+    const lists = this.shadowRoot.querySelectorAll('.column .column-items');
+    const list = lists[colIdx];
+    if (!list) return null;
+    return Array.from(list.querySelectorAll('.item')).find((el) => (
+      el.dataset.path === path
+      && (el.dataset.site || '') === (site || '')
+    )) || null;
+  }
+
+  scrollItemIntoView(colIdx, path, site = '', { block = 'nearest', behavior = 'auto' } = {}) {
+    return this.updateComplete.then(() => new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        const target = this._findItemElement(colIdx, path, site);
+        if (target) {
+          target.scrollIntoView({ block, behavior, inline: 'nearest' });
+        }
+        resolve();
+      });
+    }));
+  }
+
   scrollFocusedIntoView() {
-    this.updateComplete.then(() => {
-      const f = this._focusedItem;
-      if (!f) return;
-      const els = this.shadowRoot.querySelectorAll(
-        `.column:nth-child(${f.columnIdx + 1}) .item`,
-      );
-      const target = Array.from(els).find((el) => (
-        el.dataset.path === f.path
-        && (el.dataset.site || '') === f.site
-      ));
-      if (target) target.scrollIntoView({ block: 'nearest' });
-    });
+    const f = this._focusedItem;
+    if (!f) return this.updateComplete;
+    return this.scrollItemIntoView(f.columnIdx, f.path, f.site);
+  }
+
+  // Scroll the current selection into view (focused, checked, or path highlight).
+  // Used after deep-link navigation when the target row may be below the fold.
+  scrollSelectionIntoView({ block = 'center', behavior = 'smooth' } = {}) {
+    if (this._focusedItem) {
+      const { columnIdx, path, site } = this._focusedItem;
+      return this.scrollItemIntoView(columnIdx, path, site, { block, behavior });
+    }
+
+    for (let c = this._columns.length - 1; c >= 0; c -= 1) {
+      const col = this._columns[c];
+      const visible = this._visibleItems(col);
+      const checked = visible.find((item) => this.isItemChecked(item));
+      if (checked) {
+        return this.scrollItemIntoView(
+          c,
+          checked.path,
+          checked.site || '',
+          { block, behavior },
+        );
+      }
+    }
+
+    const highlighted = [...this._columns].reverse().find((col) => col.selectedPath);
+    if (highlighted) {
+      const item = highlighted.items.find((it) => it.path === highlighted.selectedPath);
+      if (item) {
+        const colIdx = this._columns.indexOf(highlighted);
+        return this.scrollItemIntoView(
+          colIdx,
+          item.path,
+          item.site || '',
+          { block, behavior },
+        );
+      }
+    }
+
+    return this.updateComplete;
   }
 
   scrollToActiveColumn() {
-    this.updateComplete.then(() => {
-      if (window.innerWidth <= 600) return;
-      const browser = this.shadowRoot.querySelector('.browser');
-      if (browser) {
-        browser.scrollTo({ left: browser.scrollWidth, behavior: 'smooth' });
-      }
-    });
+    return this.updateComplete.then(() => new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        if (window.innerWidth > 600) {
+          const browser = this.shadowRoot.querySelector('.browser');
+          if (browser) {
+            browser.scrollTo({ left: browser.scrollWidth, behavior: 'smooth' });
+          }
+        }
+        resolve();
+      });
+    }));
   }
 
   toggleCheck(item, colIdx) {
@@ -376,6 +432,9 @@ class MsmColumnBrowser extends LitElement {
       bubbles: true,
       composed: true,
     }));
+
+    await this.scrollToActiveColumn();
+    await this.scrollSelectionIntoView({ block: 'center', behavior: 'smooth' });
   }
 
   async navigateToFolder(colIdx, item) {
@@ -594,6 +653,9 @@ class MsmColumnBrowser extends LitElement {
 
   renderItem(colIdx, item) {
     const isSelected = this._columns[colIdx]?.selectedPath === item.path;
+    const isPathAncestor = isSelected
+      && (item.isFolder || item.isSite)
+      && colIdx < this._columns.length - 1;
     const f = this._focusedItem;
     const isFocused = !!f
       && f.columnIdx === colIdx
@@ -609,7 +671,7 @@ class MsmColumnBrowser extends LitElement {
     const title = tooltipParts.join(' \u2022 ') || undefined;
     return html`
       <div
-        class="item ${isSelected ? 'selected' : ''} ${isFocused ? 'focused' : ''} ${isInherited ? 'inherited' : ''} ${blocked ? 'blocked' : ''}"
+        class="item ${isSelected ? 'selected' : ''} ${isPathAncestor ? 'path-ancestor' : ''} ${isFocused ? 'focused' : ''} ${isInherited ? 'inherited' : ''} ${blocked ? 'blocked' : ''}"
         data-path=${item.path}
         data-site=${item.site || ''}
         @click=${(e) => this.handleItemClick(colIdx, item, e)}

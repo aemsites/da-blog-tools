@@ -108,6 +108,22 @@
   background: var(--s2-blue-200, #cce0ff);
 }
 
+/* Ancestor folders on the path to the current column (previous columns) */
+.item.path-ancestor .item-label {
+  font-weight: 700;
+  color: var(--s2-gray-900);
+}
+
+.item.path-ancestor.selected {
+  background: var(--s2-gray-100, #f0f0f0);
+  border-left: 3px solid var(--s2-gray-700, #4b4b4b);
+  padding-left: 9px;
+}
+
+.item.path-ancestor.selected:hover {
+  background: var(--s2-gray-200, #e1e1e1);
+}
+
 .item.focused {
   outline: 2px solid var(--s2-blue-900);
   outline-offset: -2px;
