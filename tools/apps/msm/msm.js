@@ -1,7 +1,12 @@
 /* eslint-disable no-underscore-dangle, import/no-unresolved, no-console, class-methods-use-this */
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { LitElement, html, nothing } from 'da-lit';
-import { fetchMsmConfig, checkPageOverrides } from './helpers/api.js';
+import {
+  fetchMsmConfig,
+  checkPageOverrides,
+  isActionableItem,
+  getSiteRoles,
+} from './helpers/api.js';
 import 'https://da.live/nx/public/sl/components.js';
 import './helpers/column-browser.js';
 import './helpers/action-panel.js';
@@ -21,15 +26,45 @@ try {
   console.warn('Failed to load styles:', e);
 }
 
+const HIDE_INHERITED_KEY = 'da-msm-hide-inherited';
+
+function loadHideInheritedPref() {
+  try {
+    return localStorage.getItem(HIDE_INHERITED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function saveHideInheritedPref(value) {
+  try {
+    localStorage.setItem(HIDE_INHERITED_KEY, String(value));
+  } catch {
+    /* localStorage may be unavailable in private mode; ignore */
+  }
+}
+
+function parseDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const org = (params.get('org') || '').trim();
+  if (!org) return null;
+  return {
+    org,
+    site: (params.get('site') || '').trim(),
+    path: (params.get('path') || '').trim(),
+  };
+}
+
 class MsmApp extends LitElement {
   static properties = {
     context: { attribute: false },
     token: { attribute: false },
+    deepLink: { attribute: false },
     _state: { state: true },
     _org: { state: true },
     _site: { state: true },
     _role: { state: true },
-    _baseSite: { state: true },
+    _parentBase: { state: true },
     _msmConfig: { state: true },
     _selectedItems: { state: true },
     _currentPath: { state: true },
@@ -37,6 +72,11 @@ class MsmApp extends LitElement {
     _pageOverrides: { state: true },
     _initError: { state: true },
     _siteWarning: { state: true },
+    _parentChain: { state: true },
+    _hasDescendants: { state: true },
+    _hideInherited: { state: true },
+    _deepLinkPath: { state: true },
+    _deepLinkWarning: { state: true },
   };
 
   connectedCallback() {
@@ -49,6 +89,51 @@ class MsmApp extends LitElement {
     this._initError = '';
     this._role = 'base';
     this._state = 'init';
+    this._parentBase = '';
+    this._parentChain = [];
+    this._hasDescendants = false;
+    this._hideInherited = loadHideInheritedPref();
+    this._deepLinkPath = '';
+    this._deepLinkWarning = '';
+
+    // Auto-load when a deep-link was supplied via URL query params.
+    if (this.deepLink?.org) {
+      this._org = this.deepLink.org;
+      this._site = this.deepLink.site || '';
+      this._deepLinkPath = this.deepLink.path || '';
+      this._state = 'loading';
+      this.loadConfig(this.deepLink.org);
+    }
+  }
+
+  handleDeepLinkConsumed() {
+    this._deepLinkPath = '';
+  }
+
+  handleDeepLinkWarning(e) {
+    const { requestedPath, lastResolvedPath } = e.detail || {};
+    const tail = lastResolvedPath
+      ? ` (navigated as far as ${lastResolvedPath})`
+      : '';
+    this._deepLinkWarning = `Could not resolve "${requestedPath}"${tail}.`;
+  }
+
+  dismissSiteWarning() {
+    this._siteWarning = '';
+  }
+
+  dismissDeepLinkWarning() {
+    this._deepLinkWarning = '';
+  }
+
+  onHideInheritedToggle(checked) {
+    this._hideInherited = checked;
+    saveHideInheritedPref(checked);
+  }
+
+  handleActionComplete() {
+    const cb = this.shadowRoot.querySelector('msm-column-browser');
+    cb?.invalidateMergedCache();
   }
 
   handleOrgSubmit(e) {
@@ -71,37 +156,56 @@ class MsmApp extends LitElement {
 
   classifySite(config) {
     this._siteWarning = '';
+    this._parentChain = [];
+    this._parentBase = '';
+    this._hasDescendants = false;
+    this._satellites = {};
+    this._browseSite = this._site;
 
     if (!this._site) {
       this._role = 'base';
-      this._baseSite = '';
       return;
     }
 
-    const isSatellite = config.baseSites.find(
-      (bs) => Object.keys(bs.satellites).includes(this._site),
-    );
+    const roles = getSiteRoles(config, this._site);
+    const isBase = !!roles.asBase;
+    const isSatellite = !!roles.asSatellite;
+
     if (isSatellite) {
-      this._role = 'satellite';
-      this._baseSite = isSatellite.site;
-      this._satellites = {
-        [this._site]: isSatellite.satellites[this._site],
-      };
+      this._parentBase = roles.asSatellite.base;
+      this._parentChain = roles.asSatellite.chain || [];
+    }
+
+    if (isBase && isSatellite) {
+      // Middle-tier site: has children AND has a parent
+      this._role = 'dual';
+      this._satellites = roles.asBase.satellites;
+      this._hasDescendants = Object.values(roles.asBase.satellites)
+        .some((s) => s.descendantCount > 0);
       return;
     }
 
-    const isBase = config.baseSites.find((bs) => bs.site === this._site);
     if (isBase) {
       this._role = 'base';
-      this._baseSite = this._site;
-      this._satellites = isBase.satellites;
+      this._satellites = roles.asBase.satellites;
+      this._hasDescendants = Object.values(roles.asBase.satellites)
+        .some((s) => s.descendantCount > 0);
+      return;
+    }
+
+    if (isSatellite) {
+      this._role = 'satellite';
+      const leafEntry = config.baseSites
+        .find((bs) => Object.keys(bs.satellites).includes(this._site))
+        ?.satellites[this._site];
+      this._satellites = { [this._site]: leafEntry || { label: this._site } };
       return;
     }
 
     const fallback = config.baseSites[0];
     this._role = 'base';
-    this._baseSite = fallback.site;
     this._satellites = fallback.satellites;
+    this._browseSite = fallback.site;
     this._siteWarning = `"${this._site}" is not a recognized base or satellite site. Showing "${fallback.site}" instead.`;
   }
 
@@ -128,21 +232,44 @@ class MsmApp extends LitElement {
     this._currentPath = currentPath;
     this._currentSite = site;
 
-    if (this._role === 'satellite') return;
-
-    if (selectedItems.length > 0 && this._msmConfig) {
-      const baseSite = this._msmConfig.baseSites.find((s) => s.site === site);
-      if (baseSite) {
-        this._satellites = baseSite.satellites;
-        this.loadOverrides(selectedItems);
-      }
+    if (this._role === 'satellite' || this._role === 'dual') {
+      const selfSite = this._role === 'satellite' ? this._site : site;
+      this._pageOverrides = this._buildSelfOverrides(selectedItems, selfSite);
     } else {
       this._pageOverrides = new Map();
     }
+
+    if (this._role === 'satellite') return;
+
+    if (selectedItems.length > 0 && this._msmConfig) {
+      const roles = getSiteRoles(this._msmConfig, site);
+      if (roles.asBase) {
+        this._satellites = roles.asBase.satellites;
+        this._parentChain = roles.asSatellite?.chain || [];
+        this._parentBase = roles.asSatellite?.base || '';
+        this._hasDescendants = Object.values(roles.asBase.satellites)
+          .some((s) => s.descendantCount > 0);
+        this.loadOverrides(selectedItems);
+      }
+    }
+  }
+
+  _buildSelfOverrides(selectedItems, selfSite) {
+    const map = new Map();
+    selectedItems.filter(isActionableItem).forEach((page) => {
+      map.set(page.path, [{
+        site: selfSite,
+        label: selfSite,
+        hasOverride: !page.inheritedFrom,
+        inheritedFrom: page.inheritedFrom || null,
+        sourceSite: page.sourceSite || null,
+      }]);
+    });
+    return map;
   }
 
   async loadOverrides(items) {
-    const pages = items.filter((i) => i.ext === 'html');
+    const pages = items.filter((i) => isActionableItem(i));
     if (!pages.length) return;
 
     const org = this._org;
@@ -150,16 +277,27 @@ class MsmApp extends LitElement {
     const overrides = new Map();
 
     await Promise.all(pages.map(async (page) => {
-      const pagePath = page.path.replace('.html', '');
-      const results = await checkPageOverrides(org, sats, pagePath);
+      const ext = page.ext || 'html';
+      const pagePath = page.path.replace(/\.[^/.]+$/, '');
+      const results = await checkPageOverrides(org, sats, pagePath, ext);
       overrides.set(page.path, results);
     }));
 
-    this._pageOverrides = new Map(overrides);
+    const merged = new Map();
+    const allPaths = new Set([
+      ...Array.from(this._pageOverrides?.keys?.() || []),
+      ...overrides.keys(),
+    ]);
+    allPaths.forEach((p) => {
+      const selfEntries = this._pageOverrides?.get(p) || [];
+      const childEntries = overrides.get(p) || [];
+      merged.set(p, [...selfEntries, ...childEntries]);
+    });
+    this._pageOverrides = merged;
   }
 
   get _selectedPages() {
-    return this._selectedItems.filter((i) => i.ext === 'html');
+    return this._selectedItems.filter((i) => isActionableItem(i));
   }
 
   get _isSinglePage() {
@@ -172,6 +310,7 @@ class MsmApp extends LitElement {
   }
 
   renderToolbar() {
+    const canShowInheritedToggle = this._role === 'satellite' || this._role === 'dual';
     return html`
       <div class="msm-toolbar">
         <h1>Multi-Site Management</h1>
@@ -188,7 +327,21 @@ class MsmApp extends LitElement {
           ></sl-input>
           <sl-button @click=${this.handleOrgSubmit}>Load</sl-button>
         </form>
-        ${this._role === 'satellite' ? html`<span class="role-badge">Satellite</span>` : nothing}
+        <div class="msm-toolbar-role-badges">
+          ${this._role === 'satellite' ? html`<span class="role-badge">Satellite</span>` : nothing}
+          ${this._role === 'dual' ? html`<span class="role-badge dual">Middle-tier</span>` : nothing}
+          ${canShowInheritedToggle ? html`
+            <label class="hide-inherited-toggle">
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label="Hide inherited pages"
+                .checked=${this._hideInherited}
+                @change=${(e) => this.onHideInheritedToggle(e.target.checked)} />
+              <span>Hide inherited pages</span>
+            </label>
+          ` : nothing}
+        </div>
       </div>
     `;
   }
@@ -214,25 +367,48 @@ class MsmApp extends LitElement {
     }
 
     return html`
-      ${this._siteWarning ? html`<div class="nx-alert warning"><p>${this._siteWarning}</p></div>` : nothing}
+      ${this._siteWarning ? html`
+        <div class="nx-alert warning site-warning">
+          <p>${this._siteWarning}</p>
+          <button class="nx-alert-dismiss" type="button"
+            aria-label="Dismiss"
+            @click=${() => this.dismissSiteWarning()}>\u00d7</button>
+        </div>
+      ` : nothing}
+      ${this._deepLinkWarning ? html`
+        <div class="nx-alert warning deep-link-warning">
+          <p>${this._deepLinkWarning}</p>
+          <button class="nx-alert-dismiss" type="button"
+            aria-label="Dismiss"
+            @click=${() => this.dismissDeepLinkWarning()}>\u00d7</button>
+        </div>
+      ` : nothing}
       <div class="msm-body">
         <msm-column-browser
           .org=${this._org}
           .role=${this._role}
-          .site=${this._role === 'satellite' ? this._site : this._baseSite || ''}
+          .site=${this._browseSite || ''}
           .msmConfig=${this._msmConfig}
+          .hideInherited=${this._hideInherited}
+          .deepLinkPath=${this._deepLinkPath}
           @browse-selection=${this.handleBrowseSelection}
+          @deep-link-consumed=${this.handleDeepLinkConsumed}
+          @deep-link-warning=${this.handleDeepLinkWarning}
         ></msm-column-browser>
         ${this._selectedPages.length > 0 ? html`
           <msm-action-panel
             .org=${this._org}
             .role=${this._role}
             .site=${this._role === 'satellite' ? this._site : this._currentSite}
-            .baseSite=${this._baseSite}
+            .parentBase=${this._parentBase}
+            .parentChain=${this._parentChain}
             .pages=${this._selectedPages}
             .satellites=${this._satellites}
             .overrides=${this._pageOverrides}
             .isSinglePage=${this._isSinglePage}
+            .hasDescendants=${this._hasDescendants}
+            .msmConfig=${this._msmConfig}
+            @action-complete=${this.handleActionComplete}
           ></msm-action-panel>
         ` : nothing}
       </div>
@@ -250,9 +426,11 @@ class MsmApp extends LitElement {
 customElements.define('msm-app', MsmApp);
 
 (async function init() {
+  const deepLink = parseDeepLink();
   const { context, token } = await DA_SDK;
   const cmp = document.createElement('msm-app');
   cmp.context = context;
   cmp.token = token;
+  if (deepLink) cmp.deepLink = deepLink;
   document.body.append(cmp);
 }());
