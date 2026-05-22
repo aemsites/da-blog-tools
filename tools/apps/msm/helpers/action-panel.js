@@ -25,40 +25,35 @@ const SUCCESS_ICON = html`<svg class="result-icon success" viewBox="0 0 16 16" f
 const ERROR_ICON = html`<svg class="result-icon error" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`;
 const EDIT_ICON = html`<svg viewBox="0 0 20 20"><path fill="currentColor" d="M18.16 15.62V4.12c0-1.24-1.01-2.25-2.25-2.25H4.41c-1.24 0-2.25 1.01-2.25 2.25v3.72c0 .41.34.75.75.75s.75-.34.75-.75v-3.72c0-.41.34-.75.75-.75h11.5c.41 0 .75.34.75.75v11.5c0 .41-.34.75-.75.75h-3.81c-.41 0-.75.34-.75.75s.34.75.75.75h3.81c1.24 0 2.25-1.01 2.25-2.25z"/><path fill="currentColor" d="M11.16 9.62v4.24c0 .41-.34.75-.75.75s-.75-.34-.75-.75v-2.43l-6.47 6.47c-.15.15-.34.22-.53.22s-.38-.07-.53-.22a.754.754 0 010-1.06l6.47-6.47H6.17c-.41 0-.75-.34-.75-.75s.34-.75.75-.75h4.24c.41 0 .75.34.75.75z"/></svg>`;
 
+// Labels match tools/plugins/msm/msm.js (Prepare plugin) for consistent author wording.
 const DOWNWARD_ACTIONS = [
   {
-    heading: 'Inherited sites',
+    heading: 'Following base',
     items: [
       { value: 'preview', label: 'Roll out to preview' },
       { value: 'publish', label: 'Roll out to live' },
-      { value: 'break', label: 'Cancel inheritance' },
+      { value: 'break', label: 'Make a local copy on selected sites' },
     ],
   },
   {
-    heading: 'Custom sites',
+    heading: 'With local copy',
     items: [
-      { value: 'sync', label: 'Sync to satellite' },
-      { value: 'reset', label: 'Resume inheritance' },
+      { value: 'sync', label: 'Push update to customized sites' },
+      { value: 'reset', label: 'Discard local copy on customized sites' },
     ],
   },
 ];
 
 // Upward action lists, scoped to the page's inheritance category. The picker
 // surfaces only the actions that make sense for the selection:
-//   - inherited  : the page lives on an ancestor; you can pull it down or
-//                  materialize a local copy that breaks the inheritance link.
-//   - overridden : the page already has a local copy that overrides the
-//                  base; you can refresh from base or drop the local copy.
-//   - local      : the page exists only on this site (no base counterpart);
-//                  no upward operations are meaningful.
-// Inherited pages have no local copy here, so 'Sync from base' would just
-// materialize one — identical to 'Cancel inheritance'. Only the latter is
-// offered to keep the user's intent unambiguous.
+//   - inherited  : following base; Pull latest from base materializes a local copy.
+//   - overridden : has a local copy; pull merges or override replaces from base.
+//   - local      : no base counterpart; no upward operations are meaningful.
 const UPWARD_ACTIONS_INHERITED = [
   {
     heading: 'From parent',
     items: [
-      { value: 'cancel-inheritance', label: 'Cancel inheritance' },
+      { value: 'cancel-inheritance', label: 'Pull latest from base' },
     ],
   },
 ];
@@ -67,8 +62,8 @@ const UPWARD_ACTIONS_OVERRIDDEN = [
   {
     heading: 'From parent',
     items: [
-      { value: 'sync-from-base', label: 'Sync from base' },
-      { value: 'resume-inheritance', label: 'Resume inheritance' },
+      { value: 'sync-from-base', label: 'Pull latest from base' },
+      { value: 'resume-inheritance', label: 'Revert to base' },
     ],
   },
 ];
@@ -81,9 +76,14 @@ const UPWARD_ACTIONS_LOCAL = [
 ];
 
 const SYNC_OPTIONS = [
-  { value: 'merge', label: 'Merge' },
-  { value: 'override', label: 'Override' },
+  { value: 'merge', label: 'Keep local edits (merge)' },
+  { value: 'override', label: 'Replace with base (override)' },
 ];
+
+const SCOPE_DISPLAY = {
+  inherited: 'following base',
+  custom: 'with local copy',
+};
 
 const ACTION_SCOPE = {
   preview: 'inherited',
@@ -508,15 +508,16 @@ class MsmActionPanel extends LitElement {
     const parts = Object.entries(counts).map(([a, c]) => {
       const label = `${getActionLabel(a)} ${c} page${c > 1 ? 's' : ''}`;
       const scope = ACTION_SCOPE[a];
-      return scope ? `${label} (${scope} sites only)` : label;
+      const scopeLabel = scope ? SCOPE_DISPLAY[scope] : null;
+      return scopeLabel ? `${label} (${scopeLabel} sites only)` : label;
     });
     const satCount = this._selectedSats.size;
     const satSuffix = `across ${satCount} direct satellite${satCount !== 1 ? 's' : ''}`;
-    const skipNote = ' Satellites that don\'t match the action scope will be skipped.';
+    const skipNote = ' Sites that don\'t match the action scope will be skipped.';
     const recursiveActive = this._includeDescendants
       && Object.keys(counts).some((a) => RECURSIVE_ACTIONS.has(a));
     const recursiveNote = recursiveActive
-      ? ` Including ${this._totalDescendants} descendant site${this._totalDescendants !== 1 ? 's' : ''} (Preview/Publish only).`
+      ? ` Also roll out to ${this._totalDescendants} nested site${this._totalDescendants !== 1 ? 's' : ''}.`
       : '';
     return `${parts.join(', ')} ${satSuffix}.${skipNote}${recursiveNote} Continue?`;
   }
@@ -652,14 +653,14 @@ class MsmActionPanel extends LitElement {
 
     if (action === 'reset') {
       this._confirmAction = {
-        message: 'Resume inheritance? This deletes local overrides for selected satellites.',
+        message: 'Discard local copy on customized sites? Removes the satellite override.',
         onConfirm: () => this.doExecuteSingle(page, action),
       };
       return;
     }
     if (action === 'resume-inheritance') {
       this._confirmAction = {
-        message: `Resume inheritance for ${this.site}? This deletes the local override of ${page.name} so it inherits from ${this.parentBase}.`,
+        message: 'Revert to base? This deletes the local copy on this satellite.',
         onConfirm: () => this.doExecuteSingle(page, action),
       };
       return;
@@ -667,7 +668,7 @@ class MsmActionPanel extends LitElement {
     if (action === 'cancel-inheritance') {
       const src = this._resolveSourceSite(page);
       this._confirmAction = {
-        message: `Cancel inheritance for ${page.name} on ${this.site}? This creates a local copy from ${src}, breaking the inheritance link.`,
+        message: `Copy ${page.name} from ${src} to ${this.site}? This creates a local copy on your site.`,
         onConfirm: () => this.doExecuteSingle(page, action),
       };
       return;
@@ -719,14 +720,14 @@ class MsmActionPanel extends LitElement {
     const syncMode = this.getPageSyncMode(page.path);
     if (action === 'reset') {
       this._confirmAction = {
-        message: `Resume inheritance for ${page.name}? This deletes local overrides.`,
+        message: `Discard local copy on customized sites for ${page.name}? Removes the satellite override.`,
         onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
       };
       return;
     }
     if (action === 'resume-inheritance') {
       this._confirmAction = {
-        message: `Resume inheritance for ${page.name} on ${this.site}? This deletes the local override so it inherits from ${this.parentBase}.`,
+        message: 'Revert to base? This deletes the local copy on this satellite.',
         onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
       };
       return;
@@ -734,7 +735,7 @@ class MsmActionPanel extends LitElement {
     if (action === 'cancel-inheritance') {
       const src = this._resolveSourceSite(page);
       this._confirmAction = {
-        message: `Cancel inheritance for ${page.name} on ${this.site}? This creates a local copy from ${src}, breaking the inheritance link.`,
+        message: `Copy ${page.name} from ${src} to ${this.site}? This creates a local copy on your site.`,
         onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
       };
       return;
@@ -855,18 +856,22 @@ class MsmActionPanel extends LitElement {
   renderDirectionSwitch() {
     if (!this._hasDualRole) return nothing;
     const checked = this._isUpwardMode;
+    const baseLabel = this.parentBase || 'parent';
+    const switchLabel = checked
+      ? 'Update children instead'
+      : `Update from parent (${baseLabel}) instead`;
     return html`
       <label class="direction-switch">
         <input type="checkbox"
           role="switch"
-          aria-label="Sync from parent"
+          aria-label=${switchLabel}
           .checked=${checked}
           ?disabled=${this._busy}
           @change=${(e) => this.onDirectionToggle(e.target.checked)} />
         <span class="switch-track" aria-hidden="true">
           <span class="switch-knob"></span>
         </span>
-        <span class="switch-label">Sync from parent</span>
+        <span class="switch-label">${switchLabel}</span>
       </label>
     `;
   }
@@ -899,9 +904,9 @@ class MsmActionPanel extends LitElement {
       const hasOverride = selfEntry?.hasOverride === true;
       const inheritedFrom = selfEntry?.inheritedFrom || null;
       const effectiveSource = selfEntry?.sourceSite || this.parentBase || source;
-      let overrideText = 'No';
-      if (hasOverride) overrideText = 'Yes';
-      else if (inheritedFrom) overrideText = `No \u2014 inherited from ${inheritedFrom}`;
+      let overrideText = 'None \u2014 following base';
+      if (hasOverride) overrideText = 'Yes \u2014 has local copy';
+      else if (inheritedFrom) overrideText = 'None \u2014 following base';
       return html`
         <div class="upward-summary">
           <div class="summary-row"><span class="summary-label">Source</span><span class="summary-value">${effectiveSource}${pagePath}</span></div>
@@ -940,7 +945,7 @@ class MsmActionPanel extends LitElement {
     this._includeDescendants = e.target.checked;
     this._resetExecution();
   }} />
-            <span>Cascade to ${this._totalDescendants} nested site${this._totalDescendants !== 1 ? 's' : ''}</span>
+            <span>Also roll out to ${this._totalDescendants} nested site${this._totalDescendants !== 1 ? 's' : ''}</span>
           </label>
         ` : html`<span class="footer-spacer"></span>`}
         <sl-button variant="primary"
@@ -1057,7 +1062,7 @@ class MsmActionPanel extends LitElement {
       <div class="satellite-grid">
         ${inherited.length ? html`
           <div class="satellite-column">
-            <div class="column-heading">Inherited</div>
+            <div class="column-heading">Following base</div>
             <ul class="satellite-list">
               ${inherited.map((sat) => this.renderSatRow(sat, scope !== 'inherited'))}
             </ul>
@@ -1065,7 +1070,7 @@ class MsmActionPanel extends LitElement {
         ` : nothing}
         ${custom.length ? html`
           <div class="satellite-column">
-            <div class="column-heading">Custom</div>
+            <div class="column-heading">With local copy</div>
             <ul class="satellite-list">
               ${custom.map((sat) => this.renderSatRow(sat, scope !== 'custom', true))}
             </ul>
@@ -1252,11 +1257,11 @@ class MsmActionPanel extends LitElement {
         ${showOverrides ? html`
           <td class="cell-overrides">
             <span class="override-badge">
-              ${summary.inherited} inherited
+              ${summary.inherited} following base
             </span>
             ${summary.custom > 0 ? html`
               <span class="override-badge">
-                ${summary.custom} custom
+                ${summary.custom} with local copy
               </span>
             ` : nothing}
           </td>
@@ -1305,7 +1310,7 @@ class MsmActionPanel extends LitElement {
           <div class="expand-content">
             ${inherited.length ? html`
               <div class="expand-column">
-                <div class="expand-heading">Inherited</div>
+                <div class="expand-heading">Following base</div>
                 <ul class="expand-list">
                   ${inherited.map((sat) => html`
                     <li>
@@ -1318,7 +1323,7 @@ class MsmActionPanel extends LitElement {
             ` : nothing}
             ${custom.length ? html`
               <div class="expand-column">
-                <div class="expand-heading">Custom</div>
+                <div class="expand-heading">With local copy</div>
                 <ul class="expand-list">
                   ${custom.map((sat) => html`
                     <li>
