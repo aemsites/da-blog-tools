@@ -126,6 +126,17 @@ function walkSubtree(rows, rootSite, visited = new Set()) {
   ]);
 }
 
+/** Nested satellite tree (direct children at each level) for rollout UI. */
+export function buildDescendantTree(rows, rootSite, visited = new Set()) {
+  if (!rows?.length || visited.has(rootSite)) return [];
+  visited.add(rootSite);
+  return getDirectChildren(rows, rootSite).map((child) => ({
+    site: child.site,
+    label: child.label,
+    children: buildDescendantTree(rows, child.site, new Set(visited)),
+  }));
+}
+
 function walkChain(rows, site) {
   const chain = [];
   const visited = new Set();
@@ -165,6 +176,7 @@ export function getSiteRoles(config, site) {
       acc[child.site] = {
         label: child.label,
         descendantCount: walkSubtree(rows, child.site).length,
+        descendants: buildDescendantTree(rows, child.site),
       };
       return acc;
     }, {});
