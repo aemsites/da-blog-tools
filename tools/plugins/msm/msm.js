@@ -220,10 +220,11 @@ class DaMsm extends LitElement {
 
   _getAppDeepLink() {
     const {
-      org, site, path, ref,
+      org, site, path,
     } = this.details;
     const params = new URLSearchParams({ org, site, path });
-    if (ref) params.set('ref', ref);
+    //TODO: remove this once msm-app branch is merged to main
+    params.set('ref', 'msm-app');
     return `${MSM_APP_URL}?${params.toString()}`;
   }
 
