@@ -136,6 +136,7 @@ class MsmActionPanel extends LitElement {
     _busy: { state: true },
     _includedPages: { state: true },
     _includeDescendants: { state: true },
+    _expandedNested: { state: true },
   };
 
   connectedCallback() {
@@ -154,7 +155,8 @@ class MsmActionPanel extends LitElement {
     this._taskStatuses = new Map();
     this._busy = false;
     this._includedPages = new Set(this.pages?.map((p) => p.path) || []);
-    this._includeDescendants = false;
+    this._includeDescendants = true;
+    this._expandedNested = new Set();
     this._lastPageKey = '';
     this._handleOutsideClick = this._handleOutsideClick.bind(this);
   }
@@ -330,6 +332,13 @@ class MsmActionPanel extends LitElement {
     this._resetExecution();
   }
 
+  _toggleNestedExpand(satSite) {
+    const next = new Set(this._expandedNested);
+    if (next.has(satSite)) next.delete(satSite);
+    else next.add(satSite);
+    this._expandedNested = next;
+  }
+
   // ── Per-page action ──
 
   getPageAction(pagePath) {
@@ -429,25 +438,69 @@ class MsmActionPanel extends LitElement {
     )).reduce((acc, [s, info]) => { acc[s] = info; return acc; }, {});
   }
 
-  get _totalDescendants() {
-    return Object.values(this.satellites || {})
-      .reduce((acc, info) => acc + (info.descendantCount || 0), 0);
+  get _activeSelectedSats() {
+    return this.isSinglePage ? this._singleSelectedSats : this._selectedSats;
+  }
+
+  /**
+   * Nested sites that would receive rollout for currently selected
+   * **inherited** (following-base) satellites only. Custom satellites
+   * already have a local copy and are not part of recursive rollout.
+   */
+  get _selectedCascadeDescendantCount() {
+    const selectedSats = this._activeSelectedSats;
+    const overrides = this.isSinglePage
+      ? this.getPageOverrides(this.pages[0]?.path)
+      : [];
+    return Object.entries(this.satellites || {})
+      .filter(([site]) => {
+        if (!selectedSats.has(site)) return false;
+        const ov = overrides.find((o) => o.site === site);
+        return !ov || !ov.hasOverride;
+      })
+      .reduce((acc, [, info]) => acc + (info.descendantCount || 0), 0);
+  }
+
+  _cascadeAppliesToSelection() {
+    return RECURSIVE_ACTIONS.has(this._globalAction)
+      && this._includeDescendants
+      && this._selectedCascadeDescendantCount > 0;
+  }
+
+  _cascadeToggleHint() {
+    const count = this._selectedCascadeDescendantCount;
+    const selectedSats = this._activeSelectedSats;
+    const noneSelected = selectedSats.size === 0
+      && Object.keys(this.satellites || {}).length > 0;
+    if (noneSelected) return 'Select sites above to include their nested satellites';
+    if (count === 0) return 'Selected sites have no nested satellites';
+    return `Also roll out to ${count} nested site${count === 1 ? '' : 's'}`;
   }
 
   get _showDescendantsToggle() {
     return !this._isUpwardMode
       && this._hasDownwardActions
       && this.hasDescendants
-      && RECURSIVE_ACTIONS.has(this._globalAction)
-      && this._totalDescendants > 0;
+      && RECURSIVE_ACTIONS.has(this._globalAction);
   }
 
-  resolveSatellitesForAction(directSatellites, action) {
+  resolveSatellitesForAction(directSatellites, action, pageOverrides) {
     if (!this._includeDescendants || !RECURSIVE_ACTIONS.has(action)) {
       return directSatellites;
     }
     if (!this.msmConfig) return directSatellites;
-    return expandSatellitesWithSubtree(this.msmConfig, directSatellites);
+    const scope = ACTION_SCOPE[action];
+    const inScopeSats = scope
+      ? Object.entries(directSatellites).reduce((acc, [site, info]) => {
+        const ov = pageOverrides?.find((o) => o.site === site);
+        const hasOverride = ov?.hasOverride ?? false;
+        const matches = scope === 'custom' ? hasOverride : !hasOverride;
+        if (matches) acc[site] = info;
+        return acc;
+      }, {})
+      : directSatellites;
+    const expanded = expandSatellitesWithSubtree(this.msmConfig, inScopeSats);
+    return { ...directSatellites, ...expanded };
   }
 
   // ── Execution ──
@@ -487,8 +540,9 @@ class MsmActionPanel extends LitElement {
     const skipNote = ' Sites that don\'t match the action scope will be skipped.';
     const recursiveActive = this._includeDescendants
       && Object.keys(counts).some((a) => RECURSIVE_ACTIONS.has(a));
-    const recursiveNote = recursiveActive
-      ? ` Also roll out to ${this._totalDescendants} nested site${this._totalDescendants !== 1 ? 's' : ''}.`
+    const nestedCount = this._selectedCascadeDescendantCount;
+    const recursiveNote = recursiveActive && nestedCount > 0
+      ? ` Also roll out to ${nestedCount} nested site${nestedCount !== 1 ? 's' : ''}.`
       : '';
     return `${parts.join(', ')} ${satSuffix}.${skipNote}${recursiveNote} Continue?`;
   }
@@ -589,7 +643,10 @@ class MsmActionPanel extends LitElement {
     }
     // Downward: current site is the base, children are the satellites.
     const filteredSats = this.getFilteredSatellites();
-    const sats = this.resolveSatellitesForAction(filteredSats, action);
+    const pageOverrides = this.pages?.length === 1
+      ? this.getPageOverrides(this.pages[0].path)
+      : [];
+    const sats = this.resolveSatellitesForAction(filteredSats, action, pageOverrides);
     return {
       baseSite: this.site,
       satellites: sats,
@@ -608,7 +665,10 @@ class MsmActionPanel extends LitElement {
     const directSats = Object.entries(this.satellites || {})
       .filter(([s]) => satSet.has(s))
       .reduce((acc, [s, info]) => { acc[s] = info; return acc; }, {});
-    const sats = this.resolveSatellitesForAction(directSats, action);
+    const pageOverrides = this.pages?.length === 1
+      ? this.getPageOverrides(this.pages[0].path)
+      : [];
+    const sats = this.resolveSatellitesForAction(directSats, action, pageOverrides);
     return {
       baseSite: this.site,
       satellites: sats,
@@ -938,15 +998,15 @@ class MsmActionPanel extends LitElement {
     return html`
       <div class="form-actions">
         ${this._showDescendantsToggle ? html`
-          <label class="footer-cascade">
+          <label class="footer-cascade ${this._selectedCascadeDescendantCount === 0 ? 'muted' : ''}">
             <input type="checkbox"
               .checked=${this._includeDescendants}
-              ?disabled=${this._busy}
+              ?disabled=${this._busy || this._selectedCascadeDescendantCount === 0}
               @change=${(e) => {
     this._includeDescendants = e.target.checked;
     this._resetExecution();
   }} />
-            <span>Also roll out to ${this._totalDescendants} nested site${this._totalDescendants !== 1 ? 's' : ''}</span>
+            <span>${this._cascadeToggleHint()}</span>
           </label>
         ` : html`<span class="footer-spacer"></span>`}
         <sl-button variant="primary"
@@ -1081,30 +1141,95 @@ class MsmActionPanel extends LitElement {
     `;
   }
 
+  renderNestedTree(nodes, affected, depth = 0) {
+    if (!nodes?.length) return nothing;
+    return nodes.map((node) => {
+      const sub = node.children?.length
+        ? html`<ul class="expand-list">${this.renderNestedTree(node.children, affected, depth + 1)}</ul>`
+        : nothing;
+      return html`
+        <li class="${affected ? 'affected' : ''}" style="padding-left:${depth * 12}px">
+          ${node.label}${sub}
+        </li>`;
+    });
+  }
+
+  renderSatRowContent({
+    site,
+    label,
+    outOfScope,
+    showEdit,
+    showNested,
+    isSelected,
+    onToggle,
+    statusEntry,
+  }) {
+    const info = this.satellites?.[site] || {};
+    const dc = info.descendantCount || 0;
+    const nested = showNested ? (info.descendants || []) : [];
+    const hasNested = nested.length > 0;
+    const isExpanded = hasNested && this._expandedNested.has(site);
+    const cascades = isSelected && this._cascadeAppliesToSelection();
+    const dcSuffix = dc === 1 ? '' : 's';
+    const dcTitle = `${dc} nested site${dcSuffix} below this site`;
+    const pagePath = this.pages[0]?.path?.replace(/\.[^/.]+$/, '') || '';
+
+    return html`
+      <li class="sat-row-wrap ${outOfScope ? 'out-of-scope' : ''}">
+        <div class="sat-row ${statusEntry ? `status-${statusEntry.status}` : ''}">
+          <label>
+            <input type="checkbox"
+              .checked=${isSelected}
+              ?disabled=${outOfScope || this._busy}
+              @change=${onToggle} />
+            <span>${label}</span>
+          </label>
+          ${dc > 0 ? html`
+            <span class="descendant-badge ${hasNested ? 'sat-descendant-toggle' : ''}"
+              title=${dcTitle}
+              @click=${() => hasNested && this._toggleNestedExpand(site)}>
+              +${dc}
+              ${hasNested ? html`
+                <svg class="expand-toggle ${isExpanded ? 'expanded' : ''}"
+                  viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <polyline points="3,1 7,5 3,9"/>
+                </svg>
+              ` : nothing}
+            </span>
+          ` : nothing}
+          ${statusEntry ? this.statusIcon(statusEntry.status) : nothing}
+          ${showEdit ? html`
+            <a class="edit-link"
+              href="https://da.live/edit#/${this.org}/${site}${pagePath}"
+              target="_blank"
+              title="Open in editor"
+              aria-label="Open ${label} in editor">
+              ${EDIT_ICON}
+            </a>
+          ` : nothing}
+        </div>
+        ${isExpanded ? html`
+          <div class="sat-expand-content">
+            <ul class="expand-list">
+              ${this.renderNestedTree(nested, cascades)}
+            </ul>
+          </div>
+        ` : nothing}
+      </li>`;
+  }
+
   renderSatRow(sat, outOfScope, showEdit = false) {
     const statusEntry = this._taskStatuses.get(`${this.pages[0]?.path}:${sat.site}`);
-    const info = this.satellites?.[sat.site] || {};
-    const descCount = info.descendantCount || 0;
-    return html`
-      <li class="sat-row ${outOfScope ? 'out-of-scope' : ''}">
-        <label>
-          <input type="checkbox"
-            .checked=${this._singleSelectedSats.has(sat.site)}
-            ?disabled=${outOfScope || this._busy}
-            @change=${() => this.toggleSingleSat(sat.site)} />
-          <span>${sat.label}</span>
-          ${descCount > 0 ? html`
-            <span class="descendant-badge" title="${descCount} descendant site${descCount === 1 ? '' : 's'}">+${descCount}</span>
-          ` : nothing}
-        </label>
-        ${statusEntry ? this.statusIcon(statusEntry.status) : nothing}
-        ${showEdit ? html`
-          <a class="edit-link" href="https://da.live/edit#/${this.org}/${sat.site}${this.pages[0]?.path?.replace(/\.[^/.]+$/, '')}" target="_blank" title="Open in editor">
-            ${EDIT_ICON}
-          </a>
-        ` : nothing}
-      </li>
-    `;
+    return this.renderSatRowContent({
+      site: sat.site,
+      label: sat.label,
+      outOfScope,
+      showEdit,
+      showNested: !showEdit,
+      isSelected: this._singleSelectedSats.has(sat.site),
+      onToggle: () => this.toggleSingleSat(sat.site),
+      statusEntry,
+    });
   }
 
   // ──────────────────────────────────────
@@ -1153,20 +1278,22 @@ class MsmActionPanel extends LitElement {
     if (sats.length <= 1) return nothing;
 
     return html`
-      <div class="satellite-filter">
-        <span class="satellite-filter-label">Satellites</span>
-        ${sats.map(([satSite, info]) => {
-    const dc = info.descendantCount || 0;
-    return html`
-            <label class="sat-tag ${this._selectedSats.has(satSite) ? 'active' : ''}">
-              <input type="checkbox"
-                .checked=${this._selectedSats.has(satSite)}
-                @change=${() => this.toggleSatFilter(satSite)} />
-              ${info.label || satSite}
-              ${dc > 0 ? html`<span class="descendant-badge" title="${dc} descendant site${dc === 1 ? '' : 's'}">+${dc}</span>` : nothing}
-            </label>
-          `;
-  })}
+      <div class="satellite-grid satellite-filter-grid">
+        <div class="satellite-column">
+          <div class="column-heading">Satellites</div>
+          <ul class="satellite-list">
+            ${sats.map(([satSite, info]) => this.renderSatRowContent({
+    site: satSite,
+    label: info.label || satSite,
+    outOfScope: false,
+    showEdit: false,
+    showNested: true,
+    isSelected: this._selectedSats.has(satSite),
+    onToggle: () => this.toggleSatFilter(satSite),
+    statusEntry: null,
+  }))}
+          </ul>
+        </div>
       </div>
     `;
   }
