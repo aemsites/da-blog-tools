@@ -82,7 +82,10 @@ export async function getSatellitePageStatus(org, satellite, pagePath, editLastM
   let liveState;
   if (json.live?.status !== 200) {
     liveState = 'not-rolled-out';
-  } else if (previewTime !== null && liveTime !== null && previewTime > liveTime) {
+  } else if (
+    (previewTime !== null && liveTime !== null && previewTime > liveTime)
+    || (editTime !== null && liveTime !== null && editTime > liveTime)
+  ) {
     liveState = 'behind';
   } else {
     liveState = 'current';
