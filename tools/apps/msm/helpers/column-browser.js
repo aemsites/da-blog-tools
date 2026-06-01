@@ -792,6 +792,39 @@ class MsmColumnBrowser extends LitElement {
     return [...this._unchecked].some((k) => k.startsWith(prefix));
   }
 
+  // Returns 'checked' | 'indeterminate' | 'unchecked' | null based on visible
+  // children in the adjacent column. Only applies when this item is the
+  // currently-expanded item (its child column is open). null = not expanded.
+  _folderChildState(item, colIdx) {
+    const col = this._columns[colIdx];
+    if (col?.selectedPath !== item.path) return null;
+    const childCol = this._columns[colIdx + 1];
+    if (!childCol) return null;
+    const checkable = this._visibleItems(childCol).filter((i) => this.showCheckbox(i));
+    if (!checkable.length) return null;
+    const checkedCount = checkable.filter((i) => this._displayChecked(i, colIdx + 1)).length;
+    if (checkedCount === 0) return 'unchecked';
+    if (checkedCount === checkable.length) return 'checked';
+    return 'indeterminate';
+  }
+
+  // Display-only checked state — includes upward propagation from visible children.
+  // Used only for rendering; does not affect toggle logic.
+  _displayChecked(item, colIdx) {
+    if (this.isItemChecked(item)) return true;
+    if (item.isFolder || item.isSite) {
+      return this._folderChildState(item, colIdx) === 'checked';
+    }
+    return false;
+  }
+
+  // Display-only indeterminate state — includes upward propagation.
+  _displayIndeterminate(item, colIdx) {
+    if (!(item.isFolder || item.isSite)) return false;
+    if (this.isItemChecked(item) && this._isFolderIndeterminate(item)) return true;
+    return this._folderChildState(item, colIdx) === 'indeterminate';
+  }
+
   isItemChecked(item) {
     const key = this._itemKey(item);
     if (this._unchecked.has(key)) return false;
@@ -869,8 +902,8 @@ class MsmColumnBrowser extends LitElement {
         ${this.showCheckbox(item) ? html`
           <input
             type="checkbox"
-            .checked=${this.isItemChecked(item)}
-            .indeterminate=${(item.isFolder || item.isSite) && this._isFolderIndeterminate(item)}
+            .checked=${this._displayChecked(item, colIdx)}
+            .indeterminate=${this._displayIndeterminate(item, colIdx)}
             ?disabled=${blocked}
             @change=${(e) => this.handleCheckChange(item, e, colIdx)}
             @click=${(e) => e.stopPropagation()}
