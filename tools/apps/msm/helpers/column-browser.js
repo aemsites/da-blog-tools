@@ -346,7 +346,8 @@ class MsmColumnBrowser extends LitElement {
     if (Number.isInteger(colIdx)) this._collapseColumnsAfter(colIdx);
 
     const key = this._itemKey(item);
-    const isChecked = this.isItemChecked(item);
+    // Use display state so keyboard-toggling a propagated-checked folder unchecks it.
+    const isChecked = this._displayChecked(item, colIdx);
     const nextChecked = new Set(this._checked);
     const nextUnchecked = new Set(this._unchecked);
     const prefix = this._childPrefix(item);
@@ -356,6 +357,7 @@ class MsmColumnBrowser extends LitElement {
         nextUnchecked.add(key);
       } else {
         nextChecked.delete(key);
+        [...nextChecked].forEach((k) => { if (k.startsWith(prefix)) nextChecked.delete(k); });
         [...nextUnchecked].forEach((k) => { if (k.startsWith(prefix)) nextUnchecked.delete(k); });
       }
       this._clearFocusIfMatches(item);
@@ -363,6 +365,7 @@ class MsmColumnBrowser extends LitElement {
       nextUnchecked.delete(key);
     } else {
       nextChecked.add(key);
+      [...nextChecked].forEach((k) => { if (k.startsWith(prefix)) nextChecked.delete(k); });
       [...nextUnchecked].forEach((k) => { if (k.startsWith(prefix)) nextUnchecked.delete(k); });
     }
 
@@ -628,6 +631,8 @@ class MsmColumnBrowser extends LitElement {
     if (wantChecked) {
       nextUnchecked.delete(key);
       if (!this._isAncestorChecked(item)) nextChecked.add(key);
+      // Clear redundant individual child-checks and child exclusions.
+      [...nextChecked].forEach((k) => { if (k.startsWith(prefix)) nextChecked.delete(k); });
       [...nextUnchecked].forEach((k) => { if (k.startsWith(prefix)) nextUnchecked.delete(k); });
     } else {
       if (this._isAncestorChecked(item)) {
@@ -635,8 +640,10 @@ class MsmColumnBrowser extends LitElement {
       } else {
         nextChecked.delete(key);
         this._clearFocusIfMatches(item);
+        // Clear all individually-checked descendants and exclusions.
+        [...nextChecked].forEach((k) => { if (k.startsWith(prefix)) nextChecked.delete(k); });
+        [...nextUnchecked].forEach((k) => { if (k.startsWith(prefix)) nextUnchecked.delete(k); });
       }
-      [...nextUnchecked].forEach((k) => { if (k.startsWith(prefix)) nextUnchecked.delete(k); });
     }
 
     this._checked = nextChecked;
