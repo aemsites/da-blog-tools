@@ -58,6 +58,7 @@ class MsmColumnBrowser extends LitElement {
     deepLinkPath: { type: String },
     _columns: { state: true },
     _checked: { state: true },
+    _unchecked: { state: true },
     _activeColumnIdx: { state: true },
     _loadingColumn: { state: true },
     _focusedItem: { state: true },
@@ -440,6 +441,7 @@ class MsmColumnBrowser extends LitElement {
       this._columns = [{ header: this.site, items: [], selectedPath: null }];
     }
     this._loadingColumn = -1;
+    this._loadColumnStatus(this._columns[0]?.items || [], this.site);
 
     if (this.deepLinkPath && !this._deepLinkConsumed) {
       this._deepLinkConsumed = true;

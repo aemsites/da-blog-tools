@@ -173,6 +173,23 @@
   transform: rotate(45deg);
 }
 
+.item input[type="checkbox"]:indeterminate {
+  background: var(--s2-gray-800);
+  border-color: var(--s2-gray-800);
+}
+
+.item input[type="checkbox"]:indeterminate::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 8px;
+  height: 2px;
+  background: #fff;
+  border: none;
+  transform: none;
+}
+
 .item input[type="checkbox"]:focus-visible {
   outline: 2px solid var(--s2-blue-900);
   outline-offset: 2px;
