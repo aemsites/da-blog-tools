@@ -42,6 +42,7 @@ class MsmColumnBrowser extends LitElement {
     this.shadowRoot.adoptedStyleSheets = [sl, sheet].filter(Boolean);
     this._columns = [];
     this._checked = new Set();
+    this._unchecked = new Set();
     this._activeColumnIdx = 0;
     this._loadingColumn = -1;
     this._focusedItem = null;
@@ -313,13 +314,30 @@ class MsmColumnBrowser extends LitElement {
     // previously-opened folder that's no longer the current focus. Collapse
     // them so the browser reflects the user's new context.
     if (Number.isInteger(colIdx)) this._collapseColumnsAfter(colIdx);
-    const next = new Set(this._checked);
-    const key = `${item.site || ''}:${item.path}`;
-    const willUncheck = next.has(key);
-    if (willUncheck) next.delete(key);
-    else next.add(key);
-    this._checked = next;
-    if (willUncheck) this._clearFocusIfMatches(item);
+
+    const key = this._itemKey(item);
+    const isChecked = this.isItemChecked(item);
+    const nextChecked = new Set(this._checked);
+    const nextUnchecked = new Set(this._unchecked);
+    const prefix = `${item.site || ''}:${item.path}/`;
+
+    if (isChecked) {
+      if (this._isAncestorChecked(item)) {
+        nextUnchecked.add(key);
+      } else {
+        nextChecked.delete(key);
+        [...nextUnchecked].forEach((k) => { if (k.startsWith(prefix)) nextUnchecked.delete(k); });
+      }
+      this._clearFocusIfMatches(item);
+    } else if (nextUnchecked.has(key)) {
+      nextUnchecked.delete(key);
+    } else {
+      nextChecked.add(key);
+      [...nextUnchecked].forEach((k) => { if (k.startsWith(prefix)) nextUnchecked.delete(k); });
+    }
+
+    this._checked = nextChecked;
+    this._unchecked = nextUnchecked;
     this._refreshSelectionCategory();
     const site = item.site || this.getCurrentSite();
     this.emitSelection(site);
@@ -556,17 +574,30 @@ class MsmColumnBrowser extends LitElement {
       return;
     }
     if (Number.isInteger(colIdx)) this._collapseColumnsAfter(colIdx);
-    const next = new Set(this._checked);
-    const key = `${item.site || ''}:${item.path}`;
-    if (e.target.checked) {
-      next.add(key);
-    } else {
-      next.delete(key);
-      this._clearFocusIfMatches(item);
-    }
-    this._checked = next;
-    this._refreshSelectionCategory();
 
+    const key = this._itemKey(item);
+    const wantChecked = e.target.checked;
+    const nextChecked = new Set(this._checked);
+    const nextUnchecked = new Set(this._unchecked);
+    const prefix = `${item.site || ''}:${item.path}/`;
+
+    if (wantChecked) {
+      nextUnchecked.delete(key);
+      if (!this._isAncestorChecked(item)) nextChecked.add(key);
+      [...nextUnchecked].forEach((k) => { if (k.startsWith(prefix)) nextUnchecked.delete(k); });
+    } else {
+      if (this._isAncestorChecked(item)) {
+        nextUnchecked.add(key);
+      } else {
+        nextChecked.delete(key);
+        this._clearFocusIfMatches(item);
+      }
+      [...nextUnchecked].forEach((k) => { if (k.startsWith(prefix)) nextUnchecked.delete(k); });
+    }
+
+    this._checked = nextChecked;
+    this._unchecked = nextUnchecked;
+    this._refreshSelectionCategory();
     const site = item.site || this.getCurrentSite();
     this.emitSelection(site);
   }
@@ -592,10 +623,20 @@ class MsmColumnBrowser extends LitElement {
   clearChecksAfterColumn(colIdx) {
     const validPaths = new Set(
       this._columns.slice(0, colIdx + 1).flatMap(
-        (col) => col.items.map((item) => `${item.site || ''}:${item.path}`),
+        (col) => col.items.map((item) => this._itemKey(item)),
       ),
     );
+    const removed = new Set([...this._checked].filter((key) => !validPaths.has(key)));
     this._checked = new Set([...this._checked].filter((key) => validPaths.has(key)));
+    // Drop _unchecked entries whose containing folder was just removed.
+    let nextUnchecked = this._unchecked;
+    removed.forEach((removedKey) => {
+      const prefix = `${removedKey}/`;
+      if ([...nextUnchecked].some((k) => k.startsWith(prefix))) {
+        nextUnchecked = new Set([...nextUnchecked].filter((k) => !k.startsWith(prefix)));
+      }
+    });
+    this._unchecked = nextUnchecked;
     this._refreshSelectionCategory();
   }
 
@@ -632,6 +673,7 @@ class MsmColumnBrowser extends LitElement {
             const items = await this._loadFolderItems(folderSite, folder.path);
             const files = items
               .filter((i) => !i.isFolder && !i.isSite)
+              .filter((i) => !this._unchecked.has(this._itemKey({ ...i, site: folderSite })))
               .map((i) => ({ ...i, site: folderSite }));
             this._folderCache.set(cacheKey, files);
           } catch (e) {
@@ -672,9 +714,31 @@ class MsmColumnBrowser extends LitElement {
     }
   }
 
+  _itemKey(item) {
+    return `${item.site || ''}:${item.path}`;
+  }
+
+  _isAncestorChecked(item) {
+    const site = item.site || '';
+    const parts = item.path.split('/').filter(Boolean);
+    for (let i = parts.length - 1; i >= 1; i -= 1) {
+      const ancestorPath = `/${parts.slice(0, i).join('/')}`;
+      if (this._checked.has(`${site}:${ancestorPath}`)) return true;
+    }
+    return false;
+  }
+
+  _isFolderIndeterminate(folder) {
+    if (!this.isItemChecked(folder)) return false;
+    const prefix = `${folder.site || ''}:${folder.path}/`;
+    return [...this._unchecked].some((k) => k.startsWith(prefix));
+  }
+
   isItemChecked(item) {
-    const key = `${item.site || ''}:${item.path}`;
-    return this._checked.has(key);
+    const key = this._itemKey(item);
+    if (this._unchecked.has(key)) return false;
+    if (this._checked.has(key)) return true;
+    return this._isAncestorChecked(item);
   }
 
   showCheckbox(item) {
@@ -713,6 +777,7 @@ class MsmColumnBrowser extends LitElement {
           <input
             type="checkbox"
             .checked=${this.isItemChecked(item)}
+            .indeterminate=${item.isFolder && this._isFolderIndeterminate(item)}
             ?disabled=${blocked}
             @change=${(e) => this.handleCheckChange(item, e, colIdx)}
             @click=${(e) => e.stopPropagation()}
