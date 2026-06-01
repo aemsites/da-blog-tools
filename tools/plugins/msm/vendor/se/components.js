@@ -1,19 +1,4 @@
 /* eslint-disable */
-/*
- * Vendored snapshot of da-nx's nx2/public/se/components.js
- * (https://github.com/adobe/da-nx, ravuthu/se-select branch).
- *
- * Adapted for self-contained loading from this plugin:
- *  • loadStyle is inlined (upstream pulls it from ../../utils/utils.js, which
- *    we don't ship here).
- *  • The se-select checkmark <use> reference to an external SVG sprite is
- *    replaced with an inline <path>, so it works regardless of origin.
- *
- * Everything else (component logic, classes, exported tag names) mirrors
- * upstream so the public API stays identical to what OOTB MSM Prepare uses.
- *
- * To refresh: re-copy from da-nx and re-apply the two patches noted above.
- */
 
 import { LitElement, html, nothing, spread } from 'https://da.live/deps/lit/dist/index.js';
 

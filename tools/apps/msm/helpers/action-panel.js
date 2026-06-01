@@ -27,38 +27,27 @@ const EDIT_ICON = html`<svg viewBox="0 0 20 20"><path fill="currentColor" d="M18
 
 const DOWNWARD_ACTIONS = [
   {
-    heading: 'Inherited sites',
+    heading: 'Following base',
     items: [
       { value: 'preview', label: 'Roll out to preview' },
       { value: 'publish', label: 'Roll out to live' },
-      { value: 'break', label: 'Cancel inheritance' },
+      { value: 'break', label: 'Make a local copy on selected sites' },
     ],
   },
   {
-    heading: 'Custom sites',
+    heading: 'With local copy',
     items: [
-      { value: 'sync', label: 'Sync to satellite' },
-      { value: 'reset', label: 'Resume inheritance' },
+      { value: 'sync', label: 'Push update to customized sites' },
+      { value: 'reset', label: 'Discard local copy on customized sites' },
     ],
   },
 ];
 
-// Upward action lists, scoped to the page's inheritance category. The picker
-// surfaces only the actions that make sense for the selection:
-//   - inherited  : the page lives on an ancestor; you can pull it down or
-//                  materialize a local copy that breaks the inheritance link.
-//   - overridden : the page already has a local copy that overrides the
-//                  base; you can refresh from base or drop the local copy.
-//   - local      : the page exists only on this site (no base counterpart);
-//                  no upward operations are meaningful.
-// Inherited pages have no local copy here, so 'Sync from base' would just
-// materialize one — identical to 'Cancel inheritance'. Only the latter is
-// offered to keep the user's intent unambiguous.
 const UPWARD_ACTIONS_INHERITED = [
   {
     heading: 'From parent',
     items: [
-      { value: 'cancel-inheritance', label: 'Cancel inheritance' },
+      { value: 'cancel-inheritance', label: 'Pull latest from base' },
     ],
   },
 ];
@@ -67,8 +56,8 @@ const UPWARD_ACTIONS_OVERRIDDEN = [
   {
     heading: 'From parent',
     items: [
-      { value: 'sync-from-base', label: 'Sync from base' },
-      { value: 'resume-inheritance', label: 'Resume inheritance' },
+      { value: 'sync-from-base', label: 'Pull latest from base' },
+      { value: 'resume-inheritance', label: 'Revert to base' },
     ],
   },
 ];
@@ -81,9 +70,14 @@ const UPWARD_ACTIONS_LOCAL = [
 ];
 
 const SYNC_OPTIONS = [
-  { value: 'merge', label: 'Merge' },
-  { value: 'override', label: 'Override' },
+  { value: 'merge', label: 'Keep local edits (merge)' },
+  { value: 'override', label: 'Replace with base (override)' },
 ];
+
+const SCOPE_DISPLAY = {
+  inherited: 'following base',
+  custom: 'with local copy',
+};
 
 const ACTION_SCOPE = {
   preview: 'inherited',
@@ -142,6 +136,7 @@ class MsmActionPanel extends LitElement {
     _busy: { state: true },
     _includedPages: { state: true },
     _includeDescendants: { state: true },
+    _expandedNested: { state: true },
   };
 
   connectedCallback() {
@@ -160,7 +155,8 @@ class MsmActionPanel extends LitElement {
     this._taskStatuses = new Map();
     this._busy = false;
     this._includedPages = new Set(this.pages?.map((p) => p.path) || []);
-    this._includeDescendants = false;
+    this._includeDescendants = true;
+    this._expandedNested = new Set();
     this._lastPageKey = '';
     this._handleOutsideClick = this._handleOutsideClick.bind(this);
   }
@@ -199,10 +195,6 @@ class MsmActionPanel extends LitElement {
     }
   }
 
-  // When the selection is uniformly inherited (no local overrides at the
-  // current site), default the sync mode to 'override' — there's nothing
-  // local to merge against, and merge-mode would unnecessarily pull in the
-  // mergeCopy machinery. Mixed selections keep 'merge' as today.
   _applySyncModeDefault() {
     if (!this.pages?.length) return;
     const allInherited = this.pages.every((p) => {
@@ -214,11 +206,6 @@ class MsmActionPanel extends LitElement {
     }
   }
 
-  // Ensure `_globalAction` is valid for the current selection's category. If
-  // the action isn't in the allowed list for the new category, fall back to
-  // the first option for that category. For the 'local' category (no upward
-  // actions available) we leave the action as-is and rely on Apply being
-  // disabled and the empty-state message to communicate.
   _validateActionForCategory() {
     if (!this._isUpwardMode) return;
     const options = this._upwardActionsForCategory(this._selectionCategory);
@@ -282,16 +269,10 @@ class MsmActionPanel extends LitElement {
     if (category === 'inherited') return UPWARD_ACTIONS_INHERITED;
     if (category === 'overridden') return UPWARD_ACTIONS_OVERRIDDEN;
     if (category === 'local') return UPWARD_ACTIONS_LOCAL;
-    // 'mixed' or null: fall back to the union (overridden) so the picker
-    // still renders something sensible. The column-browser mutex normally
-    // prevents reaching 'mixed' in practice.
+
     return UPWARD_ACTIONS_OVERRIDDEN;
   }
 
-  // Categorize a single page based on its self-entry in `overrides`:
-  //   - inherited  : the page is served from an ancestor (no local copy here)
-  //   - overridden : the page has a local copy AND a base counterpart
-  //   - local      : the page exists only on this site
   _categorizePage(page) {
     const self = this.getPageOverrides(page.path).find((o) => o.site === this.site);
     if (!self) return 'local';
@@ -300,9 +281,6 @@ class MsmActionPanel extends LitElement {
     return 'local';
   }
 
-  // Returns the common category across all currently selected pages, or
-  // 'mixed' when the selection spans multiple categories (rare given the
-  // column-browser enforces single-category selection upstream).
   get _selectionCategory() {
     if (!this.pages?.length) return null;
     const cats = new Set(this.pages.map((p) => this._categorizePage(p)));
@@ -310,17 +288,12 @@ class MsmActionPanel extends LitElement {
     return 'mixed';
   }
 
-  // True when the sync-mode picker (merge/override) should be visible for
-  // `action`. Inherited pages always use override, so the picker is hidden.
   _shouldShowSyncPicker(action) {
     if (!SYNC_ACTIONS.has(action)) return false;
     if (this._isUpwardMode && this._selectionCategory === 'inherited') return false;
     return true;
   }
 
-  // True when the panel is in upward mode but the selection consists only of
-  // local-only pages (no base counterpart). No upward action is meaningful;
-  // we render an empty-state message instead of the action pickers.
   get _isLocalUpwardEmpty() {
     return this._isUpwardMode && this._selectionCategory === 'local';
   }
@@ -357,6 +330,13 @@ class MsmActionPanel extends LitElement {
     else next.add(satSite);
     this._singleSelectedSats = next;
     this._resetExecution();
+  }
+
+  _toggleNestedExpand(satSite) {
+    const next = new Set(this._expandedNested);
+    if (next.has(satSite)) next.delete(satSite);
+    else next.add(satSite);
+    this._expandedNested = next;
   }
 
   // ── Per-page action ──
@@ -458,25 +438,69 @@ class MsmActionPanel extends LitElement {
     )).reduce((acc, [s, info]) => { acc[s] = info; return acc; }, {});
   }
 
-  get _totalDescendants() {
-    return Object.values(this.satellites || {})
-      .reduce((acc, info) => acc + (info.descendantCount || 0), 0);
+  get _activeSelectedSats() {
+    return this.isSinglePage ? this._singleSelectedSats : this._selectedSats;
+  }
+
+  /**
+   * Nested sites that would receive rollout for currently selected
+   * **inherited** (following-base) satellites only. Custom satellites
+   * already have a local copy and are not part of recursive rollout.
+   */
+  get _selectedCascadeDescendantCount() {
+    const selectedSats = this._activeSelectedSats;
+    const overrides = this.isSinglePage
+      ? this.getPageOverrides(this.pages[0]?.path)
+      : [];
+    return Object.entries(this.satellites || {})
+      .filter(([site]) => {
+        if (!selectedSats.has(site)) return false;
+        const ov = overrides.find((o) => o.site === site);
+        return !ov || !ov.hasOverride;
+      })
+      .reduce((acc, [, info]) => acc + (info.descendantCount || 0), 0);
+  }
+
+  _cascadeAppliesToSelection() {
+    return RECURSIVE_ACTIONS.has(this._globalAction)
+      && this._includeDescendants
+      && this._selectedCascadeDescendantCount > 0;
+  }
+
+  _cascadeToggleHint() {
+    const count = this._selectedCascadeDescendantCount;
+    const selectedSats = this._activeSelectedSats;
+    const noneSelected = selectedSats.size === 0
+      && Object.keys(this.satellites || {}).length > 0;
+    if (noneSelected) return 'Select sites above to include their nested satellites';
+    if (count === 0) return 'Selected sites have no nested satellites';
+    return `Also roll out to ${count} nested site${count === 1 ? '' : 's'}`;
   }
 
   get _showDescendantsToggle() {
     return !this._isUpwardMode
       && this._hasDownwardActions
       && this.hasDescendants
-      && RECURSIVE_ACTIONS.has(this._globalAction)
-      && this._totalDescendants > 0;
+      && RECURSIVE_ACTIONS.has(this._globalAction);
   }
 
-  resolveSatellitesForAction(directSatellites, action) {
+  resolveSatellitesForAction(directSatellites, action, pageOverrides) {
     if (!this._includeDescendants || !RECURSIVE_ACTIONS.has(action)) {
       return directSatellites;
     }
     if (!this.msmConfig) return directSatellites;
-    return expandSatellitesWithSubtree(this.msmConfig, directSatellites);
+    const scope = ACTION_SCOPE[action];
+    const inScopeSats = scope
+      ? Object.entries(directSatellites).reduce((acc, [site, info]) => {
+        const ov = pageOverrides?.find((o) => o.site === site);
+        const hasOverride = ov?.hasOverride ?? false;
+        const matches = scope === 'custom' ? hasOverride : !hasOverride;
+        if (matches) acc[site] = info;
+        return acc;
+      }, {})
+      : directSatellites;
+    const expanded = expandSatellitesWithSubtree(this.msmConfig, inScopeSats);
+    return { ...directSatellites, ...expanded };
   }
 
   // ── Execution ──
@@ -508,15 +532,17 @@ class MsmActionPanel extends LitElement {
     const parts = Object.entries(counts).map(([a, c]) => {
       const label = `${getActionLabel(a)} ${c} page${c > 1 ? 's' : ''}`;
       const scope = ACTION_SCOPE[a];
-      return scope ? `${label} (${scope} sites only)` : label;
+      const scopeLabel = scope ? SCOPE_DISPLAY[scope] : null;
+      return scopeLabel ? `${label} (${scopeLabel} sites only)` : label;
     });
     const satCount = this._selectedSats.size;
     const satSuffix = `across ${satCount} direct satellite${satCount !== 1 ? 's' : ''}`;
-    const skipNote = ' Satellites that don\'t match the action scope will be skipped.';
+    const skipNote = ' Sites that don\'t match the action scope will be skipped.';
     const recursiveActive = this._includeDescendants
       && Object.keys(counts).some((a) => RECURSIVE_ACTIONS.has(a));
-    const recursiveNote = recursiveActive
-      ? ` Including ${this._totalDescendants} descendant site${this._totalDescendants !== 1 ? 's' : ''} (Preview/Publish only).`
+    const nestedCount = this._selectedCascadeDescendantCount;
+    const recursiveNote = recursiveActive && nestedCount > 0
+      ? ` Also roll out to ${nestedCount} nested site${nestedCount !== 1 ? 's' : ''}.`
       : '';
     return `${parts.join(', ')} ${satSuffix}.${skipNote}${recursiveNote} Continue?`;
   }
@@ -617,7 +643,10 @@ class MsmActionPanel extends LitElement {
     }
     // Downward: current site is the base, children are the satellites.
     const filteredSats = this.getFilteredSatellites();
-    const sats = this.resolveSatellitesForAction(filteredSats, action);
+    const pageOverrides = this.pages?.length === 1
+      ? this.getPageOverrides(this.pages[0].path)
+      : [];
+    const sats = this.resolveSatellitesForAction(filteredSats, action, pageOverrides);
     return {
       baseSite: this.site,
       satellites: sats,
@@ -636,7 +665,10 @@ class MsmActionPanel extends LitElement {
     const directSats = Object.entries(this.satellites || {})
       .filter(([s]) => satSet.has(s))
       .reduce((acc, [s, info]) => { acc[s] = info; return acc; }, {});
-    const sats = this.resolveSatellitesForAction(directSats, action);
+    const pageOverrides = this.pages?.length === 1
+      ? this.getPageOverrides(this.pages[0].path)
+      : [];
+    const sats = this.resolveSatellitesForAction(directSats, action, pageOverrides);
     return {
       baseSite: this.site,
       satellites: sats,
@@ -652,7 +684,22 @@ class MsmActionPanel extends LitElement {
 
     if (action === 'reset') {
       this._confirmAction = {
-        message: 'Resume inheritance? This deletes local overrides for selected satellites.',
+        message: 'Discard local copy on customized sites? Removes the satellite override.',
+        onConfirm: () => this.doExecuteSingle(page, action),
+      };
+      return;
+    }
+    if (action === 'resume-inheritance') {
+      this._confirmAction = {
+        message: 'Revert to base? This deletes the local copy on this satellite.',
+        onConfirm: () => this.doExecuteSingle(page, action),
+      };
+      return;
+    }
+    if (action === 'cancel-inheritance') {
+      const src = this._resolveSourceSite(page);
+      this._confirmAction = {
+        message: `Copy ${page.name} from ${src} to ${this.site}? This creates a local copy on your site.`,
         onConfirm: () => this.doExecuteSingle(page, action),
       };
       return;
@@ -719,7 +766,22 @@ class MsmActionPanel extends LitElement {
     const syncMode = this.getPageSyncMode(page.path);
     if (action === 'reset') {
       this._confirmAction = {
-        message: `Resume inheritance for ${page.name}? This deletes local overrides.`,
+        message: `Discard local copy on customized sites for ${page.name}? Removes the satellite override.`,
+        onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
+      };
+      return;
+    }
+    if (action === 'resume-inheritance') {
+      this._confirmAction = {
+        message: 'Revert to base? This deletes the local copy on this satellite.',
+        onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
+      };
+      return;
+    }
+    if (action === 'cancel-inheritance') {
+      const src = this._resolveSourceSite(page);
+      this._confirmAction = {
+        message: `Copy ${page.name} from ${src} to ${this.site}? This creates a local copy on your site.`,
         onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
       };
       return;
@@ -855,18 +917,22 @@ class MsmActionPanel extends LitElement {
   renderDirectionSwitch() {
     if (!this._hasDualRole) return nothing;
     const checked = this._isUpwardMode;
+    const baseLabel = this.parentBase || 'parent';
+    const switchLabel = checked
+      ? 'Update children instead'
+      : `Update from parent (${baseLabel}) instead`;
     return html`
       <label class="direction-switch">
         <input type="checkbox"
           role="switch"
-          aria-label="Sync from parent"
+          aria-label=${switchLabel}
           .checked=${checked}
           ?disabled=${this._busy}
           @change=${(e) => this.onDirectionToggle(e.target.checked)} />
         <span class="switch-track" aria-hidden="true">
           <span class="switch-knob"></span>
         </span>
-        <span class="switch-label">Sync from parent</span>
+        <span class="switch-label">${switchLabel}</span>
       </label>
     `;
   }
@@ -899,9 +965,9 @@ class MsmActionPanel extends LitElement {
       const hasOverride = selfEntry?.hasOverride === true;
       const inheritedFrom = selfEntry?.inheritedFrom || null;
       const effectiveSource = selfEntry?.sourceSite || this.parentBase || source;
-      let overrideText = 'No';
-      if (hasOverride) overrideText = 'Yes';
-      else if (inheritedFrom) overrideText = `No \u2014 inherited from ${inheritedFrom}`;
+      let overrideText = 'None \u2014 following base';
+      if (hasOverride) overrideText = 'Yes \u2014 has local copy';
+      else if (inheritedFrom) overrideText = 'None \u2014 following base';
       return html`
         <div class="upward-summary">
           <div class="summary-row"><span class="summary-label">Source</span><span class="summary-value">${effectiveSource}${pagePath}</span></div>
@@ -932,15 +998,15 @@ class MsmActionPanel extends LitElement {
     return html`
       <div class="form-actions">
         ${this._showDescendantsToggle ? html`
-          <label class="footer-cascade">
+          <label class="footer-cascade ${this._selectedCascadeDescendantCount === 0 ? 'muted' : ''}">
             <input type="checkbox"
               .checked=${this._includeDescendants}
-              ?disabled=${this._busy}
+              ?disabled=${this._busy || this._selectedCascadeDescendantCount === 0}
               @change=${(e) => {
     this._includeDescendants = e.target.checked;
     this._resetExecution();
   }} />
-            <span>Cascade to ${this._totalDescendants} nested site${this._totalDescendants !== 1 ? 's' : ''}</span>
+            <span>${this._cascadeToggleHint()}</span>
           </label>
         ` : html`<span class="footer-spacer"></span>`}
         <sl-button variant="primary"
@@ -1057,7 +1123,7 @@ class MsmActionPanel extends LitElement {
       <div class="satellite-grid">
         ${inherited.length ? html`
           <div class="satellite-column">
-            <div class="column-heading">Inherited</div>
+            <div class="column-heading">Following base</div>
             <ul class="satellite-list">
               ${inherited.map((sat) => this.renderSatRow(sat, scope !== 'inherited'))}
             </ul>
@@ -1065,7 +1131,7 @@ class MsmActionPanel extends LitElement {
         ` : nothing}
         ${custom.length ? html`
           <div class="satellite-column">
-            <div class="column-heading">Custom</div>
+            <div class="column-heading">With local copy</div>
             <ul class="satellite-list">
               ${custom.map((sat) => this.renderSatRow(sat, scope !== 'custom', true))}
             </ul>
@@ -1075,30 +1141,95 @@ class MsmActionPanel extends LitElement {
     `;
   }
 
+  renderNestedTree(nodes, affected, depth = 0) {
+    if (!nodes?.length) return nothing;
+    return nodes.map((node) => {
+      const sub = node.children?.length
+        ? html`<ul class="expand-list">${this.renderNestedTree(node.children, affected, depth + 1)}</ul>`
+        : nothing;
+      return html`
+        <li class="${affected ? 'affected' : ''}" style="padding-left:${depth * 12}px">
+          ${node.label}${sub}
+        </li>`;
+    });
+  }
+
+  renderSatRowContent({
+    site,
+    label,
+    outOfScope,
+    showEdit,
+    showNested,
+    isSelected,
+    onToggle,
+    statusEntry,
+  }) {
+    const info = this.satellites?.[site] || {};
+    const dc = info.descendantCount || 0;
+    const nested = showNested ? (info.descendants || []) : [];
+    const hasNested = nested.length > 0;
+    const isExpanded = hasNested && this._expandedNested.has(site);
+    const cascades = isSelected && this._cascadeAppliesToSelection();
+    const dcSuffix = dc === 1 ? '' : 's';
+    const dcTitle = `${dc} nested site${dcSuffix} below this site`;
+    const pagePath = this.pages[0]?.path?.replace(/\.[^/.]+$/, '') || '';
+
+    return html`
+      <li class="sat-row-wrap ${outOfScope ? 'out-of-scope' : ''}">
+        <div class="sat-row ${statusEntry ? `status-${statusEntry.status}` : ''}">
+          <label>
+            <input type="checkbox"
+              .checked=${isSelected}
+              ?disabled=${outOfScope || this._busy}
+              @change=${onToggle} />
+            <span>${label}</span>
+          </label>
+          ${dc > 0 ? html`
+            <span class="descendant-badge ${hasNested ? 'sat-descendant-toggle' : ''}"
+              title=${dcTitle}
+              @click=${() => hasNested && this._toggleNestedExpand(site)}>
+              +${dc}
+              ${hasNested ? html`
+                <svg class="expand-toggle ${isExpanded ? 'expanded' : ''}"
+                  viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <polyline points="3,1 7,5 3,9"/>
+                </svg>
+              ` : nothing}
+            </span>
+          ` : nothing}
+          ${statusEntry ? this.statusIcon(statusEntry.status) : nothing}
+          ${showEdit ? html`
+            <a class="edit-link"
+              href="https://da.live/edit#/${this.org}/${site}${pagePath}"
+              target="_blank"
+              title="Open in editor"
+              aria-label="Open ${label} in editor">
+              ${EDIT_ICON}
+            </a>
+          ` : nothing}
+        </div>
+        ${isExpanded ? html`
+          <div class="sat-expand-content">
+            <ul class="expand-list">
+              ${this.renderNestedTree(nested, cascades)}
+            </ul>
+          </div>
+        ` : nothing}
+      </li>`;
+  }
+
   renderSatRow(sat, outOfScope, showEdit = false) {
     const statusEntry = this._taskStatuses.get(`${this.pages[0]?.path}:${sat.site}`);
-    const info = this.satellites?.[sat.site] || {};
-    const descCount = info.descendantCount || 0;
-    return html`
-      <li class="sat-row ${outOfScope ? 'out-of-scope' : ''}">
-        <label>
-          <input type="checkbox"
-            .checked=${this._singleSelectedSats.has(sat.site)}
-            ?disabled=${outOfScope || this._busy}
-            @change=${() => this.toggleSingleSat(sat.site)} />
-          <span>${sat.label}</span>
-          ${descCount > 0 ? html`
-            <span class="descendant-badge" title="${descCount} descendant site${descCount === 1 ? '' : 's'}">+${descCount}</span>
-          ` : nothing}
-        </label>
-        ${statusEntry ? this.statusIcon(statusEntry.status) : nothing}
-        ${showEdit ? html`
-          <a class="edit-link" href="https://da.live/edit#/${this.org}/${sat.site}${this.pages[0]?.path?.replace(/\.[^/.]+$/, '')}" target="_blank" title="Open in editor">
-            ${EDIT_ICON}
-          </a>
-        ` : nothing}
-      </li>
-    `;
+    return this.renderSatRowContent({
+      site: sat.site,
+      label: sat.label,
+      outOfScope,
+      showEdit,
+      showNested: !showEdit,
+      isSelected: this._singleSelectedSats.has(sat.site),
+      onToggle: () => this.toggleSingleSat(sat.site),
+      statusEntry,
+    });
   }
 
   // ──────────────────────────────────────
@@ -1147,20 +1278,22 @@ class MsmActionPanel extends LitElement {
     if (sats.length <= 1) return nothing;
 
     return html`
-      <div class="satellite-filter">
-        <span class="satellite-filter-label">Satellites</span>
-        ${sats.map(([satSite, info]) => {
-    const dc = info.descendantCount || 0;
-    return html`
-            <label class="sat-tag ${this._selectedSats.has(satSite) ? 'active' : ''}">
-              <input type="checkbox"
-                .checked=${this._selectedSats.has(satSite)}
-                @change=${() => this.toggleSatFilter(satSite)} />
-              ${info.label || satSite}
-              ${dc > 0 ? html`<span class="descendant-badge" title="${dc} descendant site${dc === 1 ? '' : 's'}">+${dc}</span>` : nothing}
-            </label>
-          `;
-  })}
+      <div class="satellite-grid satellite-filter-grid">
+        <div class="satellite-column">
+          <div class="column-heading">Satellites</div>
+          <ul class="satellite-list">
+            ${sats.map(([satSite, info]) => this.renderSatRowContent({
+    site: satSite,
+    label: info.label || satSite,
+    outOfScope: false,
+    showEdit: false,
+    showNested: true,
+    isSelected: this._selectedSats.has(satSite),
+    onToggle: () => this.toggleSatFilter(satSite),
+    statusEntry: null,
+  }))}
+          </ul>
+        </div>
       </div>
     `;
   }
@@ -1252,11 +1385,11 @@ class MsmActionPanel extends LitElement {
         ${showOverrides ? html`
           <td class="cell-overrides">
             <span class="override-badge">
-              ${summary.inherited} inherited
+              ${summary.inherited} following base
             </span>
             ${summary.custom > 0 ? html`
               <span class="override-badge">
-                ${summary.custom} custom
+                ${summary.custom} with local copy
               </span>
             ` : nothing}
           </td>
@@ -1305,7 +1438,7 @@ class MsmActionPanel extends LitElement {
           <div class="expand-content">
             ${inherited.length ? html`
               <div class="expand-column">
-                <div class="expand-heading">Inherited</div>
+                <div class="expand-heading">Following base</div>
                 <ul class="expand-list">
                   ${inherited.map((sat) => html`
                     <li>
@@ -1318,7 +1451,7 @@ class MsmActionPanel extends LitElement {
             ` : nothing}
             ${custom.length ? html`
               <div class="expand-column">
-                <div class="expand-heading">Custom</div>
+                <div class="expand-heading">With local copy</div>
                 <ul class="expand-list">
                   ${custom.map((sat) => html`
                     <li>

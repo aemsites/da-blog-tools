@@ -1,19 +1,10 @@
-/*
- * MSM plugin styles
- *
- * Mirrors the styles from da-live's blocks/edit/da-prepare/actions/msm/msm.css
- * with one adaptation for the plugin context: the component fills the host
- * iframe (which da-prepare locks to 400x400) rather than sizing itself to
- * 420px the way the in-process OOTB version does.
- */
-
 :host {
   display: flex;
   flex-direction: column;
   gap: 14px;
   width: 100%;
   min-height: 100%;
-  padding: 0 12px 12px;
+  padding: 12px 12px;
   box-sizing: border-box;
 
   p { margin: 0; }
@@ -26,6 +17,13 @@
   font-size: 14px;
   font-style: italic;
   color: var(--s2-gray-600, #717171);
+}
+
+.empty-state {
+  font-size: 12px;
+  color: var(--s2-gray-600, #717171);
+  margin: 0;
+  font-style: italic;
 }
 
 /* --- Inheritance breadcrumb (static) --- */
@@ -57,88 +55,378 @@
   color: var(--s2-gray-400, #b1b1b1);
 }
 
-/* --- Direction switch (Spectrum 2 Switch, size M) --- */
+.primary-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
 
-.direction-switch {
+.primary-btn {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
+  font-family: inherit;
   font-size: 14px;
-  color: var(--s2-gray-900, #292929);
+  font-weight: 500;
+  line-height: 1;
   cursor: pointer;
-  user-select: none;
-  width: max-content;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--s2-gray-800, #292929);
+  border: 2px solid var(--s2-gray-800, #292929);
+  transition:
+    background-color 0.13s ease-in-out,
+    color 0.13s ease-in-out,
+    border-color 0.13s ease-in-out,
+    transform 0.05s ease-in-out;
 }
 
-.direction-switch input[type="checkbox"] {
-  appearance: none;
-  -webkit-appearance: none;
-  position: relative;
-  margin: 0;
-  width: 26px;
-  height: 14px;
-  border-radius: 7px;
-  background: var(--s2-gray-300, #d4d4d4);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background-color 0.15s ease-in-out;
+.primary-btn.fill {
+  background: var(--s2-gray-800, #292929);
+  color: #fff;
 }
 
-.direction-switch input[type="checkbox"]::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
-  transition: transform 0.15s ease-in-out;
+.primary-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
-.direction-switch input[type="checkbox"]:checked {
-  background: var(--s2-blue-700, #393dba);
-}
-
-.direction-switch input[type="checkbox"]:checked::after {
-  transform: translateX(12px);
-}
-
-.direction-switch input[type="checkbox"]:hover:not(:disabled) {
-  background: var(--s2-gray-400, #b1b1b1);
-}
-
-.direction-switch input[type="checkbox"]:checked:hover:not(:disabled) {
-  background: var(--s2-blue-800, #2c3093);
-}
-
-.direction-switch input[type="checkbox"]:focus-visible {
+.primary-btn:focus-visible {
   outline: 2px solid var(--s2-blue-700, #393dba);
   outline-offset: 2px;
 }
 
-.direction-switch input[type="checkbox"]:disabled {
-  opacity: 0.4;
-  cursor: default;
+.primary-btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.primary-btn.outline:hover:not(:disabled) {
+  background: var(--s2-gray-100, #f5f5f5);
+}
+
+.primary-btn.fill:hover:not(:disabled) {
+  background: #000;
+  border-color: #000;
+}
+
+.primary-btn-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: block;
+}
+
+.primary-btn-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Satellite grid (two columns, matches MSM app) --- */
+
+.satellite-grid {
+  display: flex;
+  gap: 12px;
+}
+
+.satellite-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.column-heading {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--s2-gray-500, #929292);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--s2-gray-200, #e1e1e1);
+  margin-bottom: 2px;
+}
+
+.satellite-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.satellite-list::-webkit-scrollbar { width: 5px; }
+.satellite-list::-webkit-scrollbar-track { background: transparent; }
+
+.satellite-list::-webkit-scrollbar-thumb {
+  background: var(--s2-gray-300, #d4d4d4);
+  border-radius: 3px;
+}
+
+.sat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 2px;
+  border-radius: 4px;
+  transition: background-color 0.1s;
+}
+
+.sat-row:hover:not(.out-of-scope) {
+  background: var(--s2-gray-100, #f5f5f5);
+}
+
+.sat-row.out-of-scope {
+  opacity: 0.38;
+}
+
+.sat-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--s2-gray-900, #292929);
+}
+
+.sat-row label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sat-row input[type="checkbox"] {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 2px solid var(--s2-gray-600, #717171);
+  border-radius: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  background: transparent;
+  transition: background-color 0.13s, border-color 0.13s;
+}
+
+.sat-row input[type="checkbox"]:checked {
+  background: var(--s2-gray-800, #292929);
+  border-color: var(--s2-gray-800, #292929);
+}
+
+.sat-row input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  margin-top: -1px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.sat-row input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--s2-gray-800, #292929);
+}
+
+.sat-row input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .descendant-badge {
   display: inline-block;
-  margin-left: 6px;
-  padding: 0 6px;
+  padding: 0 5px;
   font-size: 10px;
   font-weight: 600;
   color: var(--s2-gray-700, #4b4b4b);
   background: var(--s2-gray-200, #e1e1e1);
-  border-radius: 8px;
-  vertical-align: middle;
+  border-radius: 6px;
+  flex-shrink: 0;
+  line-height: 14px;
 }
 
-/* --- Action row --- */
+.edit-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  color: var(--s2-gray-500, #929292);
+  text-decoration: none;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.edit-link:hover {
+  background: var(--s2-gray-200, #e1e1e1);
+  color: var(--s2-gray-900, #292929);
+}
+
+.edit-link svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+/* --- Status line (upward / satellite view) --- */
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 8px 10px;
+  background: var(--s2-gray-50, #f8f8f8);
+  border-radius: 6px;
+}
+
+.status-label {
+  color: var(--s2-gray-700, #4b4b4b);
+}
+
+.status-value {
+  font-weight: 600;
+  color: var(--s2-gray-900, #292929);
+}
+
+.status-value.muted {
+  font-weight: 500;
+  color: var(--s2-gray-600, #717171);
+}
+
+/* --- Bottom section (direction-flip + advanced + app link) --- */
+
+.bottom-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--s2-gray-200, #e1e1e1);
+}
+
+.direction-flip {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--s2-gray-700, #4b4b4b);
+  cursor: pointer;
+  text-align: left;
+  width: max-content;
+  text-decoration: underline;
+}
+
+.direction-flip:disabled {
+  opacity: 0.5;
+  cursor: default;
+  text-decoration: none;
+}
+
+.direction-flip:focus-visible {
+  outline: 2px solid var(--s2-blue-700, #393dba);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.direction-flip:hover:not(:disabled) {
+  color: var(--s2-gray-900, #292929);
+}
+
+/* --- Advanced expander --- */
+
+.advanced-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.advanced-toggle {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--s2-gray-700, #4b4b4b);
+  cursor: pointer;
+  text-align: left;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+}
+
+.advanced-toggle:hover {
+  color: var(--s2-gray-900, #292929);
+}
+
+.advanced-toggle:focus-visible {
+  outline: 2px solid var(--s2-blue-700, #393dba);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.advanced-chevron {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--s2-gray-500, #929292);
+  transition: transform 0.15s ease-in-out;
+}
+
+.advanced-chevron.open {
+  transform: rotate(90deg);
+}
+
+.advanced-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--s2-gray-200, #e1e1e1);
+  border-radius: 8px;
+  background: var(--s2-gray-50, #f8f8f8);
+}
+
+/* --- App deep-link --- */
+
+.app-link {
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--s2-blue-900, #3b63fb);
+  text-decoration: underline;
+  width: max-content;
+}
+
+.app-link:hover {
+  color: var(--s2-blue-1000, #274dea);
+}
+
+.app-link:focus-visible {
+  outline: 2px solid var(--s2-blue-700, #393dba);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* --- Action row (inside Advanced) --- */
 
 .action-row {
   display: grid;
+
   /* Always two equal columns — the action picker stays at 50% width whether
      or not the sync-mode picker is visible, so the layout stays stable. */
   grid-template-columns: 1fr 1fr;
@@ -150,165 +438,32 @@
   min-width: 0;
 }
 
-/* --- Upward summary (Source / Target / Override status) --- */
+/* --- Advanced hint --- */
 
-.upward-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
-}
-
-.upward-summary .row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 20px;
-}
-
-.upward-summary .label {
+.advanced-hint {
+  font-size: 12px;
   color: var(--s2-gray-600, #717171);
+  margin: 0;
 }
 
-.upward-summary .value {
-  font-weight: 600;
-  color: var(--s2-gray-900, #292929);
+.cascade-toggle-inline {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-size: 12px;
+  color: var(--s2-gray-700, #4b4b4b);
 }
 
-.upward-summary .value.muted {
-  font-weight: 500;
-  color: var(--s2-gray-600, #717171);
-}
-
-/* --- Children list (two-column: Inherited | Custom) --- */
-
-.satellite-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.satellite-column {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.column-heading {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--s2-gray-600, #717171);
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--s2-gray-200, #e1e1e1);
-  margin: 0 0 4px;
-}
-
-.satellite-list {
-  list-style: none;
-  padding: 0;
+.cascade-toggle-inline input[type="checkbox"] {
   margin: 0;
-  display: flex;
-  flex-direction: column;
-  max-height: 240px;
-  overflow-y: auto;
-
-  &::-webkit-scrollbar { width: 5px; }
-  &::-webkit-scrollbar-track { background: transparent; }
-  &::-webkit-scrollbar-thumb {
-    background: var(--s2-gray-300, #d4d4d4);
-    border-radius: 3px;
-    &:hover { background: var(--s2-gray-500, #929292); }
-  }
-}
-
-.sat-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 4px;
-  border-radius: 4px;
-  transition: background-color 0.1s;
-
-  &:hover:not(.out-of-scope) { background: var(--s2-gray-50, #f8f8f8); }
-
-  &.out-of-scope {
-    opacity: 0.38;
-  }
-
-  label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 1;
-    min-width: 0;
-    cursor: pointer;
-    font-size: 14px;
-    color: var(--s2-gray-900, #292929);
-  }
-
-  label span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
-/* --- S2 checkbox (matches spectrum-two tokens) --- */
-
-.sat-row input[type="checkbox"],
-.footer-cascade input[type="checkbox"] {
-  appearance: none;
-  -webkit-appearance: none;
   width: 14px;
   height: 14px;
-  margin: 0;
-  border: 2px solid var(--s2-gray-600, #717171);
-  border-radius: 2px;
+  accent-color: var(--s2-gray-800, #292929);
   cursor: pointer;
-  flex-shrink: 0;
-  position: relative;
-  transition: border 0.13s ease-in-out;
+}
 
-  &:checked {
-    border-color: var(--s2-gray-800, #292929);
-    border-width: 7px;
-    background: var(--s2-gray-50, #f8f8f8);
-
-    &::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      top: -2px;
-      left: -3px;
-      width: 4px;
-      height: 8px;
-      margin: auto;
-      border: solid var(--s2-gray-50, #f8f8f8);
-      border-width: 0 2px 2px 0;
-      transform: rotate(45deg);
-    }
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--s2-blue-700, #393dba);
-    outline-offset: 2px;
-  }
-
-  &:disabled { opacity: 0.4; cursor: default; }
-
-  &:hover:not(:disabled) {
-    border-color: var(--s2-gray-700, #4b4b4b);
-  }
-
-  &:checked:hover:not(:disabled) {
-    border-color: var(--s2-gray-800, #292929);
-  }
+.cascade-toggle-inline-label {
+  cursor: pointer;
 }
 
 /* --- Status icons --- */
@@ -319,8 +474,14 @@
   flex-shrink: 0;
 }
 
+.sat-row .result-icon {
+  width: 14px;
+  height: 14px;
+}
+
 .result-icon.success { color: #0d6e31; }
 .result-icon.error { color: var(--s2-red-900, #d31510); }
+
 .result-icon.pending {
   color: var(--s2-gray-600, #717171);
   animation: spin 1s linear infinite;
@@ -331,49 +492,13 @@
   to { transform: rotate(360deg); }
 }
 
-/* --- Icon button (open-in-editor) --- */
-
-.icon-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 4px;
-  background: none;
-  color: var(--s2-gray-500, #929292);
-  cursor: pointer;
-  padding: 0;
-  text-decoration: none;
-  transition: background-color 0.15s, color 0.15s;
-
-  svg { width: 14px; height: 14px; fill: currentColor; }
-  &:hover {
-    background: var(--s2-gray-200, #e1e1e1);
-    color: var(--s2-gray-900, #292929);
-  }
-}
-
-/* --- Footer (single, shared) --- */
+/* --- Advanced footer (Apply button) --- */
 
 .form-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.footer-cascade {
-  margin-right: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--s2-gray-800, #292929);
-  cursor: pointer;
-  user-select: none;
 }
 
 /* --- Confirm dialog (yellow caution box) --- */
@@ -386,7 +511,10 @@
   font-size: 14px;
   color: var(--s2-gray-900, #292929);
 
-  p { margin: 0 0 10px; line-height: 1.4; }
+  p {
+    margin: 0 0 10px;
+    line-height: 1.4;
+  }
 
   .confirm-actions {
     display: flex;
@@ -422,6 +550,7 @@
   &.danger {
     color: var(--s2-red-900, #d31510);
     border-color: #f0c8c2;
+
     &:hover {
       background: #fef0ee;
       border-color: var(--s2-red-900, #d31510);

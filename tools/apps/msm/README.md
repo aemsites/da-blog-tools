@@ -19,20 +19,24 @@ The role is determined automatically based on the org's MSM configuration and th
 
 Each page on a satellite is either:
 
-- **Inherited** — No local copy exists on the satellite; it inherits content from the base site.
-- **Custom (overridden)** — A local copy exists on the satellite, breaking inheritance.
+- **Following base** — No local copy exists on the satellite; it inherits content from the base site.
+- **With local copy** — A local copy exists on the satellite (customized), breaking inheritance.
 
-Actions are scoped by this status. For example, "Preview" and "Publish" target inherited satellites, while "Sync" and "Resume inheritance" target satellites with custom overrides.
+Actions are scoped by this status. For example, roll out actions target sites following base, while push/discard actions target sites with a local copy.
 
 ### Actions
 
+Terminology matches the [MSM Prepare plugin](../../plugins/msm/README.md).
+
 | Action | Scope | Description |
 |---|---|---|
-| **Preview** | Inherited | Triggers a preview of the page on inherited satellites |
-| **Publish** | Inherited | Publishes the page to inherited satellites |
-| **Cancel inheritance** | Inherited | Creates a local copy on the satellite, breaking inheritance |
-| **Sync to satellite** | Custom | Updates the satellite's override — either via **Merge** (preserves satellite edits) or **Override** (replaces with base content) |
-| **Resume inheritance** | Custom | Deletes the satellite override and re-previews/publishes if the page was previously live |
+| **Roll out to preview** | Following base | Triggers a preview of the page on inherited satellites |
+| **Roll out to live** | Following base | Publishes the page to inherited satellites |
+| **Make a local copy on selected sites** | Following base | Creates a local copy on the satellite, breaking inheritance |
+| **Push update to customized sites** | With local copy | Updates the satellite's override — **Keep local edits (merge)** or **Replace with base (override)** |
+| **Discard local copy on customized sites** | With local copy | Deletes the satellite override and re-previews/publishes if the page was previously live |
+| **Pull latest from base** | Satellite (upward) | Copies or merges content from the parent base into this site |
+| **Revert to base** | Satellite (upward) | Deletes the local copy so the page follows the base again |
 
 ## Configuration
 

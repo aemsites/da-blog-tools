@@ -1,10 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { DA_ORIGIN } from 'https://da.live/nx/public/utils/constants.js';
 
-// SDK plumbing. See utils.js — both helper modules need the host-supplied
-// daFetch so they can authenticate against admin.da.live without their own
-// IMS state. Each module keeps its own reference; the plugin entry calls
-// `setSdkFetch` on both during init.
 let sdkFetch;
 export function setSdkFetch(fn) { sdkFetch = fn; }
 function daFetch(url, opts) {
@@ -15,8 +11,6 @@ function daFetch(url, opts) {
 const configCache = {};
 const orgConfigPromises = {};
 
-// Mirrors fetchDaConfigs({ org }) from da-live's shared/utils.js — fetches
-// /config/<org>/ once, caches the promise, returns the parsed JSON (or null).
 function fetchOrgConfig(org) {
   if (!org) return Promise.resolve(null);
   orgConfigPromises[org] ??= (async () => {
