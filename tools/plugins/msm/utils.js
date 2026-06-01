@@ -57,23 +57,12 @@ export async function createOverride(org, base, satellite, pagePath) {
   return { ok: true };
 }
 
-async function getDaSourceLastModified(org, site, pagePath) {
-  const resp = await daFetch(
-    `${DA_ORIGIN}/source/${org}/${site}${pagePath}.html`,
-    { method: 'HEAD' },
-  );
-  return resp.ok ? (resp.headers?.get('Last-Modified') || null) : null;
-}
-
-export async function getSatellitePageStatus(org, satellite, pagePath) {
+export async function getSatellitePageStatus(org, satellite, pagePath, editLastModified = null) {
   const aemPath = pagePath.replace('.html', '');
-  const [statusResp, editLastModified] = await Promise.all([
-    daFetch(`${AEM_ADMIN}/status/${org}/${satellite}/main${aemPath}`),
-    getDaSourceLastModified(org, satellite, pagePath),
-  ]);
+  const resp = await daFetch(`${AEM_ADMIN}/status/${org}/${satellite}/main${aemPath}`);
 
-  if (!statusResp.ok) return { previewState: 'not-rolled-out', liveState: 'not-rolled-out' };
-  const json = await statusResp.json();
+  if (!resp.ok) return { previewState: 'not-rolled-out', liveState: 'not-rolled-out' };
+  const json = await resp.json();
 
   const editTime = editLastModified ? new Date(editLastModified).getTime() : null;
   const previewTime = json.preview?.lastModified

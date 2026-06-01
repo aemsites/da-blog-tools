@@ -5,8 +5,6 @@ import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import {
   getSiteConfig,
   getSatelliteTree,
-  checkOverrides,
-  isPageLocal,
   getPageTimestamp,
   setSdkFetch as setConfigSdkFetch,
 } from './config.js';
@@ -104,6 +102,7 @@ class DaMsm extends LitElement {
     this._successData = null;
     this._menuSiteId = null;
     this._menuPos = null;
+    this._baseSiteLastModified = null;
     this._effectiveBase = null;
     this._sourceOutOfSync = null;
     this._sitePageStatus = null;
@@ -178,47 +177,18 @@ class DaMsm extends LitElement {
       }
 
       // Load publish status for this site's page (for icon2 on the source row)
-      getSatellitePageStatus(org, site, path).then((status) => {
+      getSatellitePageStatus(org, site, path, siteTs.lastModified).then((status) => {
         this._sitePageStatus = status;
       });
     }
 
     this._loading = undefined;
 
-    // Load override + page status for all nodes in the tree
+    // Top-level nodes load eagerly; deeper nodes load lazily when their parent is expanded
     if (this._asBase) {
-      const flatten = (nodes, out = []) => {
-        nodes.forEach((n) => { out.push(n); if (n.children?.length) flatten(n.children, out); });
-        return out;
-      };
-      const allNodes = flatten(tree);
-      const directSites = new Set(Object.keys(this._asBase.satellites));
-
-      // Direct children: use checkOverrides to get outOfSync via timestamp comparison
-      checkOverrides(org, site, this._asBase.satellites, path).then((results) => {
-        const next = new Map(this._satData);
-        results.forEach((r) => {
-          next.set(r.site, { ...next.get(r.site), ...r });
-        });
-        this._satData = next;
-      });
-
-      // All nodes: load page status, and for deeper nodes also load hasOverride
-      allNodes.forEach(({ siteId: satSite }) => {
-        if (!directSites.has(satSite)) {
-          // Deeper node — load hasOverride independently (no outOfSync comparison needed)
-          isPageLocal(org, satSite, path).then((hasOverride) => {
-            const m = new Map(this._satData);
-            m.set(satSite, { ...m.get(satSite), hasOverride });
-            this._satData = m;
-          });
-        }
-        getSatellitePageStatus(org, satSite, path).then((status) => {
-          const m = new Map(this._satData);
-          m.set(satSite, { ...m.get(satSite), ...status });
-          this._satData = m;
-        });
-      });
+      const baseSiteTs = await getPageTimestamp(org, site, path);
+      this._baseSiteLastModified = baseSiteTs.lastModified;
+      this._loadNodes(tree.map((n) => n.siteId));
     }
   }
 
@@ -256,6 +226,58 @@ class DaMsm extends LitElement {
       if (n.siteId === siteId) return parent;
       return this._parentOf(siteId, n.children || [], n.siteId);
     }, undefined);
+  }
+
+  _ancestorChain(siteId) {
+    const chain = [];
+    let current = this._parentOf(siteId);
+    while (current) {
+      chain.push(current);
+      current = this._parentOf(current);
+    }
+    return chain;
+  }
+
+  // Returns the Last-Modified of the nearest ancestor with local DA content,
+  // or the root-base timestamp when no ancestor has a local copy.
+  _effectiveBaseLM(siteId) {
+    const ancestors = this._ancestorChain(siteId);
+    const nearest = ancestors.find((id) => this._satData.get(id)?.hasOverride === true);
+    return nearest
+      ? (this._satData.get(nearest)?.lastModified || null)
+      : this._baseSiteLastModified;
+  }
+
+  async _loadNodes(siteIds) {
+    const { org, path } = this.details;
+    const timestamps = await Promise.all(
+      siteIds.map((id) => getPageTimestamp(org, id, path).then((ts) => ({ id, ...ts }))),
+    );
+
+    const update = new Map(this._satData);
+    timestamps.forEach(({ id, exists, lastModified }) => {
+      const satTime = lastModified ? new Date(lastModified).getTime() : null;
+      let outOfSync = false;
+      if (exists) {
+        const refLM = this._effectiveBaseLM(id);
+        const refTime = refLM ? new Date(refLM).getTime() : null;
+        outOfSync = refTime !== null && satTime !== null && satTime < refTime;
+      }
+      update.set(id, {
+        ...update.get(id), hasOverride: exists, outOfSync, lastModified,
+      });
+    });
+    this._satData = update;
+
+    siteIds.forEach((id) => {
+      const d = this._satData.get(id);
+      const editLM = d?.hasOverride ? d.lastModified : this._effectiveBaseLM(id);
+      getSatellitePageStatus(org, id, path, editLM).then((status) => {
+        const m = new Map(this._satData);
+        m.set(id, { ...m.get(id), ...status });
+        this._satData = m;
+      });
+    });
   }
 
   // ── Action execution ──────────────────────────────────────────────────────
@@ -478,7 +500,15 @@ class DaMsm extends LitElement {
       ? (e) => {
         e.stopPropagation();
         const next = new Set(this._collapsed);
-        if (isCollapsed) next.delete(siteId); else next.add(siteId);
+        if (isCollapsed) {
+          next.delete(siteId);
+          const unloaded = (children || [])
+            .filter((c) => this._satData.get(c.siteId)?.hasOverride === undefined)
+            .map((c) => c.siteId);
+          if (unloaded.length) this._loadNodes(unloaded);
+        } else {
+          next.add(siteId);
+        }
         this._collapsed = next;
       }
       : null;
