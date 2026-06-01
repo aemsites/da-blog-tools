@@ -528,6 +528,7 @@ class MsmColumnBrowser extends LitElement {
     this.scrollToActiveColumn();
 
     this.clearChecksAfterColumn(colIdx);
+    console.log('[MSM] navigateToFolder end', { site, path: item.path, suppressEmit: this._suppressEmit });
     if (!this._suppressEmit) {
       this._updateUrl(site, item.isSite ? null : item.path);
     }
