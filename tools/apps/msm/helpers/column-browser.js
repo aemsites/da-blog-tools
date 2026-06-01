@@ -74,7 +74,6 @@ class MsmColumnBrowser extends LitElement {
     }
   }
 
-
   updated(changed) {
     if (changed.has('hideInherited') && this.hideInherited) {
       this._pruneHiddenInheritedChecks();
