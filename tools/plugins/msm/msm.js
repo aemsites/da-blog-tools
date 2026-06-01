@@ -364,13 +364,13 @@ class DaMsm extends LitElement {
     this._busy = false;
   }
 
-  async _pullFromBase() {
+  async _pullFromBase(mode = 'override') {
     if (this._busy) return;
     this._busy = true;
     this._sourceError = null;
     const { org, site, path } = this.details;
     const baseSite = this._effectiveBase?.site || this._asSatellite?.base;
-    const result = this._hasOverride
+    const result = mode === 'merge'
       ? await mergeFromBase(org, baseSite, site, path)
       : await createOverride(org, baseSite, site, path);
     if (result?.error) {
@@ -549,7 +549,7 @@ class DaMsm extends LitElement {
   renderConfirmRow() {
     const c = this._pendingConfirm;
     if (!c) return nothing;
-    const isDestructive = ['sync', 'cancel-inheritance', 'resume-inheritance'].includes(c.type);
+    const isDestructive = ['sync', 'sync-source', 'cancel-inheritance', 'resume-inheritance'].includes(c.type);
 
     let scopeChips = nothing;
     if (c.type === 'rollout' && this._fullConfirmScope.length > 1) {
@@ -579,6 +579,11 @@ class DaMsm extends LitElement {
       actions = html`
         <button class="btn btn-secondary" @click=${() => { this._dismissConfirm(); this._sync(c.siteId, 'merge'); }}>Merge</button>
         <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._sync(c.siteId, 'override'); }}>Override</button>
+        <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
+    } else if (c.type === 'sync-source') {
+      actions = html`
+        <button class="btn btn-secondary" @click=${() => { this._dismissConfirm(); this._pullFromBase('merge'); }}>Merge</button>
+        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._pullFromBase('override'); }}>Override</button>
         <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
     } else if (c.type === 'cancel-inheritance') {
       actions = html`
@@ -614,7 +619,10 @@ class DaMsm extends LitElement {
         ...(this._hasOverride ? [{
           label: 'Resume inheritance',
           danger: true,
-          action: () => this._openConfirm('__source__', 'resume-source'),
+          action: () => {
+            const base = this._asSatellite?.baseLabel || this._asSatellite?.base || 'source';
+            this._openConfirm('__source__', 'resume-source', `Remove your local copy? This page will serve ${base}'s content again. This cannot be undone.`);
+          },
         }, { sep: true }] : []),
         { label: 'Open source page ↗', action: () => { window.open(pageUrl, '_blank', 'noopener'); this._closeMenu(); } },
         { sep: true },
@@ -732,24 +740,22 @@ class DaMsm extends LitElement {
             </div>
             <div class="row-icons">${icon1}${icon2}</div>
             <div class="source-actions">
-              <button class="btn-row" ?disabled=${this._busy}
-                @click=${() => this._pullFromBase()}>
-                ${this._hasOverride ? 'Pull latest' : 'Get from base'}
-              </button>
+              ${this._hasOverride
+    ? html`<button class="btn-row" ?disabled=${this._busy}
+                  @click=${(e) => { e.stopPropagation(); this._openConfirm('__source__', 'sync-source'); }}>
+                  Sync
+                </button>`
+    : html`<button class="btn-row" ?disabled=${this._busy}
+                  @click=${() => this._pullFromBase()}>
+                  Get from base
+                </button>`}
             </div>
             <button class="btn-more" title="More actions"
               @click=${(e) => { e.stopPropagation(); this._openMenu('__source__', e.currentTarget); }}>
               ${icon('icon-more', '0 0 14 4', 14, 4)}
             </button>
           </div>
-          ${this._pendingConfirm?.siteId === '__source__' ? html`
-            <div class="confirm-row destructive">
-              <div class="confirm-msg">Remove your local copy? This page will serve ${parentLabel}'s content again. This cannot be undone.</div>
-              <div class="confirm-actions">
-                <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._revertToBase(); }}>Remove local copy</button>
-                <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>
-              </div>
-            </div>` : nothing}
+          ${this._pendingConfirm?.siteId === '__source__' ? this.renderConfirmRow() : nothing}
           ${viaNote}
           ${errorNote}
         </div>
