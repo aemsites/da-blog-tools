@@ -634,16 +634,14 @@ class MsmColumnBrowser extends LitElement {
       // Clear redundant individual child-checks and child exclusions.
       [...nextChecked].forEach((k) => { if (k.startsWith(prefix)) nextChecked.delete(k); });
       [...nextUnchecked].forEach((k) => { if (k.startsWith(prefix)) nextUnchecked.delete(k); });
+    } else if (this._isAncestorChecked(item)) {
+      nextUnchecked.add(key);
     } else {
-      if (this._isAncestorChecked(item)) {
-        nextUnchecked.add(key);
-      } else {
-        nextChecked.delete(key);
-        this._clearFocusIfMatches(item);
-        // Clear all individually-checked descendants and exclusions.
-        [...nextChecked].forEach((k) => { if (k.startsWith(prefix)) nextChecked.delete(k); });
-        [...nextUnchecked].forEach((k) => { if (k.startsWith(prefix)) nextUnchecked.delete(k); });
-      }
+      nextChecked.delete(key);
+      this._clearFocusIfMatches(item);
+      // Clear all individually-checked descendants and exclusions.
+      [...nextChecked].forEach((k) => { if (k.startsWith(prefix)) nextChecked.delete(k); });
+      [...nextUnchecked].forEach((k) => { if (k.startsWith(prefix)) nextUnchecked.delete(k); });
     }
 
     this._checked = nextChecked;
@@ -727,17 +725,19 @@ class MsmColumnBrowser extends LitElement {
         if (!this._folderCache.has(cacheKey)) {
           try {
             const items = await this._loadFolderItems(folderSite, folderPath);
-            const files = items
-              .filter((i) => !i.isFolder && !i.isSite)
-              .filter((i) => !this._unchecked.has(this._itemKey({ ...i, site: folderSite })))
-              .map((i) => ({ ...i, site: folderSite }));
-            this._folderCache.set(cacheKey, files);
+            // Cache the full list; _unchecked filter is applied at read-time below
+            // so exclusion changes don't require a cache invalidation.
+            this._folderCache.set(
+              cacheKey,
+              items.filter((i) => !i.isFolder && !i.isSite).map((i) => ({ ...i, site: folderSite })),
+            );
           } catch (e) {
             console.error('Failed to resolve folder pages:', e);
             this._folderCache.set(cacheKey, []);
           }
         }
-        return this._folderCache.get(cacheKey);
+        return (this._folderCache.get(cacheKey) || [])
+          .filter((i) => !this._unchecked.has(this._itemKey(i)) && !this._isAncestorUnchecked(i));
       }),
     );
 
@@ -783,12 +783,24 @@ class MsmColumnBrowser extends LitElement {
 
   _isAncestorChecked(item) {
     const site = item.site || '';
-    // Check if the whole site is checked (site item has key "site:site")
     if (this._checked.has(`${site}:${site}`)) return true;
     const parts = item.path.split('/').filter(Boolean);
     for (let i = parts.length - 1; i >= 1; i -= 1) {
       const ancestorPath = `/${parts.slice(0, i).join('/')}`;
       if (this._checked.has(`${site}:${ancestorPath}`)) return true;
+    }
+    return false;
+  }
+
+  // Mirror of _isAncestorChecked but for _unchecked. If a parent folder/site
+  // was explicitly excluded, its descendants are also excluded.
+  _isAncestorUnchecked(item) {
+    const site = item.site || '';
+    if (this._unchecked.has(`${site}:${site}`)) return true;
+    const parts = item.path.split('/').filter(Boolean);
+    for (let i = parts.length - 1; i >= 1; i -= 1) {
+      const ancestorPath = `/${parts.slice(0, i).join('/')}`;
+      if (this._unchecked.has(`${site}:${ancestorPath}`)) return true;
     }
     return false;
   }
@@ -835,6 +847,7 @@ class MsmColumnBrowser extends LitElement {
   isItemChecked(item) {
     const key = this._itemKey(item);
     if (this._unchecked.has(key)) return false;
+    if (this._isAncestorUnchecked(item)) return false;
     if (this._checked.has(key)) return true;
     return this._isAncestorChecked(item);
   }
