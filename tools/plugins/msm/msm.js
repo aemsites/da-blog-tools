@@ -4,9 +4,10 @@ import { LitElement, html, nothing } from 'da-lit';
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import {
   getSiteConfig,
-  getSubtreeSatellites,
-  isPageLocal,
+  getSatelliteTree,
   checkOverrides,
+  isPageLocal,
+  getPageTimestamp,
   setSdkFetch as setConfigSdkFetch,
 } from './config.js';
 import {
@@ -20,810 +21,728 @@ import {
   setEditUrlOrigin,
 } from './utils.js';
 
-const STATUS = { pending: 'pending', success: 'success', error: 'error' };
-const SYNC_MODE = { override: 'override', merge: 'merge' };
-
-const RECURSIVE_ACTIONS = new Set(['preview', 'publish']);
-const SYNC_ACTIONS = new Set(['sync', 'sync-from-base']);
-const UPWARD_ACTIONS = new Set(['sync-from-base', 'resume-inheritance']);
-
-const ACTION_SCOPE = {
-  preview: 'inherited',
-  publish: 'inherited',
-  break: 'inherited',
-  sync: 'custom',
-  reset: 'custom',
-};
-
 const MSM_APP_URL = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/msm/msm';
 const ICON_BASE = './img';
 const NX = 'https://da.live/nx';
 
 let nexter = null;
-let sl = null;
 let styles = null;
-let buttons = null;
 try {
   const [{ default: getStyle }, { loadStyle }] = await Promise.all([
     import(`${NX}/utils/styles.js`),
     import(`${NX}/scripts/nexter.js`),
   ]);
-  await Promise.all([
-    loadStyle(`${NX}/styles/nexter.css`),
-    loadStyle(`${NX}/public/sl/styles.css`),
-  ]);
-  await import(`${NX}/public/sl/components.js`);
-  [nexter, sl, styles, buttons] = await Promise.all([
+  await loadStyle(`${NX}/styles/nexter.css`);
+  [nexter, styles] = await Promise.all([
     getStyle(`${NX}/styles/nexter.css`),
-    getStyle(`${NX}/public/sl/styles.css`),
     getStyle(import.meta.url),
-    getStyle(`${NX}/styles/buttons.css`),
   ]);
 } catch (e) {
-  console.warn('[MSM Plugin] Failed to load sl/nexter styles:', e);
+  console.warn('[MSM Plugin] Failed to load nexter styles:', e);
 }
-try {
-  await import('./vendor/se/components.js');
-} catch (e) {
-  console.warn(`[MSM Plugin] Failed to load vendored se components: ${e.message}. `
-    + 'Falling back to native <select>.');
+
+// ── Icon helpers — use external SVG files via <use>, color via currentColor ─
+
+const icon = (name, viewBox = '0 0 14 14', w = 16, h = 16) => html`
+  <svg width="${w}" height="${h}" viewBox="${viewBox}">
+    <use href="${ICON_BASE}/${name}.svg#${name}"/>
+  </svg>`;
+
+// Publish-state key → { name, viewBox, color, tip }
+const ICON2_CONFIG = {
+  'not-rolled-out': { name: 'icon-circle-alert', color: 'var(--s2-red-700,#ff513d)', tip: 'Not yet previewed or published' },
+  'preview-current': { name: 'icon-triangle-alert', color: 'var(--s2-orange-600,#fc7d00)', tip: 'Previewed — not yet published to live' },
+  'preview-behind': { name: 'icon-circle-alert', color: 'var(--s2-red-700,#ff513d)', tip: 'WIP has changed — preview is out of date' },
+  'preview-current-live-behind': { name: 'icon-triangle-alert', color: 'var(--s2-orange-600,#fc7d00)', tip: 'Preview current — published content is out of date' },
+  'live-current': { name: 'icon-circle-check', color: 'var(--s2-green-700,#0ba45d)', tip: 'Preview and published are current' },
+  'live-behind': { name: 'icon-circle-alert', color: 'var(--s2-red-700,#ff513d)', tip: 'WIP has changed — re-publish needed' },
+};
+
+function getStatusKey(d) {
+  const { previewState, liveState } = d;
+  if (liveState === 'current') return 'live-current';
+  if (liveState === 'behind') return previewState === 'current' ? 'preview-current-live-behind' : 'live-behind';
+  if (previewState === 'current') return 'preview-current';
+  if (previewState === 'behind') return 'preview-behind';
+  return 'not-rolled-out';
 }
 
 class DaMsm extends LitElement {
   static properties = {
     details: { attribute: false },
-    _satellites: { state: true },
-    _selected: { state: true },
     _loading: { state: true },
     _busy: { state: true },
-    _confirmAction: { state: true },
-    _action: { state: true },
-    _syncMode: { state: true },
     _asBase: { state: true },
     _asSatellite: { state: true },
     _hasOverride: { state: true },
-    _satStatus: { state: true },
-    _showAdvanced: { state: true },
-    _includeDescendants: { state: true },
+    _tree: { state: true },
+    _satData: { state: true },
+    _collapsed: { state: true },
+    _pendingConfirm: { state: true },
+    _fullConfirmScope: { state: true },
+    _confirmScope: { state: true },
+    _successData: { state: true },
+    _menuSiteId: { state: true },
+    _menuPos: { state: true },
+    _effectiveBase: { state: true },
+    _sourceOutOfSync: { state: true },
+    _sitePageStatus: { state: true },
+    _sourceError: { state: true },
   };
 
   connectedCallback() {
     super.connectedCallback();
-    this.shadowRoot.adoptedStyleSheets = [nexter, sl, buttons, styles].filter(Boolean);
-    this._loading = 'Loading\u2026';
-    this._selected = new Set();
-    this._action = 'preview';
-    this._syncMode = SYNC_MODE.merge;
+    this.shadowRoot.adoptedStyleSheets = [nexter, styles].filter(Boolean);
+    this._loading = 'Loading…';
     this._busy = false;
-    this._showAdvanced = false;
-    this._includeDescendants = true;
+    this._tree = [];
+    this._satData = new Map();
+    this._collapsed = new Set();
+    this._pendingConfirm = null;
+    this._fullConfirmScope = [];
+    this._confirmScope = [];
+    this._successData = null;
+    this._menuSiteId = null;
+    this._menuPos = null;
+    this._effectiveBase = null;
+    this._sourceOutOfSync = null;
+    this._sitePageStatus = null;
+    this._sourceError = null;
     this.loadConfig();
-  }
-
-  updated(changedProperties) {
-    if (changedProperties.has('_showAdvanced') && this._showAdvanced) {
-      requestAnimationFrame(() => {
-        const panel = this.shadowRoot?.querySelector('.advanced-content');
-        panel?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      });
-    }
   }
 
   async loadConfig() {
     const { org, site, path } = this.details;
-    this._loading = 'Loading configuration\u2026';
+    this._loading = 'Loading configuration…';
 
-    const config = await getSiteConfig(org, site);
+    const [config, tree] = await Promise.all([
+      getSiteConfig(org, site),
+      getSatelliteTree(org, site),
+    ]);
 
     if (!config) {
-      this._satellites = [];
       this._loading = undefined;
       return;
     }
 
     this._asBase = config.asBase;
     this._asSatellite = config.asSatellite;
+    this._tree = tree;
 
+    // Seed satData with labels so tree renders names immediately
+    const initial = new Map();
+    const seed = (nodes) => nodes.forEach(({ siteId, label, children }) => {
+      initial.set(siteId, { label });
+      if (children?.length) seed(children);
+    });
+    seed(tree);
+    this._satData = initial;
+
+    // Auto-collapse mid-tier nodes (those with children)
+    const collapsed = new Set();
+    const markCollapsed = (nodes) => nodes.forEach(({ siteId, children }) => {
+      if (children?.length) { collapsed.add(siteId); markCollapsed(children); }
+    });
+    markCollapsed(tree);
+    this._collapsed = collapsed;
+
+    // Load upward override status; resolve effective source if direct parent has no local copy
     if (this._asSatellite) {
-      this._hasOverride = await isPageLocal(org, site, path);
-    }
+      const baseSite = this._asSatellite.base;
+      const [siteTs, baseTs] = await Promise.all([
+        getPageTimestamp(org, site, path),
+        getPageTimestamp(org, baseSite, path),
+      ]);
+      this._hasOverride = siteTs.exists;
 
-    if (this._asBase) {
-      this._loading = 'Checking overrides\u2026';
-      const results = await checkOverrides(org, this._asBase.satellites, path);
-      this._satellites = results.map((sat) => ({ ...sat, status: undefined }));
-    }
+      let effectiveTs = baseTs;
+      if (!baseTs.exists) {
+        const chain = this._asSatellite.chain || [];
+        const ancestors = chain.slice(0, chain.length - 1);
+        if (ancestors.length > 0) {
+          const checks = await Promise.all(
+            ancestors.map((a) => getPageTimestamp(org, a.site, path)
+              .then((ts) => ({ ...a, hasContent: ts.exists, lastModified: ts.lastModified }))),
+          );
+          const nearest = [...checks].reverse().find((a) => a.hasContent);
+          const resolved = nearest || checks[0];
+          this._effectiveBase = resolved;
+          effectiveTs = resolved
+            ? { exists: resolved.hasContent, lastModified: resolved.lastModified }
+            : null;
+        }
+      }
 
-    if (!this._asBase && this._asSatellite) {
-      this._action = 'sync-from-base';
-    }
+      if (siteTs.exists && siteTs.lastModified && effectiveTs?.lastModified) {
+        this._sourceOutOfSync = new Date(effectiveTs.lastModified) > new Date(siteTs.lastModified);
+      }
 
-    this._seedSelectionForAction(this._action);
+      // Load publish status for this site's page (for icon2 on the source row)
+      getSatellitePageStatus(org, site, path).then((status) => {
+        this._sitePageStatus = status;
+      });
+    }
 
     this._loading = undefined;
-  }
 
-  get _inherited() {
-    return this._satellites?.filter((s) => !s.hasOverride) || [];
-  }
+    // Load override + page status for all nodes in the tree
+    if (this._asBase) {
+      const flatten = (nodes, out = []) => {
+        nodes.forEach((n) => { out.push(n); if (n.children?.length) flatten(n.children, out); });
+        return out;
+      };
+      const allNodes = flatten(tree);
+      const directSites = new Set(Object.keys(this._asBase.satellites));
 
-  get _custom() {
-    return this._satellites?.filter((s) => s.hasOverride) || [];
-  }
+      // Direct children: use checkOverrides to get outOfSync via timestamp comparison
+      checkOverrides(org, site, this._asBase.satellites, path).then((results) => {
+        const next = new Map(this._satData);
+        results.forEach((r) => {
+          next.set(r.site, { ...next.get(r.site), ...r });
+        });
+        this._satData = next;
+      });
 
-  get _directTargets() {
-    const scope = ACTION_SCOPE[this._action];
-    const pool = scope === 'custom' ? this._custom : this._inherited;
-    return pool.filter((s) => this._selected.has(s.site));
-  }
-
-  get _isUpwardMode() {
-    return UPWARD_ACTIONS.has(this._action);
-  }
-
-  get _isSyncMode() {
-    return SYNC_ACTIONS.has(this._action);
-  }
-
-  get _hasDualRole() {
-    return !!(this._asBase && this._asSatellite);
-  }
-
-  get _isSatelliteOnly() {
-    return !!(this._asSatellite && !this._asBase);
-  }
-
-  get _showUpwardView() {
-    return this._isSatelliteOnly || (this._hasDualRole && this._isUpwardMode);
-  }
-
-  get _canApplyDownward() {
-    return !this._busy && this._directTargets.length > 0;
-  }
-
-  _isInScope(sat) {
-    const scope = ACTION_SCOPE[this._action];
-    if (!scope) return false;
-    return scope === 'custom' ? !!sat.hasOverride : !sat.hasOverride;
-  }
-
-  _seedSelectionForAction(action) {
-    if (!this._satellites) {
-      this._selected = new Set();
-      return;
+      // All nodes: load page status, and for deeper nodes also load hasOverride
+      allNodes.forEach(({ siteId: satSite }) => {
+        if (!directSites.has(satSite)) {
+          // Deeper node — load hasOverride independently (no outOfSync comparison needed)
+          isPageLocal(org, satSite, path).then((hasOverride) => {
+            const m = new Map(this._satData);
+            m.set(satSite, { ...m.get(satSite), hasOverride });
+            this._satData = m;
+          });
+        }
+        getSatellitePageStatus(org, satSite, path).then((status) => {
+          const m = new Map(this._satData);
+          m.set(satSite, { ...m.get(satSite), ...status });
+          this._satData = m;
+        });
+      });
     }
-    const scope = ACTION_SCOPE[action];
-    if (!scope) {
-      this._selected = new Set();
-      return;
-    }
-    const pool = scope === 'custom' ? this._custom : this._inherited;
-    this._selected = new Set(pool.map((s) => s.site));
-  }
-
-  _toggleAdvanced() {
-    const opening = !this._showAdvanced;
-    if (opening) {
-      if (RECURSIVE_ACTIONS.has(this._action)) {
-        this.onActionChange('break');
-      }
-    } else if (!RECURSIVE_ACTIONS.has(this._action)) {
-      this.onActionChange('preview');
-    }
-    this._showAdvanced = opening;
-  }
-
-  _setIncludeDescendants(value) {
-    this._includeDescendants = !!value;
-    this.clearStatuses();
   }
 
   _getAppDeepLink() {
-    const {
-      org, site, path,
-    } = this.details;
+    const { org, site, path } = this.details;
     const params = new URLSearchParams({ org, site, path });
-    //TODO: remove this once msm-app branch is merged to main
+    // TODO: remove ref once msm-app branch is merged to main
     params.set('ref', 'msm-app');
     return `${MSM_APP_URL}?${params.toString()}`;
   }
 
-  // ── Handlers ────────────────────────────────────────────────────────
+  // ── Tree helpers ──────────────────────────────────────────────────────────
 
-  handleToggle(site) {
-    const next = new Set(this._selected);
-    if (next.has(site)) next.delete(site);
-    else next.add(site);
-    this._selected = next;
+  _subtree(siteId) {
+    const find = (nodes) => nodes.reduce((acc, n) => {
+      if (acc) return acc;
+      if (n.siteId === siteId) return n;
+      return find(n.children || []);
+    }, null);
+    const node = find(this._tree);
+    if (!node) return [siteId];
+    const ids = [];
+    const collect = (n) => { ids.push(n.siteId); (n.children || []).forEach(collect); };
+    collect(node);
+    return ids;
   }
 
-  clearStatuses() {
-    this._satellites = this._satellites?.map((s) => ({ ...s, status: undefined }));
+  _inheritedInSubtree(rootSiteId) {
+    return this._subtree(rootSiteId).filter((id) => this._satData.get(id)?.hasOverride === false);
   }
 
-  updateSatStatus(site, status) {
-    this._satellites = this._satellites.map(
-      (s) => (s.site === site ? { ...s, status } : s),
-    );
+  _parentOf(siteId, nodes = this._tree, parent = null) {
+    return nodes.reduce((found, n) => {
+      if (found !== undefined) return found;
+      if (n.siteId === siteId) return parent;
+      return this._parentOf(siteId, n.children || [], n.siteId);
+    }, undefined);
   }
 
-  onActionChange(value) {
-    this._action = value;
-    this.clearStatuses();
-    this._satStatus = undefined;
-    this._seedSelectionForAction(value);
+  // ── Action execution ──────────────────────────────────────────────────────
+
+  _setSatField(siteId, fields) {
+    const next = new Map(this._satData);
+    next.set(siteId, { ...next.get(siteId), ...fields });
+    this._satData = next;
   }
 
-  onDirectionToggle(toUpward) {
-    let nextAction;
-    if (toUpward) {
-      nextAction = 'sync-from-base';
-    } else if (this._showAdvanced) {
-      nextAction = 'break';
-    } else {
-      nextAction = 'preview';
-    }
-    this.onActionChange(nextAction);
-  }
-
-  async runQuickAction(action) {
-    if (this._busy) return;
-    const oldScope = ACTION_SCOPE[this._action];
-    const newScope = ACTION_SCOPE[action];
-    this._action = action;
-    this.clearStatuses();
-    this._satStatus = undefined;
-    if (oldScope !== newScope || (newScope && this._selected.size === 0)) {
-      this._seedSelectionForAction(action);
-    }
-    await this.apply();
-  }
-
-  async apply() {
-    if (this._isUpwardMode) {
-      this.applySatelliteAction();
-      return;
-    }
-
-    if (!this._canApplyDownward) return;
-
-    if (this._action === 'reset') {
-      const names = this._directTargets.map((s) => s.label).join(', ');
-      this._confirmAction = { message: `Discard local copy on ${names}? Removes the satellite override.` };
-      return;
-    }
-
-    await this.runAction(this._action);
-  }
-
-  cancelConfirm() {
-    this._confirmAction = undefined;
-  }
-
-  async doConfirmedAction() {
-    const { confirmedAction } = this._confirmAction || {};
-    this._confirmAction = undefined;
-    if (confirmedAction === 'resume-inheritance') {
-      await this.runSatelliteAction('resume-inheritance');
-    } else if (confirmedAction === 'preview' || confirmedAction === 'publish') {
-      await this.runAction(confirmedAction);
-    } else {
-      await this.runAction('reset');
-    }
-  }
-
-  async runAction(action) {
+  async _rollout(siteIds, level) {
     this._busy = true;
-    const { org, site, path } = this.details;
+    const { org, path } = this.details;
 
-    const directTargets = this._directTargets;
+    siteIds.forEach((id) => this._setSatField(id, { actionStatus: 'pending' }));
+    const results = await Promise.allSettled(siteIds.map(async (id) => {
+      const previewResult = await previewSatellite(org, id, path);
+      if (previewResult?.error) return previewResult;
+      if (level === 'live') return publishSatellite(org, id, path);
+      return previewResult;
+    }));
 
-    directTargets.forEach((s) => this.updateSatStatus(s.site, STATUS.pending));
+    const succeeded = [];
+    results.forEach((r, idx) => {
+      const ok = r.status === 'fulfilled' && !r.value?.error;
+      this._setSatField(siteIds[idx], { actionStatus: ok ? 'success' : 'error' });
+      if (ok) succeeded.push(siteIds[idx]);
+    });
 
-    switch (action) {
-      case 'preview':
-      case 'publish': {
-        const fn = action === 'publish' ? publishSatellite : previewSatellite;
-        const subtreeMap = new Map();
-        await Promise.all(directTargets.map(async (target) => {
-          const subtree = this._includeDescendants
-            ? await getSubtreeSatellites(org, target.site)
-            : [];
-          subtreeMap.set(
-            target.site,
-            [target.site, ...subtree.map((s) => s.site)],
-          );
-        }));
-        const sitesToCall = [...new Set([...subtreeMap.values()].flat())];
-        const results = await Promise.allSettled(
-          sitesToCall.map((satSite) => fn(org, satSite, path)),
-        );
-        const statusBySite = new Map();
-        results.forEach((r, idx) => {
-          const ok = r.status === 'fulfilled' && !r.value?.error;
-          statusBySite.set(sitesToCall[idx], ok);
+    if (succeeded.length) {
+      succeeded.forEach((id) => {
+        this._setSatField(id, {
+          previewState: 'current',
+          ...(level === 'live' ? { liveState: 'current' } : {}),
         });
-        directTargets.forEach((target) => {
-          const sites = subtreeMap.get(target.site) || [target.site];
-          const allOk = sites.every((s) => statusBySite.get(s) === true);
-          this.updateSatStatus(target.site, allOk ? STATUS.success : STATUS.error);
-        });
-        break;
-      }
-
-      case 'break':
-        await Promise.allSettled(directTargets.map(async (sat) => {
-          const result = await createOverride(org, site, sat.site, path);
-          if (result.error) {
-            this.updateSatStatus(sat.site, STATUS.error);
-          } else {
-            this._satellites = this._satellites.map(
-              (s) => (s.site === sat.site
-                ? { ...s, hasOverride: true, status: STATUS.success }
-                : s),
-            );
-          }
-        }));
-        break;
-
-      case 'sync':
-        if (this._syncMode === SYNC_MODE.merge) {
-          await Promise.allSettled(directTargets.map(async (sat) => {
-            const result = await mergeFromBase(org, site, sat.site, path);
-            if (result.error) {
-              this.updateSatStatus(sat.site, STATUS.error);
-            } else {
-              this._satellites = this._satellites.map(
-                (s) => (s.site === sat.site
-                  ? { ...s, editUrl: result.editUrl, status: STATUS.success }
-                  : s),
-              );
-            }
-          }));
-        } else {
-          await Promise.allSettled(directTargets.map(async (sat) => {
-            const result = await createOverride(org, site, sat.site, path);
-            this.updateSatStatus(sat.site, result.error ? STATUS.error : STATUS.success);
-          }));
-        }
-        break;
-
-      case 'reset':
-        await Promise.allSettled(directTargets.map(async (sat) => {
-          const pageStatus = await getSatellitePageStatus(org, sat.site, path);
-          const result = await deleteOverride(org, sat.site, path);
-          if (result.error) {
-            this.updateSatStatus(sat.site, STATUS.error);
-          } else {
-            if (pageStatus.live) {
-              await previewSatellite(org, sat.site, path);
-              await publishSatellite(org, sat.site, path);
-            } else if (pageStatus.preview) {
-              await previewSatellite(org, sat.site, path);
-            }
-            this._satellites = this._satellites.map(
-              (s) => (s.site === sat.site
-                ? { ...s, hasOverride: false, status: STATUS.success }
-                : s),
-            );
-          }
-        }));
-        break;
-
-      default:
-        break;
+      });
+      this._successData = { targets: succeeded, action: 'rollout', level };
     }
-
-    this._selected = new Set();
     this._busy = false;
   }
 
-  applySatelliteAction() {
-    if (this._busy) return;
-
-    if (this._action === 'resume-inheritance') {
-      this._confirmAction = {
-        message: 'Revert to base? This deletes the local copy on this satellite.',
-        confirmedAction: 'resume-inheritance',
-      };
-      return;
-    }
-
-    this.runSatelliteAction(this._action);
-  }
-
-  async runSatelliteAction(action) {
+  async _cancelInheritance(siteId) {
     this._busy = true;
-    this._satStatus = STATUS.pending;
     const { org, site, path } = this.details;
-    const baseSite = this._asSatellite?.base;
-
-    try {
-      let result;
-      if (action === 'sync-from-base') {
-        const useMerge = this._hasOverride;
-        result = useMerge
-          ? await mergeFromBase(org, baseSite, site, path)
-          : await createOverride(org, baseSite, site, path);
-      } else if (action === 'resume-inheritance') {
-        const pageStatus = await getSatellitePageStatus(org, site, path);
-        result = await deleteOverride(org, site, path);
-        if (!result?.error) {
-          if (pageStatus.live) {
-            await previewSatellite(org, site, path);
-            await publishSatellite(org, site, path);
-          } else if (pageStatus.preview) {
-            await previewSatellite(org, site, path);
-          }
-        }
-      }
-
-      if (result?.error) {
-        this._satStatus = STATUS.error;
-      } else {
-        this._satStatus = STATUS.success;
-        this._hasOverride = action !== 'resume-inheritance';
-      }
-    } catch {
-      this._satStatus = STATUS.error;
+    const result = await createOverride(org, site, siteId, path);
+    if (!result.error) {
+      this._setSatField(siteId, { hasOverride: true, outOfSync: false });
+      this._successData = { targets: [siteId], action: 'cancel-inheritance' };
     }
-
     this._busy = false;
   }
 
-  /* -------------------------------------------------- *
-   * Render
-   * -------------------------------------------------- */
-
-  renderStatusIcon(status) {
-    if (!status) return nothing;
-    if (status === STATUS.pending) {
-      return html`<svg class="result-icon pending" viewBox="0 0 20 20">
-        <use href="${ICON_BASE}/S2_Icon_ClockPending_20_N.svg#S2_Icon_ClockPending"/>
-      </svg>`;
+  async _resumeInheritance(siteId) {
+    this._busy = true;
+    const { org, path } = this.details;
+    const pageStatus = await getSatellitePageStatus(org, siteId, path);
+    const result = await deleteOverride(org, siteId, path);
+    if (!result?.error) {
+      if (pageStatus.liveState !== 'not-rolled-out') {
+        await previewSatellite(org, siteId, path);
+        await publishSatellite(org, siteId, path);
+      } else if (pageStatus.previewState !== 'not-rolled-out') {
+        await previewSatellite(org, siteId, path);
+      }
+      this._setSatField(siteId, { hasOverride: false, outOfSync: false });
+      this._successData = { targets: [siteId], action: 'resume-inheritance' };
     }
-    if (status === STATUS.success) {
-      return html`<svg class="result-icon success" viewBox="0 0 20 20">
-        <use href="${ICON_BASE}/S2_Icon_CheckmarkCircle_20_N.svg#S2_Icon_CheckmarkCircle"/>
-      </svg>`;
-    }
-    return html`<svg class="result-icon error" viewBox="0 0 20 20">
-      <use href="${ICON_BASE}/S2_Icon_AlertTriangle_20_N.svg#S2_Icon_AlertTriangle"/>
-    </svg>`;
+    this._busy = false;
   }
 
-  renderConfirm() {
-    if (!this._confirmAction) return nothing;
+  async _sync(siteId, mode) {
+    this._busy = true;
+    const { org, site, path } = this.details;
+    const result = mode === 'merge'
+      ? await mergeFromBase(org, site, siteId, path)
+      : await createOverride(org, site, siteId, path);
+    if (!result?.error) {
+      this._setSatField(siteId, {
+        outOfSync: false,
+        ...(result.editUrl ? { editUrl: result.editUrl } : {}),
+      });
+      this._successData = { targets: [siteId], action: `sync-${mode}` };
+    }
+    this._busy = false;
+  }
+
+  async _pullFromBase() {
+    if (this._busy) return;
+    this._busy = true;
+    this._sourceError = null;
+    const { org, site, path } = this.details;
+    const baseSite = this._effectiveBase?.site || this._asSatellite?.base;
+    const result = this._hasOverride
+      ? await mergeFromBase(org, baseSite, site, path)
+      : await createOverride(org, baseSite, site, path);
+    if (result?.error) {
+      this._sourceError = result.error;
+    } else {
+      this._hasOverride = true;
+      this._sourceOutOfSync = false;
+      this._successData = { targets: [site], action: 'pull-from-base' };
+    }
+    this._busy = false;
+  }
+
+  async _revertToBase() {
+    if (this._busy) return;
+    this._busy = true;
+    const { org, site, path } = this.details;
+    const pageStatus = await getSatellitePageStatus(org, site, path);
+    const result = await deleteOverride(org, site, path);
+    if (!result?.error) {
+      if (pageStatus.liveState !== 'not-rolled-out') {
+        await previewSatellite(org, site, path);
+        await publishSatellite(org, site, path);
+      } else if (pageStatus.previewState !== 'not-rolled-out') {
+        await previewSatellite(org, site, path);
+      }
+      this._hasOverride = false;
+      this._successData = { targets: [site], action: 'revert-to-base' };
+    }
+    this._busy = false;
+  }
+
+  // ── Confirm / scope chip helpers ──────────────────────────────────────────
+
+  _openConfirm(siteId, type, message = null) {
+    const full = type === 'rollout' ? this._inheritedInSubtree(siteId) : [];
+    this._fullConfirmScope = full;
+    this._confirmScope = [...full];
+    this._pendingConfirm = { siteId, type, message };
+    this._closeMenu();
+  }
+
+  _openRolloutAllConfirm() {
+    const allInherited = [];
+    this._tree.forEach((n) => allInherited.push(...this._inheritedInSubtree(n.siteId)));
+    const full = [...new Set(allInherited)];
+    this._fullConfirmScope = full;
+    this._confirmScope = [...full];
+    this._pendingConfirm = { siteId: '__all__', type: 'rollout' };
+  }
+
+  _toggleScope(id) {
+    const isOn = this._confirmScope.includes(id);
+    const fullSet = new Set(this._fullConfirmScope);
+    if (isOn) {
+      const remove = new Set(this._subtree(id).filter((x) => fullSet.has(x)));
+      this._confirmScope = this._confirmScope.filter((x) => !remove.has(x));
+    } else {
+      const toAdd = new Set(this._subtree(id).filter((x) => fullSet.has(x)));
+      // Also enable all ancestors in the full scope
+      let parentId = this._parentOf(id);
+      while (parentId) {
+        if (fullSet.has(parentId)) toAdd.add(parentId);
+        parentId = this._parentOf(parentId);
+      }
+      this._confirmScope = [...new Set([...this._confirmScope, ...toAdd])];
+    }
+  }
+
+  _dismissConfirm() {
+    this._pendingConfirm = null;
+    this._fullConfirmScope = [];
+    this._confirmScope = [];
+  }
+
+  // ── Overflow menu ─────────────────────────────────────────────────────────
+
+  _openMenu(siteId, anchor) {
+    if (this._menuSiteId === siteId) { this._closeMenu(); return; }
+    const rect = anchor.getBoundingClientRect();
+    this._menuPos = { top: rect.bottom + 4, right: window.innerWidth - rect.right };
+    this._menuSiteId = siteId;
+    const handler = () => this._closeMenu();
+    setTimeout(() => document.addEventListener('click', handler, { once: true }), 0);
+  }
+
+  _closeMenu() {
+    this._menuSiteId = null;
+    this._menuPos = null;
+  }
+
+  // ── Render helpers ────────────────────────────────────────────────────────
+
+  _renderIcon1(siteId) {
+    const d = this._satData.get(siteId);
+    if (!d || d.hasOverride === undefined) return nothing;
+    if (!d.hasOverride) {
+      return html`<span class="row-icon" style="color:var(--s2-green-700,#0ba45d)" title="Following base — no local copy">${icon('icon-doc-check')}</span>`;
+    }
+    if (d.outOfSync) {
+      return html`<span class="row-icon" style="color:var(--s2-red-700,#ff513d)" title="Local copy — source has changed, sync needed">${icon('icon-doc-alert')}</span>`;
+    }
+    return html`<span class="row-icon" style="color:var(--s2-orange-600,#fc7d00)" title="Local copy — in sync with source">${icon('icon-doc-x')}</span>`;
+  }
+
+  _renderIcon2(siteId) {
+    const d = this._satData.get(siteId);
+    if (!d || d.previewState === undefined) {
+      return html`<span class="row-icon row-icon-loading"></span>`;
+    }
+    const key = getStatusKey(d);
+    const cfg = ICON2_CONFIG[key] || ICON2_CONFIG['not-rolled-out'];
+    return html`<span class="row-icon" style="color:${cfg.color}" title=${cfg.tip}>${icon(cfg.name)}</span>`;
+  }
+
+  renderStatusIcons(siteId) {
+    return html`<div class="row-icons">${this._renderIcon1(siteId)}${this._renderIcon2(siteId)}</div>`;
+  }
+
+  renderSiteRow(node, depth = 0) {
+    const { siteId, label, children } = node;
+    const d = this._satData.get(siteId) || {};
+    const hasKids = (children?.length || 0) > 0;
+    const isCollapsed = this._collapsed.has(siteId);
+    const showConfirm = this._pendingConfirm?.siteId === siteId;
+
+    const onToggle = hasKids
+      ? (e) => {
+        e.stopPropagation();
+        const next = new Set(this._collapsed);
+        if (isCollapsed) next.delete(siteId); else next.add(siteId);
+        this._collapsed = next;
+      }
+      : null;
+
+    let actionBtn = nothing;
+    if (depth === 0 && d.hasOverride === false) {
+      actionBtn = html`<button class="btn-row" ?disabled=${this._busy}
+        @click=${(e) => { e.stopPropagation(); this._openConfirm(siteId, 'rollout'); }}>Roll out</button>`;
+    } else if (depth === 0 && d.hasOverride === true) {
+      actionBtn = html`<button class="btn-row ${d.outOfSync ? 'urgent' : ''}" ?disabled=${this._busy}
+        @click=${(e) => { e.stopPropagation(); this._openConfirm(siteId, 'sync'); }}>Sync</button>`;
+    }
+
+    // eslint-disable-next-line no-nested-ternary
+    const toggleClass = !hasKids ? 'leaf' : isCollapsed ? 'closed' : 'open';
+
     return html`
-      <div class="confirm-box">
-        <p>${this._confirmAction.message}</p>
-        <div class="confirm-actions">
-          <button class="confirm-btn" @click=${() => this.cancelConfirm()}>Cancel</button>
-          <button class="confirm-btn danger" @click=${() => this.doConfirmedAction()}>Confirm</button>
+      <div class="sat-row" style="padding-left:${14 + depth * 22}px"
+        @click=${onToggle || nothing}>
+        <button class="row-toggle ${toggleClass}" tabindex="-1" aria-hidden="true">
+          ${hasKids ? icon('icon-chevron-down', '0 0 10 10', 10, 10) : nothing}
+        </button>
+        <div class="row-name-group">
+          <span class="row-name">${label}</span>
+          ${hasKids && isCollapsed ? html`<span class="region-count">${children.length}</span>` : nothing}
+        </div>
+        ${this.renderStatusIcons(siteId)}
+        ${actionBtn}
+        <button class="btn-more" title="More actions"
+          @click=${(e) => { e.stopPropagation(); this._openMenu(siteId, e.currentTarget); }}>
+          ${icon('icon-more', '0 0 14 4', 14, 4)}
+        </button>
+      </div>
+      ${showConfirm ? this.renderConfirmRow() : nothing}
+      ${hasKids && !isCollapsed ? children.map((child) => this.renderSiteRow(child, depth + 1)) : nothing}`;
+  }
+
+  renderConfirmRow() {
+    const c = this._pendingConfirm;
+    if (!c) return nothing;
+    const isDestructive = ['sync', 'cancel-inheritance', 'resume-inheritance'].includes(c.type);
+
+    let scopeChips = nothing;
+    if (c.type === 'rollout' && this._fullConfirmScope.length > 1) {
+      scopeChips = html`
+        <div class="confirm-scope">
+          ${this._fullConfirmScope.map((id) => {
+    const label = this._satData.get(id)?.label || id;
+    const isOn = this._confirmScope.includes(id);
+    return html`<span class="scope-chip ${isOn ? '' : 'off'}"
+            @click=${() => this._toggleScope(id)}>
+            ${label}
+          </span>`;
+  })}
+          <span class="confirm-hint">Click to include/exclude</span>
+        </div>`;
+    }
+
+    let actions;
+    if (c.type === 'rollout') {
+      const targets = [...this._confirmScope];
+      const noTargets = targets.length === 0;
+      actions = html`
+        <button class="btn btn-primary" ?disabled=${noTargets} @click=${() => { this._dismissConfirm(); this._rollout(targets, 'live'); }}>Roll out to live</button>
+        <button class="btn btn-secondary" ?disabled=${noTargets} @click=${() => { this._dismissConfirm(); this._rollout(targets, 'preview'); }}>Roll out to preview</button>
+        <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
+    } else if (c.type === 'sync') {
+      actions = html`
+        <button class="btn btn-secondary" @click=${() => { this._dismissConfirm(); this._sync(c.siteId, 'merge'); }}>Merge</button>
+        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._sync(c.siteId, 'override'); }}>Override</button>
+        <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
+    } else if (c.type === 'cancel-inheritance') {
+      actions = html`
+        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._cancelInheritance(c.siteId); }}>Create local copy</button>
+        <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
+    } else if (c.type === 'resume-inheritance' || c.type === 'resume-source') {
+      actions = html`
+        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); if (c.type === 'resume-source') this._revertToBase(); else this._resumeInheritance(c.siteId); }}>Remove local copy</button>
+        <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
+    }
+
+    return html`
+      <div class="confirm-row ${isDestructive ? 'destructive' : ''}">
+        ${c.message ? html`<div class="confirm-msg">${c.message}</div>` : nothing}
+        ${scopeChips}
+        <div class="confirm-actions">${actions}</div>
+      </div>`;
+  }
+
+  renderOverflowMenu() {
+    if (!this._menuSiteId || !this._menuPos) return nothing;
+    const siteId = this._menuSiteId;
+    const { top, right } = this._menuPos;
+    const { org } = this.details;
+    const manageApp = { label: 'Manage in MSM app ↗', action: () => { window.open(this._getAppDeepLink(), '_blank', 'noopener'); this._closeMenu(); } };
+
+    let items;
+    if (siteId === '__source__') {
+      const { path } = this.details;
+      const effectiveSite = this._effectiveBase?.site || this._asSatellite?.base;
+      const pageUrl = `https://da.live/edit#/${org}/${effectiveSite}${path}`;
+      items = [
+        ...(this._hasOverride ? [{
+          label: 'Resume inheritance',
+          danger: true,
+          action: () => this._openConfirm('__source__', 'resume-source'),
+        }, { sep: true }] : []),
+        { label: 'Open source page ↗', action: () => { window.open(pageUrl, '_blank', 'noopener'); this._closeMenu(); } },
+        { sep: true },
+        manageApp,
+      ];
+    } else {
+      const d = this._satData.get(siteId) || {};
+      const pageUrl = `https://da.live/edit#/${org}/${siteId}${this.details.path}`;
+      const openPage = { label: 'Open page ↗', action: () => { window.open(pageUrl, '_blank', 'noopener'); this._closeMenu(); } };
+
+      items = d.hasOverride === false
+        ? [
+          {
+            label: 'Cancel inheritance',
+            danger: true,
+            action: () => this._openConfirm(siteId, 'cancel-inheritance', `Create a local copy for ${d.label || siteId}? It will need to be independently previewed and published.`),
+          },
+          { sep: true },
+          manageApp,
+        ]
+        : [
+          {
+            label: 'Resume inheritance',
+            danger: true,
+            action: () => this._openConfirm(siteId, 'resume-inheritance', `Remove ${d.label || siteId}'s local copy? This page will serve source content again. This cannot be undone.`),
+          },
+          { sep: true },
+          openPage,
+          manageApp,
+        ];
+    }
+
+    return html`
+      <div class="overflow-menu" style="top:${top}px;right:${right}px">
+        ${items.map((item) => (item.sep
+    ? html`<div class="overflow-sep"></div>`
+    : html`<button class="overflow-item ${item.danger ? 'danger' : ''}" @click=${item.action}>${item.label}</button>`))}
+      </div>`;
+  }
+
+  renderSuccessBanner() {
+    if (!this._successData) return nothing;
+    const { targets, action, level } = this._successData;
+    let title = 'Done';
+    if (action === 'rollout') {
+      title = `${level === 'live' ? 'Live' : 'Preview'} updated for ${targets.length} site${targets.length === 1 ? '' : 's'}`;
+    } else if (action === 'cancel-inheritance') {
+      title = `Local copy created for ${this._satData.get(targets[0])?.label || targets[0]}`;
+    } else if (action === 'resume-inheritance') {
+      title = `Local copy removed — ${this._satData.get(targets[0])?.label || targets[0]} now follows base`;
+    } else if (action === 'sync-merge') {
+      title = `${this._satData.get(targets[0])?.label || targets[0]} merged from source`;
+    } else if (action === 'sync-override') {
+      title = `${this._satData.get(targets[0])?.label || targets[0]} overwritten from source`;
+    } else if (action === 'pull-from-base') {
+      title = 'Page updated from base';
+    } else if (action === 'revert-to-base') {
+      title = 'Local copy removed — now following base';
+    }
+
+    return html`
+      <div class="success-banner">
+        <div class="success-title">${icon('icon-circle-check')}${title}</div>
+        <div class="success-links">
+          ${targets.map((id) => html`
+            <button class="success-link-btn"
+              @click=${() => window.open(`https://da.live/edit#/${this.details.org}/${id}${this.details.path}`, '_blank', 'noopener')}>
+              Open ${this._satData.get(id)?.label || id} ↗
+            </button>`)}
+          <button class="success-dismiss" @click=${() => { this._successData = null; }}>Dismiss</button>
         </div>
       </div>`;
   }
 
-  renderBreadcrumb() {
+  renderSourceSection() {
     if (!this._asSatellite) return nothing;
+    const parentLabel = this._asSatellite.baseLabel || this._asSatellite.base;
+    const sourceLabel = this._effectiveBase?.label || parentLabel;
+    let icon1;
+    if (!this._hasOverride) {
+      icon1 = html`<span class="row-icon" style="color:var(--s2-green-700,#0ba45d)" title="Following base — no local copy">${icon('icon-doc-check')}</span>`;
+    } else if (this._sourceOutOfSync) {
+      icon1 = html`<span class="row-icon" style="color:var(--s2-red-700,#ff513d)" title="Local copy — source has changed, sync needed">${icon('icon-doc-alert')}</span>`;
+    } else {
+      icon1 = html`<span class="row-icon" style="color:var(--s2-orange-600,#fc7d00)" title="Local copy — in sync with source">${icon('icon-doc-x')}</span>`;
+    }
 
-    const chain = [
-      ...this._asSatellite.chain,
-      { site: this.details.site, label: this.details.site, current: true },
-    ];
+    let icon2;
+    if (!this._sitePageStatus) {
+      icon2 = html`<span class="row-icon row-icon-loading"></span>`;
+    } else {
+      const key = getStatusKey(this._sitePageStatus);
+      const cfg = ICON2_CONFIG[key] || ICON2_CONFIG['not-rolled-out'];
+      icon2 = html`<span class="row-icon" style="color:${cfg.color}" title=${cfg.tip}>${icon(cfg.name)}</span>`;
+    }
 
-    return html`
-      <div class="crumb-row">
-        <span class="crumb-label">Inherits from</span>
-        ${chain.map((node, idx) => html`
-          ${idx > 0 ? html`<span class="crumb-sep" aria-hidden="true">\u203A</span>` : nothing}
-          <span class="crumb-node ${node.current ? 'current' : ''}">${node.label}</span>
-        `)}
-      </div>`;
-  }
+    const viaNote = this._effectiveBase
+      ? html`<div class="source-note">via ${parentLabel}</div>`
+      : nothing;
 
-  renderPrimaryButtons() {
-    if (!this._asBase || this._isUpwardMode) return nothing;
-
-    const inheritedCount = this._inherited.length;
-    if (inheritedCount === 0) return nothing;
-
-    const isInheritedScope = ACTION_SCOPE[this._action] === 'inherited';
-    const willRunOn = isInheritedScope
-      ? this._inherited.filter((s) => this._selected.has(s.site))
-      : this._inherited;
-    const directCount = willRunOn.length;
-    const cascadeCount = this._includeDescendants
-      ? willRunOn.reduce((acc, s) => acc + (s.descendantCount || 0), 0)
-      : 0;
-    const totalCount = directCount + cascadeCount;
-    const noSelection = isInheritedScope && directCount === 0;
-    const disabled = this._busy || noSelection;
-
-    const directLabel = `${directCount} site${directCount !== 1 ? 's' : ''} following base`;
-    const cascadeLabel = cascadeCount > 0
-      ? ` + ${cascadeCount} nested = ${totalCount} total`
-      : '';
-    const countLabel = `${directLabel}${cascadeLabel}`;
-    const reason = noSelection ? 'Select at least one site below' : countLabel;
-    const previewTitle = `Roll out to preview — ${reason}`;
-    const liveTitle = `Roll out to live — ${reason}`;
+    const errorNote = this._sourceError
+      ? html`<div class="source-note source-note-error">${this._sourceError}</div>`
+      : nothing;
 
     return html`
-      <div class="primary-buttons">
-        <button class="primary-btn fill"
-          type="button"
-          title=${previewTitle}
-          ?disabled=${disabled}
-          @click=${() => this.runQuickAction('preview')}>
-          <svg class="primary-btn-icon" viewBox="0 0 20 20" aria-hidden="true">
-            <use href="${ICON_BASE}/S2_Icon_ExperiencePreview_20_N.svg#S2_Icon_ExperiencePreview"/>
-          </svg>
-          <span class="primary-btn-label">Roll out to preview</span>
-        </button>
-        <button class="primary-btn outline"
-          type="button"
-          title=${liveTitle}
-          ?disabled=${disabled}
-          @click=${() => this.runQuickAction('publish')}>
-          <svg class="primary-btn-icon" viewBox="0 0 20 20" aria-hidden="true">
-            <use href="${ICON_BASE}/S2_Icon_Publish_20_N.svg#S2_Icon_Publish"/>
-          </svg>
-          <span class="primary-btn-label">Roll out to live</span>
-        </button>
-      </div>`;
-  }
-
-  renderSatellitePrimaryButtons() {
-    const baseLabel = this._asSatellite?.baseLabel || this._asSatellite?.base || 'base';
-    const canRevert = this._hasOverride === true;
-    const pullTitle = this._hasOverride
-      ? `Merge latest from ${baseLabel} into your local copy`
-      : `Copy the page from ${baseLabel} to your site`;
-    const revertTitle = `Delete your local copy and follow ${baseLabel} again`;
-
-    return html`
-      <div class="primary-buttons">
-        <button class="primary-btn fill"
-          type="button"
-          title=${pullTitle}
-          ?disabled=${this._busy}
-          @click=${() => this.runQuickAction('sync-from-base')}>
-          <svg class="primary-btn-icon" viewBox="0 0 20 20" aria-hidden="true">
-            <use href="${ICON_BASE}/S2_Icon_ExperienceAdd_20_N.svg#S2_Icon_Experience_Add"/>
-          </svg>
-          <span class="primary-btn-label">Pull latest from base</span>
-        </button>
-        ${canRevert ? html`
-          <button class="primary-btn outline"
-            type="button"
-            title=${revertTitle}
-            ?disabled=${this._busy}
-            @click=${() => this.runQuickAction('resume-inheritance')}>
-            <svg class="primary-btn-icon" viewBox="0 0 20 20" aria-hidden="true">
-              <use href="${ICON_BASE}/S2_Icon_Delete_20_N.svg#S2_Icon_Delete"/>
-            </svg>
-            <span class="primary-btn-label">Revert to base</span>
-          </button>
-        ` : nothing}
-      </div>`;
-  }
-
-  renderSatelliteStatusLine() {
-    if (!this._asSatellite) return nothing;
-    const overrideText = this._hasOverride
-      ? 'Yes — has local copy'
-      : 'None — following base';
-    return html`
-      <div class="status-line">
-        <span class="status-label">Local override:</span>
-        <span class="status-value ${this._hasOverride ? '' : 'muted'}">${overrideText}</span>
-        ${this._satStatus ? this.renderStatusIcon(this._satStatus) : nothing}
-      </div>`;
-  }
-
-  renderSiteChips() {
-    return this.renderSatelliteGrid();
-  }
-
-  renderSatelliteGrid() {
-    if (!this._asBase || this._isUpwardMode) return nothing;
-    if (!this._satellites?.length) return nothing;
-
-    const inherited = this._inherited;
-    const custom = this._custom;
-    if (!inherited.length && !custom.length) return nothing;
-
-    const scope = ACTION_SCOPE[this._action];
-
-    return html`
-      <div class="satellite-grid">
-        ${inherited.length ? html`
-          <div class="satellite-column">
-            <div class="column-heading">Following base</div>
-            <ul class="satellite-list">
-              ${inherited.map((sat) => this.renderSatRow(sat, scope === 'custom'))}
-            </ul>
-          </div>
-        ` : nothing}
-        ${custom.length ? html`
-          <div class="satellite-column">
-            <div class="column-heading">With local copy</div>
-            <ul class="satellite-list">
-              ${custom.map((sat) => this.renderSatRow(sat, scope === 'inherited', true))}
-            </ul>
-          </div>
-        ` : nothing}
-      </div>`;
-  }
-
-  renderSatRow(sat, outOfScope, showEdit = false) {
-    const inScope = this._isInScope(sat);
-    const isSelected = inScope && this._selected.has(sat.site);
-    const dc = sat.descendantCount || 0;
-    const cascades = inScope
-      && RECURSIVE_ACTIONS.has(this._action)
-      && this._includeDescendants;
-    const dcSuffix = dc === 1 ? '' : 's';
-    const dcTitle = cascades
-      ? `Also rolls out to ${dc} nested site${dcSuffix}`
-      : `${dc} nested site${dcSuffix}`;
-    const editUrl = sat.editUrl
-      || `https://da.live/edit#/${this.details.org}/${sat.site}${this.details.path}`;
-
-    return html`
-      <li class="sat-row ${outOfScope ? 'out-of-scope' : ''} ${sat.status ? `status-${sat.status}` : ''}">
-        <label>
-          <input type="checkbox"
-            .checked=${isSelected}
-            ?disabled=${outOfScope || this._busy}
-            @change=${() => { if (!outOfScope) this.handleToggle(sat.site); }} />
-          <span>${sat.label}</span>
-          ${dc > 0 ? html`<span class="descendant-badge" title=${dcTitle}>+${dc}</span>` : nothing}
-        </label>
-        ${sat.status ? this.renderStatusIcon(sat.status) : nothing}
-        ${showEdit ? html`
-          <a class="edit-link"
-            href=${editUrl}
-            target="_blank"
-            rel="noopener"
-            title="Open in editor"
-            aria-label="Open ${sat.label} in editor">
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <use href="${ICON_BASE}/S2_Icon_ChevronRight_20_N.svg#S2_Icon_ChevronRight"/>
-            </svg>
-          </a>
-        ` : nothing}
-      </li>`;
-  }
-
-  renderAdvancedExpander() {
-    return html`
-      <div class="advanced-section">
-        <button class="advanced-toggle"
-          type="button"
-          aria-expanded=${this._showAdvanced ? 'true' : 'false'}
-          @click=${() => this._toggleAdvanced()}>
-          <span class="advanced-chevron ${this._showAdvanced ? 'open' : ''}" aria-hidden="true">\u25B8</span>
-          More options
-        </button>
-        ${this._showAdvanced ? html`
-          <div class="advanced-content">
-            <p class="advanced-hint">Pick which action to apply, then choose the sites in the list above.</p>
-            <div class="action-row">
-              ${this.renderActionPicker()}
-              ${this._isSyncMode ? this.renderSyncModeSelect() : nothing}
+      <div class="plugin-section">
+        <div class="section-header">
+          <span class="section-label">Source</span>
+        </div>
+        <div class="sat-list">
+          <div class="sat-row" style="padding-left:14px">
+            <span class="row-toggle leaf"></span>
+            <div class="row-name-group">
+              <span class="row-name">${sourceLabel}</span>
             </div>
-            ${this.renderAdvancedFooter()}
+            <div class="row-icons">${icon1}${icon2}</div>
+            <div class="source-actions">
+              <button class="btn-row" ?disabled=${this._busy}
+                @click=${() => this._pullFromBase()}>
+                ${this._hasOverride ? 'Pull latest' : 'Get from base'}
+              </button>
+            </div>
+            <button class="btn-more" title="More actions"
+              @click=${(e) => { e.stopPropagation(); this._openMenu('__source__', e.currentTarget); }}>
+              ${icon('icon-more', '0 0 14 4', 14, 4)}
+            </button>
           </div>
-        ` : nothing}
+          ${this._pendingConfirm?.siteId === '__source__' ? html`
+            <div class="confirm-row destructive">
+              <div class="confirm-msg">Remove your local copy? This page will serve ${parentLabel}'s content again. This cannot be undone.</div>
+              <div class="confirm-actions">
+                <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._revertToBase(); }}>Remove local copy</button>
+                <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>
+              </div>
+            </div>` : nothing}
+          ${viaNote}
+          ${errorNote}
+        </div>
       </div>`;
   }
 
-  renderCascadeToggleInline() {
-    if (!this._asBase || this._isUpwardMode) return nothing;
-    const totalDescendants = this._inherited.reduce(
-      (acc, s) => acc + (s.descendantCount || 0),
-      0,
-    );
-    if (totalDescendants === 0) return nothing;
-    const id = 'msm-cascade-toggle';
-    const sitesWord = `nested site${totalDescendants === 1 ? '' : 's'}`;
+  renderSatellitesSection() {
+    if (!this._asBase || !this._tree.length) return nothing;
+    const hasInherited = this._tree.some((n) => this._satData.get(n.siteId)?.hasOverride === false);
+
     return html`
-      <div class="cascade-toggle-inline">
-        <input id=${id}
-          type="checkbox"
-          ?checked=${this._includeDescendants}
-          @change=${(e) => this._setIncludeDescendants(e.target.checked)}>
-        <label class="cascade-toggle-inline-label" for=${id}>
-          Also roll out to ${totalDescendants} ${sitesWord}
-        </label>
+      <div class="plugin-section">
+        <div class="section-header">
+          <span class="section-label">Satellites</span>
+          ${hasInherited ? html`
+            <button class="btn-rollout-all" ?disabled=${this._busy}
+              @click=${() => this._openRolloutAllConfirm()}>Roll out all</button>` : nothing}
+        </div>
+        ${this._pendingConfirm?.siteId === '__all__' ? this.renderConfirmRow() : nothing}
+        <div class="sat-list">
+          ${this._tree.map((node) => this.renderSiteRow(node, 0))}
+        </div>
       </div>`;
-  }
-
-  renderAdvancedFooter() {
-    const applyDisabled = this._busy || !this._canApplyDownward;
-    const count = this._directTargets.length;
-    const label = count > 0
-      ? `Apply to ${count} site${count !== 1 ? 's' : ''}`
-      : 'Apply';
-
-    return html`
-      <div class="form-actions">
-        <sl-button
-          @click=${() => this.apply()}
-          ?disabled=${applyDisabled}>${label}</sl-button>
-      </div>`;
-  }
-
-  renderAppLink() {
-    return html`
-      <a class="app-link" href=${this._getAppDeepLink()} target="_blank" rel="noopener">
-        Manage variants in MSM \u2197
-      </a>`;
-  }
-
-  renderDirectionFlipLink() {
-    if (!this._hasDualRole) return nothing;
-    const toUpward = !this._isUpwardMode;
-    const baseLabel = this._asSatellite?.baseLabel || this._asSatellite?.base;
-    const label = toUpward
-      ? `Update from parent (${baseLabel}) instead`
-      : 'Update children instead';
-    const arrow = toUpward ? '\u2191' : '\u2193';
-    return html`
-      <button class="direction-flip"
-        type="button"
-        ?disabled=${this._busy}
-        @click=${() => this.onDirectionToggle(toUpward)}>
-        ${arrow} ${label}
-      </button>`;
-  }
-
-  renderActionPicker() {
-    const options = [
-      { value: 'break', label: 'Make a local copy on selected sites' },
-      { value: 'sync', label: 'Push update to customized sites' },
-      { value: 'reset', label: 'Discard local copy on customized sites' },
-    ];
-
-    return html`
-      <se-select
-        label="Action"
-        name="action"
-        .value=${this._action}
-        ?disabled=${this._busy}
-        @change=${(e) => this.onActionChange(e.target.value)}>
-        ${options.map((opt) => html`
-          <option value=${opt.value}>${opt.label}</option>
-        `)}
-      </se-select>`;
-  }
-
-  renderSyncModeSelect() {
-    return html`
-      <se-select
-        label="Sync mode"
-        name="syncMode"
-        .value=${this._syncMode}
-        ?disabled=${this._busy}
-        @change=${(e) => { this._syncMode = e.target.value; }}>
-        <option value="merge">Keep local edits (merge)</option>
-        <option value="override">Replace with base (override)</option>
-      </se-select>`;
-  }
-
-  renderDownwardView() {
-    return html`
-      ${this.renderPrimaryButtons()}
-      ${this.renderCascadeToggleInline()}
-      ${this.renderSiteChips()}`;
-  }
-
-  renderUpwardView() {
-    return html`
-      ${this.renderSatelliteStatusLine()}
-      ${this.renderSatellitePrimaryButtons()}`;
   }
 
   render() {
@@ -835,16 +754,19 @@ class DaMsm extends LitElement {
       return html`<p class="no-satellites">No satellite sites configured.</p>`;
     }
 
-    const isUpward = this._showUpwardView;
+    const { org, site, path } = this.details;
 
     return html`
-      ${this._asSatellite ? this.renderBreadcrumb() : nothing}
-      ${isUpward ? this.renderUpwardView() : this.renderDownwardView()}
-      ${this.renderConfirm()}
-      <div class="bottom-section">
-        ${!isUpward && this._asBase ? this.renderAdvancedExpander() : nothing}
-        ${this._hasDualRole ? this.renderDirectionFlipLink() : nothing}
-        ${this.renderAppLink()}
+      <div class="plugin-meta">${org}/${site} · ${path}</div>
+      <hr class="plugin-hr">
+      ${this.renderSuccessBanner()}
+      ${this.renderSourceSection()}
+      ${this.renderSatellitesSection()}
+      ${this.renderOverflowMenu()}
+      <div class="plugin-footer">
+        <a class="app-link" href=${this._getAppDeepLink()} target="_blank" rel="noopener">
+          Manage in MSM app ↗
+        </a>
       </div>`;
   }
 }
@@ -867,7 +789,6 @@ export default function render(details) {
     console.log('[MSM Plugin] Init context:', {
       org, site, path, ref,
     });
-    console.log('[MSM Plugin] actions.daFetch available?', typeof actions?.daFetch);
 
     setConfigSdkFetch(actions.daFetch);
     setUtilsSdkFetch(actions.daFetch);

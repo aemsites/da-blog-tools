@@ -139,33 +139,64 @@ export async function getSatellites(org, baseSite) {
   return config?.asBase?.satellites || {};
 }
 
+function buildTree(rows, siteId) {
+  const children = getDirectChildren(rows, siteId);
+  return children.map((child) => ({
+    siteId: child.site,
+    label: child.label,
+    children: buildTree(rows, child.site),
+  }));
+}
+
+export async function getSatelliteTree(org, site) {
+  const entry = await fetchSiteConfig(org, site);
+  if (!entry) return [];
+  return buildTree(entry.rows, site);
+}
+
 export async function getBaseSite(org, satellite) {
   const config = await getSiteConfig(org, satellite);
   return config?.asSatellite?.base || null;
 }
 
-export async function isPageLocal(org, site, pagePath) {
+export async function getPageTimestamp(org, site, pagePath) {
   const resp = await daFetch(
     `${DA_ORIGIN}/source/${org}/${site}${pagePath}.html`,
     { method: 'HEAD' },
   );
-  return resp.ok;
+  return { exists: resp.ok, lastModified: resp.headers?.get('Last-Modified') || null };
 }
 
-export async function checkOverrides(org, satellites, pagePath) {
+export async function isPageLocal(org, site, pagePath) {
+  const { exists } = await getPageTimestamp(org, site, pagePath);
+  return exists;
+}
+
+export async function checkOverrides(org, baseSite, satellites, pagePath) {
   const entries = Object.entries(satellites);
-  const results = await Promise.all(
-    entries.map(async ([site, info]) => {
-      const local = await isPageLocal(org, site, pagePath);
-      return {
-        site,
-        label: info.label,
-        descendantCount: info.descendantCount || 0,
-        hasOverride: local,
-      };
+  const [baseTs, ...satResults] = await Promise.all([
+    getPageTimestamp(org, baseSite, pagePath),
+    ...entries.map(async ([site, info]) => {
+      const ts = await getPageTimestamp(org, site, pagePath);
+      return { site, info, ts };
     }),
-  );
-  return results;
+  ]);
+
+  const baseTime = baseTs.lastModified ? new Date(baseTs.lastModified).getTime() : null;
+
+  return satResults.map(({ site, info, ts }) => {
+    const satTime = ts.lastModified ? new Date(ts.lastModified).getTime() : null;
+    const outOfSync = ts.exists && baseTime !== null && satTime !== null
+      ? satTime < baseTime
+      : false;
+    return {
+      site,
+      label: info.label,
+      descendantCount: info.descendantCount || 0,
+      hasOverride: ts.exists,
+      outOfSync,
+    };
+  });
 }
 
 export function clearMsmCache() {

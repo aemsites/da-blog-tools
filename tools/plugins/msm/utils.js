@@ -61,12 +61,33 @@ export async function getSatellitePageStatus(org, satellite, pagePath) {
   const aemPath = pagePath.replace('.html', '');
   const url = `${AEM_ADMIN}/status/${org}/${satellite}/main${aemPath}`;
   const resp = await daFetch(url);
-  if (!resp.ok) return { preview: false, live: false };
+  if (!resp.ok) return { previewState: 'not-rolled-out', liveState: 'not-rolled-out' };
   const json = await resp.json();
-  return {
-    preview: json.preview?.status === 200,
-    live: json.live?.status === 200,
-  };
+
+  const editTime = json.edit?.lastModified ? new Date(json.edit.lastModified).getTime() : null;
+  const previewMod = json.preview?.lastModified;
+  const previewTime = previewMod ? new Date(previewMod).getTime() : null;
+  const liveTime = json.live?.lastModified ? new Date(json.live.lastModified).getTime() : null;
+
+  let previewState;
+  if (json.preview?.status !== 200) {
+    previewState = 'not-rolled-out';
+  } else if (editTime !== null && previewTime !== null && editTime > previewTime) {
+    previewState = 'behind';
+  } else {
+    previewState = 'current';
+  }
+
+  let liveState;
+  if (json.live?.status !== 200) {
+    liveState = 'not-rolled-out';
+  } else if (previewTime !== null && liveTime !== null && previewTime > liveTime) {
+    liveState = 'behind';
+  } else {
+    liveState = 'current';
+  }
+
+  return { previewState, liveState };
 }
 
 export async function deleteOverride(org, satellite, pagePath) {

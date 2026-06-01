@@ -1,0 +1,6 @@
+<svg id="icon-doc-alert" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none">
+  <path d="M2.5 1.5h6l3 3v8.5h-9V1.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M8.5 1.5v3h3" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M7 6.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  <circle cx="7" cy="11.4" r="0.85" fill="currentColor"/>
+</svg>
