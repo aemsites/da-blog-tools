@@ -1,6 +1,8 @@
 /* eslint-disable no-underscore-dangle, import/no-unresolved, no-console, class-methods-use-this */
 import { LitElement, html, nothing } from 'da-lit';
-import { listFolder, listFolderWithInheritance, isActionableItem } from './api.js';
+import {
+  listFolder, listFolderWithInheritance, isActionableItem, getSatellitePageStatus,
+} from './api.js';
 
 const NX = 'https://da.live/nx';
 let sl;
@@ -21,6 +23,31 @@ const ARROW_RIGHT = html`<svg class="item-arrow" viewBox="0 0 10 10" fill="none"
 const BACK_ARROW = html`<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="7,1 3,5 7,9"/></svg>`;
 const INHERITED_BADGE = html`<svg class="inherited-badge" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z" fill="currentColor"/></svg>`;
 
+// Status icons (sync state + publish state)
+const si = (d, vb = '0 0 14 14') => html`<svg class="item-status-icon" width="13" height="13" viewBox="${vb}" fill="none" stroke="currentColor">${d}</svg>`;
+const ICON_DOC_CHECK = si(html`<path d="M2.5 1.5h6l3 3v8.5h-9V1.5z" stroke-width="1.5" stroke-linejoin="round"/><path d="M8.5 1.5v3h3" stroke-width="1.5" stroke-linejoin="round"/><path d="M4.5 7.5l1.8 1.8 3-3" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`);
+const ICON_DOC_X = si(html`<path d="M2.5 1.5h6l3 3v8.5h-9V1.5z" stroke-width="1.5" stroke-linejoin="round"/><path d="M8.5 1.5v3h3" stroke-width="1.5" stroke-linejoin="round"/><path d="M5 6.8l4 4M9 6.8l-4 4" stroke-width="1.6" stroke-linecap="round"/>`);
+const ICON_CIRCLE_CHECK = si(html`<circle cx="7" cy="7" r="5.5" stroke-width="1.5"/><path d="M4.5 7l2 2 3.5-3.5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`);
+const ICON_CIRCLE_ALERT = si(html`<circle cx="7" cy="7" r="5.5" stroke-width="1.5"/><path d="M7 4v3.5" stroke-width="1.6" stroke-linecap="round"/><circle cx="7" cy="9.8" r="0.85" fill="currentColor" stroke="none"/>`);
+const ICON_TRI_ALERT = si(html`<path d="M7 1.5L12.5 11.5H1.5L7 1.5z" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-width="1.6" stroke-linecap="round"/><circle cx="7" cy="10" r="0.9" fill="currentColor" stroke="none"/>`);
+
+const ICON2_MAP = {
+  'not-rolled-out': { icon: ICON_CIRCLE_ALERT, color: 'var(--s2-red-700,#ff513d)', tip: 'Not yet previewed or published' },
+  'preview-current': { icon: ICON_TRI_ALERT, color: 'var(--s2-orange-600,#fc7d00)', tip: 'Previewed — not yet published to live' },
+  'preview-behind': { icon: ICON_CIRCLE_ALERT, color: 'var(--s2-red-700,#ff513d)', tip: 'Preview is out of date' },
+  'preview-current-live-behind': { icon: ICON_TRI_ALERT, color: 'var(--s2-orange-600,#fc7d00)', tip: 'Preview current — published content is out of date' },
+  'live-current': { icon: ICON_CIRCLE_CHECK, color: 'var(--s2-green-700,#0ba45d)', tip: 'Published and current' },
+  'live-behind': { icon: ICON_CIRCLE_ALERT, color: 'var(--s2-red-700,#ff513d)', tip: 'Content changed — re-publish needed' },
+};
+
+function getPublishStatusKey({ previewState, liveState }) {
+  if (liveState === 'current') return 'live-current';
+  if (liveState === 'behind') return previewState === 'current' ? 'preview-current-live-behind' : 'live-behind';
+  if (previewState === 'current') return 'preview-current';
+  if (previewState === 'behind') return 'preview-behind';
+  return 'not-rolled-out';
+}
+
 class MsmColumnBrowser extends LitElement {
   static properties = {
     org: { type: String },
@@ -35,6 +62,7 @@ class MsmColumnBrowser extends LitElement {
     _loadingColumn: { state: true },
     _focusedItem: { state: true },
     _selectionCategory: { state: true },
+    _itemStatus: { state: true },
   };
 
   connectedCallback() {
@@ -43,6 +71,7 @@ class MsmColumnBrowser extends LitElement {
     this._columns = [];
     this._checked = new Set();
     this._unchecked = new Set();
+    this._itemStatus = new Map();
     this._activeColumnIdx = 0;
     this._loadingColumn = -1;
     this._focusedItem = null;
@@ -319,7 +348,7 @@ class MsmColumnBrowser extends LitElement {
     const isChecked = this.isItemChecked(item);
     const nextChecked = new Set(this._checked);
     const nextUnchecked = new Set(this._unchecked);
-    const prefix = `${item.site || ''}:${item.path}/`;
+    const prefix = this._childPrefix(item);
 
     if (isChecked) {
       if (this._isAncestorChecked(item)) {
@@ -338,6 +367,7 @@ class MsmColumnBrowser extends LitElement {
 
     this._checked = nextChecked;
     this._unchecked = nextUnchecked;
+    if (item.isSite && !isChecked) this._clearOtherSiteChecks(key);
     this._refreshSelectionCategory();
     const site = item.site || this.getCurrentSite();
     this.emitSelection(site);
@@ -520,7 +550,19 @@ class MsmColumnBrowser extends LitElement {
     this.scrollToActiveColumn();
 
     this.clearChecksAfterColumn(colIdx);
+    this._loadColumnStatus(this._columns[this._columns.length - 1]?.items || [], site);
     this.emitSelection(site);
+  }
+
+  _loadColumnStatus(items, site) {
+    if (!this.org || !site) return;
+    items.filter((i) => isActionableItem(i)).forEach(async (item) => {
+      const cleanPath = item.path.replace(/\.[^/.]+$/, '');
+      const status = await getSatellitePageStatus(this.org, site, cleanPath);
+      const next = new Map(this._itemStatus);
+      next.set(this._itemKey(item), status);
+      this._itemStatus = next;
+    });
   }
 
   findSite(colIdx, item) {
@@ -579,7 +621,7 @@ class MsmColumnBrowser extends LitElement {
     const wantChecked = e.target.checked;
     const nextChecked = new Set(this._checked);
     const nextUnchecked = new Set(this._unchecked);
-    const prefix = `${item.site || ''}:${item.path}/`;
+    const prefix = this._childPrefix(item);
 
     if (wantChecked) {
       nextUnchecked.delete(key);
@@ -597,6 +639,7 @@ class MsmColumnBrowser extends LitElement {
 
     this._checked = nextChecked;
     this._unchecked = nextUnchecked;
+    if (item.isSite && wantChecked) this._clearOtherSiteChecks(key);
     this._refreshSelectionCategory();
     const site = item.site || this.getCurrentSite();
     this.emitSelection(site);
@@ -628,10 +671,13 @@ class MsmColumnBrowser extends LitElement {
     );
     const removed = new Set([...this._checked].filter((key) => !validPaths.has(key)));
     this._checked = new Set([...this._checked].filter((key) => validPaths.has(key)));
-    // Drop _unchecked entries whose containing folder was just removed.
+    // Drop _unchecked entries whose containing folder/site was just removed.
     let nextUnchecked = this._unchecked;
     removed.forEach((removedKey) => {
-      const prefix = `${removedKey}/`;
+      const [s, p] = removedKey.split(':');
+      // Site item: key "site:site" → child prefix is "site:/"
+      // Folder item: key "site:/path" → child prefix is "site:/path/"
+      const prefix = s === p ? `${s}:/` : `${removedKey}/`;
       if ([...nextUnchecked].some((k) => k.startsWith(prefix))) {
         nextUnchecked = new Set([...nextUnchecked].filter((k) => !k.startsWith(prefix)));
       }
@@ -656,9 +702,9 @@ class MsmColumnBrowser extends LitElement {
       col.items.forEach((item) => {
         const key = `${item.site || site || ''}:${item.path}`;
         if (!checkedSnapshot.has(key)) return;
-        if (item.isFolder && !item.isSite) {
+        if (item.isFolder || item.isSite) {
           checkedFolders.push(item);
-        } else if (!item.isSite) {
+        } else {
           checkedPages.push(item);
         }
       });
@@ -667,10 +713,11 @@ class MsmColumnBrowser extends LitElement {
     const folderPages = await Promise.all(
       checkedFolders.map(async (folder) => {
         const folderSite = folder.site || site;
-        const cacheKey = `${this.org}/${folderSite}${folder.path}`;
+        const folderPath = folder.isSite ? '/' : folder.path;
+        const cacheKey = `${this.org}/${folderSite}${folderPath}`;
         if (!this._folderCache.has(cacheKey)) {
           try {
-            const items = await this._loadFolderItems(folderSite, folder.path);
+            const items = await this._loadFolderItems(folderSite, folderPath);
             const files = items
               .filter((i) => !i.isFolder && !i.isSite)
               .filter((i) => !this._unchecked.has(this._itemKey({ ...i, site: folderSite })))
@@ -718,8 +765,17 @@ class MsmColumnBrowser extends LitElement {
     return `${item.site || ''}:${item.path}`;
   }
 
+  // Returns the key prefix that covers all descendants of item in _checked/_unchecked.
+  // Site items (path === site name, no leading /) use "site:/" as their child scope.
+  _childPrefix(item) {
+    const site = item.site || '';
+    return item.isSite ? `${site}:/` : `${this._itemKey(item)}/`;
+  }
+
   _isAncestorChecked(item) {
     const site = item.site || '';
+    // Check if the whole site is checked (site item has key "site:site")
+    if (this._checked.has(`${site}:${site}`)) return true;
     const parts = item.path.split('/').filter(Boolean);
     for (let i = parts.length - 1; i >= 1; i -= 1) {
       const ancestorPath = `/${parts.slice(0, i).join('/')}`;
@@ -730,7 +786,7 @@ class MsmColumnBrowser extends LitElement {
 
   _isFolderIndeterminate(folder) {
     if (!this.isItemChecked(folder)) return false;
-    const prefix = `${folder.site || ''}:${folder.path}/`;
+    const prefix = this._childPrefix(folder);
     return [...this._unchecked].some((k) => k.startsWith(prefix));
   }
 
@@ -742,7 +798,42 @@ class MsmColumnBrowser extends LitElement {
   }
 
   showCheckbox(item) {
-    return !item.isSite && (isActionableItem(item) || item.isFolder);
+    return isActionableItem(item) || item.isFolder || item.isSite;
+  }
+
+  // Sites are single-select: checking a new site clears any previous site check.
+  _clearOtherSiteChecks(exceptKey) {
+    const nextChecked = new Set(this._checked);
+    let nextUnchecked = new Set(this._unchecked);
+    nextChecked.forEach((key) => {
+      // Site keys have format "site:site" (same value both sides of colon)
+      const [s, p] = key.split(':');
+      if (s === p && key !== exceptKey) {
+        nextChecked.delete(key);
+        const prefix = `${s}:/`;
+        nextUnchecked = new Set([...nextUnchecked].filter((k) => !k.startsWith(prefix)));
+      }
+    });
+    this._checked = nextChecked;
+    this._unchecked = nextUnchecked;
+  }
+
+  _renderItemIcons(item) {
+    if (!isActionableItem(item)) return nothing;
+    let icon1 = nothing;
+    if (item.inheritedFrom) {
+      icon1 = html`<span class="item-status-icon" style="color:var(--s2-green-700,#0ba45d)" title="Inherited from ${item.inheritedFrom}">${ICON_DOC_CHECK}</span>`;
+    } else if (item.hasLocalOverride) {
+      icon1 = html`<span class="item-status-icon" style="color:var(--s2-orange-600,#fc7d00)" title="Local copy (overrides base)">${ICON_DOC_X}</span>`;
+    }
+    const status = this._itemStatus.get(this._itemKey(item));
+    let icon2 = nothing;
+    if (status) {
+      const cfg = ICON2_MAP[getPublishStatusKey(status)];
+      if (cfg) icon2 = html`<span class="item-status-icon" style="color:${cfg.color}" title=${cfg.tip}>${cfg.icon}</span>`;
+    }
+    if (icon1 === nothing && icon2 === nothing) return nothing;
+    return html`<span class="item-status-icons">${icon1}${icon2}</span>`;
   }
 
   renderItem(colIdx, item) {
@@ -777,7 +868,7 @@ class MsmColumnBrowser extends LitElement {
           <input
             type="checkbox"
             .checked=${this.isItemChecked(item)}
-            .indeterminate=${item.isFolder && this._isFolderIndeterminate(item)}
+            .indeterminate=${(item.isFolder || item.isSite) && this._isFolderIndeterminate(item)}
             ?disabled=${blocked}
             @change=${(e) => this.handleCheckChange(item, e, colIdx)}
             @click=${(e) => e.stopPropagation()}
@@ -786,6 +877,7 @@ class MsmColumnBrowser extends LitElement {
         ${item.isFolder || item.isSite ? FOLDER_ICON : PAGE_ICON}
         ${isInherited ? INHERITED_BADGE : nothing}
         <span class="item-label">${item.name}</span>
+        ${this._renderItemIcons(item)}
         ${item.isFolder || item.isSite ? ARROW_RIGHT : nothing}
       </div>
     `;

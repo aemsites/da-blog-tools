@@ -191,6 +191,19 @@
   white-space: nowrap;
 }
 
+.item-status-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.item-status-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .item-arrow {
   flex-shrink: 0;
   width: 12px;

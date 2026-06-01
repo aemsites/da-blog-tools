@@ -879,7 +879,7 @@ class MsmActionPanel extends LitElement {
       <div class="panel">
         <div class="panel-header">
           <h3 class="panel-title">${page.name}</h3>
-          <span class="panel-subtitle">${page.path}</span>
+          <span class="panel-subtitle">${this.site}</span>
         </div>
         <div class="panel-body">
           ${this.renderSuccessBanner()}
