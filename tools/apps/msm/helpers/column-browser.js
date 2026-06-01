@@ -729,7 +729,9 @@ class MsmColumnBrowser extends LitElement {
             // so exclusion changes don't require a cache invalidation.
             this._folderCache.set(
               cacheKey,
-              items.filter((i) => !i.isFolder && !i.isSite).map((i) => ({ ...i, site: folderSite })),
+              items
+                .filter((i) => !i.isFolder && !i.isSite)
+                .map((i) => ({ ...i, site: folderSite })),
             );
           } catch (e) {
             console.error('Failed to resolve folder pages:', e);
