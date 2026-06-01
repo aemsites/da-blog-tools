@@ -74,26 +74,6 @@ class MsmColumnBrowser extends LitElement {
     }
   }
 
-  _updateUrl(site, path) {
-    if (!window.history?.replaceState || !this.org) return;
-    const params = new URLSearchParams(window.location.search);
-    params.set('org', this.org);
-    if (site) params.set('site', site); else params.delete('site');
-    if (path) params.set('path', path); else params.delete('path');
-    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
-  }
-
-  _getCurrentBrowsedPath() {
-    for (let i = this._columns.length - 1; i >= 0; i -= 1) {
-      const col = this._columns[i];
-      if (col.selectedPath) {
-        const item = col.items.find((it) => it.path === col.selectedPath);
-        if (item && !item.isSite) return col.selectedPath;
-        return null;
-      }
-    }
-    return null;
-  }
 
   updated(changed) {
     if (changed.has('hideInherited') && this.hideInherited) {
@@ -343,8 +323,6 @@ class MsmColumnBrowser extends LitElement {
     if (willUncheck) this._clearFocusIfMatches(item);
     this._refreshSelectionCategory();
     const site = item.site || this.getCurrentSite();
-    const urlPath = willUncheck ? this._getCurrentBrowsedPath() : item.path;
-    this._updateUrl(site, urlPath);
     this.emitSelection(site);
   }
 
@@ -525,9 +503,6 @@ class MsmColumnBrowser extends LitElement {
     this.scrollToActiveColumn();
 
     this.clearChecksAfterColumn(colIdx);
-    if (!this._suppressEmit) {
-      this._updateUrl(site, item.isSite ? null : item.path);
-    }
     this.emitSelection(site);
   }
 
@@ -594,8 +569,6 @@ class MsmColumnBrowser extends LitElement {
     this._refreshSelectionCategory();
 
     const site = item.site || this.getCurrentSite();
-    const urlPath = e.target.checked ? item.path : this._getCurrentBrowsedPath();
-    this._updateUrl(site, urlPath);
     this.emitSelection(site);
   }
 
