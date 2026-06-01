@@ -53,11 +53,45 @@ class MsmColumnBrowser extends LitElement {
     this._emitSeq = 0;
     this._handleKeydown = this._onKeydown.bind(this);
 
-    if (this.site) {
+    if (this.role === 'satellite') {
+      // Satellite: content starts at the satellite's own root (no sites list)
       this.initSiteRoot();
     } else {
+      // Base / dual: always anchor with the sites list as column 0
       this.initSitesColumn();
+      if (this.site) this._initFromSite(this.site);
     }
+  }
+
+  async _initFromSite(site) {
+    const siteItem = this._columns[0]?.items.find((it) => it.site === site);
+    if (!siteItem) return;
+    await this.navigateToFolder(0, siteItem);
+    if (this.deepLinkPath && !this._deepLinkConsumed) {
+      this._deepLinkConsumed = true;
+      await this._navigateToPath(this.deepLinkPath);
+    }
+  }
+
+  _updateUrl(site, path) {
+    if (!window.history?.replaceState || !this.org) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set('org', this.org);
+    if (site) params.set('site', site); else params.delete('site');
+    if (path) params.set('path', path); else params.delete('path');
+    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+  }
+
+  _getCurrentBrowsedPath() {
+    for (let i = this._columns.length - 1; i >= 0; i -= 1) {
+      const col = this._columns[i];
+      if (col.selectedPath) {
+        const item = col.items.find((it) => it.path === col.selectedPath);
+        if (item && !item.isSite) return col.selectedPath;
+        return null;
+      }
+    }
+    return null;
   }
 
   updated(changed) {
@@ -333,13 +367,29 @@ class MsmColumnBrowser extends LitElement {
   }
 
   initSitesColumn() {
-    if (!this.msmConfig?.baseSites?.length) return;
-    const items = this.msmConfig.baseSites.map((bs) => ({
-      name: `${this.org} / ${bs.label || bs.site}`,
-      path: bs.site,
+    const rows = this.msmConfig?.rows;
+    if (!rows?.length) return;
+
+    // Collect all sites (both bases and satellites) with their labels.
+    // Base-site labels come from label rows (base set, satellite empty, title set).
+    // Satellite labels come from the relationship row's title field.
+    const sitesMap = new Map();
+    rows.forEach((row) => {
+      if (row.base && !sitesMap.has(row.base)) {
+        const labelRow = rows.find((r) => r.base === row.base && !r.satellite);
+        sitesMap.set(row.base, labelRow?.title || row.base);
+      }
+      if (row.satellite && !sitesMap.has(row.satellite)) {
+        sitesMap.set(row.satellite, row.title || row.satellite);
+      }
+    });
+
+    const items = [...sitesMap.entries()].map(([site, label]) => ({
+      name: label,
+      path: site,
       isFolder: true,
       isSite: true,
-      site: bs.site,
+      site,
     }));
     this._columns = [{ header: 'Sites', items, selectedPath: null }];
   }
@@ -629,8 +679,15 @@ class MsmColumnBrowser extends LitElement {
 
     const lastCol = this._columns[this._columns.length - 1];
     const currentPath = lastCol?.header || '';
+
+    const urlSite = site || this.getCurrentSite();
+    const urlPath = selectedItems.length > 0
+      ? selectedItems[selectedItems.length - 1].path
+      : this._getCurrentBrowsedPath();
+    this._updateUrl(urlSite, urlPath);
+
     this.dispatchEvent(new CustomEvent('browse-selection', {
-      detail: { selectedItems, currentPath, site: site || this.getCurrentSite() },
+      detail: { selectedItems, currentPath, site: urlSite },
       bubbles: true,
       composed: true,
     }));

@@ -151,6 +151,12 @@ class MsmApp extends LitElement {
     this._currentPath = '';
     this._pageOverrides = new Map();
     this._state = 'loading';
+
+    const params = new URLSearchParams();
+    params.set('org', org);
+    if (site) params.set('site', site);
+    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+
     this.loadConfig(org);
   }
 
