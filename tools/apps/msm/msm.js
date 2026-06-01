@@ -76,6 +76,7 @@ class MsmApp extends LitElement {
     _hasDescendants: { state: true },
     _hideInherited: { state: true },
     _deepLinkPath: { state: true },
+    _hasMore: { state: true },
     _deepLinkWarning: { state: true },
   };
 
@@ -92,6 +93,7 @@ class MsmApp extends LitElement {
     this._parentBase = '';
     this._parentChain = [];
     this._hasDescendants = false;
+    this._hasMore = false;
     this._hideInherited = loadHideInheritedPref();
     this._deepLinkPath = '';
     this._deepLinkWarning = '';
@@ -227,10 +229,13 @@ class MsmApp extends LitElement {
   }
 
   handleBrowseSelection(e) {
-    const { selectedItems, currentPath, site } = e.detail;
+    const {
+      selectedItems, currentPath, site, hasMore,
+    } = e.detail;
     this._selectedItems = selectedItems;
     this._currentPath = currentPath;
     this._currentSite = site;
+    this._hasMore = !!hasMore;
 
     if (this._role === 'satellite' || this._role === 'dual') {
       const selfSite = this._role === 'satellite' ? this._site : site;
@@ -407,6 +412,7 @@ class MsmApp extends LitElement {
             .overrides=${this._pageOverrides}
             .isSinglePage=${this._isSinglePage}
             .hasDescendants=${this._hasDescendants}
+            .hasMore=${this._hasMore}
             .msmConfig=${this._msmConfig}
             @action-complete=${this.handleActionComplete}
           ></msm-action-panel>

@@ -117,6 +117,7 @@ class MsmActionPanel extends LitElement {
     overrides: { attribute: false },
     isSinglePage: { type: Boolean },
     hasDescendants: { type: Boolean },
+    hasMore: { type: Boolean },
     msmConfig: { attribute: false },
     _satData: { state: true },
     _collapsed: { state: true },
@@ -913,7 +914,7 @@ class MsmActionPanel extends LitElement {
     return html`
       <div class="panel">
         <div class="panel-header">
-          <h3 class="panel-title">${this.pages.length} pages selected</h3>
+          <h3 class="panel-title">${this.pages.length}${this.hasMore ? '+' : ''} pages selected</h3>
           <span class="panel-subtitle">${this.site}</span>
         </div>
         <div class="panel-body">

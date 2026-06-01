@@ -162,10 +162,9 @@ class MsmColumnBrowser extends LitElement {
     return 'local';
   }
 
+  // eslint-disable-next-line no-unused-vars
   _isCheckBlocked(item) {
-    if (!this._selectionCategory) return false;
-    if (this.isItemChecked(item)) return false;
-    return this._itemCategory(item) !== this._selectionCategory;
+    return false;
   }
 
   invalidateMergedCache() {
@@ -561,12 +560,16 @@ class MsmColumnBrowser extends LitElement {
 
   _loadColumnStatus(items, site) {
     if (!this.org || !site) return;
-    items.filter((i) => isActionableItem(i)).forEach(async (item) => {
-      const cleanPath = item.path.replace(/\.[^/.]+$/, '');
-      const status = await getSatellitePageStatus(this.org, site, cleanPath);
-      const next = new Map(this._itemStatus);
-      next.set(this._itemKey(item), status);
-      this._itemStatus = next;
+    items.filter((i) => !i.isFolder && !i.isSite).forEach(async (item) => {
+      try {
+        const cleanPath = item.path.replace(/\.[^/.]+$/, '');
+        const status = await getSatellitePageStatus(this.org, site, cleanPath);
+        const next = new Map(this._itemStatus);
+        next.set(this._itemKey(item), status);
+        this._itemStatus = next;
+      } catch {
+        // Status load failed silently; icon remains hidden for this item.
+      }
     });
   }
 
@@ -759,8 +762,13 @@ class MsmColumnBrowser extends LitElement {
 
     const lastCol = this._columns[this._columns.length - 1];
     const currentPath = lastCol?.header || '';
+    // hasMore: folder/site selections only load one level deep, so the real
+    // page count may exceed what's in selectedItems.
+    const hasMore = checkedFolders.length > 0;
     this.dispatchEvent(new CustomEvent('browse-selection', {
-      detail: { selectedItems, currentPath, site: site || this.getCurrentSite() },
+      detail: {
+        selectedItems, currentPath, site: site || this.getCurrentSite(), hasMore,
+      },
       bubbles: true,
       composed: true,
     }));
@@ -876,7 +884,7 @@ class MsmColumnBrowser extends LitElement {
   }
 
   _renderItemIcons(item) {
-    if (!isActionableItem(item)) return nothing;
+    if (item.isFolder || item.isSite) return nothing;
     let icon1 = nothing;
     if (item.inheritedFrom) {
       icon1 = html`<span class="item-status-icon" style="color:var(--s2-green-700,#0ba45d)" title="Inherited from ${item.inheritedFrom}">${ICON_DOC_CHECK}</span>`;
