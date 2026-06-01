@@ -343,6 +343,8 @@ class MsmColumnBrowser extends LitElement {
     if (willUncheck) this._clearFocusIfMatches(item);
     this._refreshSelectionCategory();
     const site = item.site || this.getCurrentSite();
+    const urlPath = willUncheck ? this._getCurrentBrowsedPath() : item.path;
+    this._updateUrl(site, urlPath);
     this.emitSelection(site);
   }
 
@@ -523,6 +525,9 @@ class MsmColumnBrowser extends LitElement {
     this.scrollToActiveColumn();
 
     this.clearChecksAfterColumn(colIdx);
+    if (!this._suppressEmit) {
+      this._updateUrl(site, item.isSite ? null : item.path);
+    }
     this.emitSelection(site);
   }
 
@@ -589,6 +594,8 @@ class MsmColumnBrowser extends LitElement {
     this._refreshSelectionCategory();
 
     const site = item.site || this.getCurrentSite();
+    const urlPath = e.target.checked ? item.path : this._getCurrentBrowsedPath();
+    this._updateUrl(site, urlPath);
     this.emitSelection(site);
   }
 
@@ -680,15 +687,8 @@ class MsmColumnBrowser extends LitElement {
 
     const lastCol = this._columns[this._columns.length - 1];
     const currentPath = lastCol?.header || '';
-
-    const urlSite = site || this.getCurrentSite();
-    const urlPath = selectedItems.length > 0
-      ? selectedItems[selectedItems.length - 1].path
-      : this._getCurrentBrowsedPath();
-    this._updateUrl(urlSite, urlPath);
-
     this.dispatchEvent(new CustomEvent('browse-selection', {
-      detail: { selectedItems, currentPath, site: urlSite },
+      detail: { selectedItems, currentPath, site: site || this.getCurrentSite() },
       bubbles: true,
       composed: true,
     }));
