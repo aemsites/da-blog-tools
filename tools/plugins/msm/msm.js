@@ -2,6 +2,7 @@
 /* eslint-disable class-methods-use-this */
 import { LitElement, html, nothing } from 'da-lit';
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
+import { DA_ORIGIN } from 'https://da.live/nx/public/utils/constants.js';
 import {
   getSiteConfig,
   getSatelliteTree,
@@ -238,14 +239,17 @@ class DaMsm extends LitElement {
     return chain;
   }
 
-  // Returns the Last-Modified of the nearest ancestor with local DA content,
-  // or the root-base timestamp when no ancestor has a local copy.
-  _effectiveBaseLM(siteId) {
+  // Returns the site and Last-Modified of the nearest ancestor with local DA content,
+  // or the root-base site/timestamp when no ancestor has a local copy.
+  _resolveEditSource(siteId) {
     const ancestors = this._ancestorChain(siteId);
     const nearest = ancestors.find((id) => this._satData.get(id)?.hasOverride === true);
-    return nearest
-      ? (this._satData.get(nearest)?.lastModified || null)
-      : this._baseSiteLastModified;
+    return {
+      site: nearest || null,
+      lastModified: nearest
+        ? (this._satData.get(nearest)?.lastModified || null)
+        : this._baseSiteLastModified,
+    };
   }
 
   async _loadNodes(siteIds) {
@@ -271,10 +275,12 @@ class DaMsm extends LitElement {
 
     siteIds.forEach((id) => {
       const d = this._satData.get(id);
-      const editLM = d?.hasOverride ? d.lastModified : this._effectiveBaseLM(id);
-      // eslint-disable-next-line no-console
-      console.log('[MSM] _loadNodes editLM', id, { hasOverride: d?.hasOverride, editLM, effectiveBase: this._effectiveBaseLM(id) });
-      getSatellitePageStatus(org, id, path, editLM).then((status) => {
+      const editSource = d?.hasOverride
+        ? { site: id, lastModified: d.lastModified }
+        : this._resolveEditSource(id);
+      const editResource = `${DA_ORIGIN}/source/${org}/${editSource.site || '[root-base]'}${path}.html`;
+      console.log('[MSM] load node', id, { editResource, editLM: editSource.lastModified });
+      getSatellitePageStatus(org, id, path, editSource.lastModified).then((status) => {
         const m = new Map(this._satData);
         m.set(id, { ...m.get(id), ...status });
         this._satData = m;
