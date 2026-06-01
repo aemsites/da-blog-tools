@@ -272,6 +272,8 @@ class DaMsm extends LitElement {
     siteIds.forEach((id) => {
       const d = this._satData.get(id);
       const editLM = d?.hasOverride ? d.lastModified : this._effectiveBaseLM(id);
+      // eslint-disable-next-line no-console
+      console.log('[MSM] _loadNodes editLM', id, { hasOverride: d?.hasOverride, editLM, effectiveBase: this._effectiveBaseLM(id) });
       getSatellitePageStatus(org, id, path, editLM).then((status) => {
         const m = new Map(this._satData);
         m.set(id, { ...m.get(id), ...status });

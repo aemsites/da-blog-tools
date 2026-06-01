@@ -91,6 +91,18 @@ export async function getSatellitePageStatus(org, satellite, pagePath, editLastM
     liveState = 'current';
   }
 
+  // eslint-disable-next-line no-console
+  console.log('[MSM] page status', satellite, {
+    editLastModified,
+    editTime,
+    previewStatus: json.preview?.status,
+    previewTime,
+    liveStatus: json.live?.status,
+    liveTime,
+    previewState,
+    liveState,
+  });
+
   return { previewState, liveState };
 }
 
