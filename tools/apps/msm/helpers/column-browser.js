@@ -75,15 +75,12 @@ class MsmColumnBrowser extends LitElement {
   }
 
   _updateUrl(site, path) {
-    console.log('[MSM] _updateUrl called', { site, path, org: this.org, hasReplaceState: !!window.history?.replaceState });
     if (!window.history?.replaceState || !this.org) return;
     const params = new URLSearchParams(window.location.search);
     params.set('org', this.org);
     if (site) params.set('site', site); else params.delete('site');
     if (path) params.set('path', path); else params.delete('path');
-    const newUrl = `${window.location.pathname}?${params.toString()}`;
-    console.log('[MSM] replaceState ->', newUrl);
-    window.history.replaceState(null, '', newUrl);
+    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
   }
 
   _getCurrentBrowsedPath() {
@@ -528,7 +525,6 @@ class MsmColumnBrowser extends LitElement {
     this.scrollToActiveColumn();
 
     this.clearChecksAfterColumn(colIdx);
-    console.log('[MSM] navigateToFolder end', { site, path: item.path, suppressEmit: this._suppressEmit });
     if (!this._suppressEmit) {
       this._updateUrl(site, item.isSite ? null : item.path);
     }
