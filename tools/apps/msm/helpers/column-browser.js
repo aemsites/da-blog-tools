@@ -69,7 +69,8 @@ class MsmColumnBrowser extends LitElement {
     await this.navigateToFolder(0, siteItem);
     if (this.deepLinkPath && !this._deepLinkConsumed) {
       this._deepLinkConsumed = true;
-      await this._navigateToPath(this.deepLinkPath);
+      // Column 0 is now the sites list; site root content is in column 1.
+      await this._navigateToPath(this.deepLinkPath, 1);
     }
   }
 
@@ -419,13 +420,13 @@ class MsmColumnBrowser extends LitElement {
     }
   }
 
-  async _navigateToPath(path) {
+  async _navigateToPath(path, startColIdx = 0) {
     const requested = path;
     const normalized = path.startsWith('/') ? path : `/${path}`;
     const parts = normalized.split('/').filter(Boolean);
 
     this._suppressEmit = true;
-    let colIdx = 0;
+    let colIdx = startColIdx;
     let cumPath = '';
     let lastResolved = '';
     let resolvedFully = parts.length === 0;
