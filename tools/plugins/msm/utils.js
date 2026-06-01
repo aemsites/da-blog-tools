@@ -57,8 +57,7 @@ export async function createOverride(org, base, satellite, pagePath) {
   return { ok: true };
 }
 
-// eslint-disable-next-line max-len
-export async function getSatellitePageStatus(org, satellite, pagePath, editLastModified = null, editResource = null) {
+export async function getSatellitePageStatus(org, satellite, pagePath, editLastModified = null) {
   const aemPath = pagePath.replace('.html', '');
   const resp = await daFetch(`${AEM_ADMIN}/status/${org}/${satellite}/main${aemPath}`);
 
@@ -91,19 +90,6 @@ export async function getSatellitePageStatus(org, satellite, pagePath, editLastM
   } else {
     liveState = 'current';
   }
-
-  // eslint-disable-next-line no-console
-  console.log('[MSM] page status', satellite, {
-    statusUrl: `${AEM_ADMIN}/status/${org}/${satellite}/main${aemPath}`,
-    editResource,
-    editLastModified,
-    previewLastModified: json.preview?.lastModified || null,
-    previewStatus: json.preview?.status,
-    liveLastModified: json.live?.lastModified || null,
-    liveStatus: json.live?.status,
-    previewState,
-    liveState,
-  });
 
   return { previewState, liveState };
 }

@@ -2,7 +2,6 @@
 /* eslint-disable class-methods-use-this */
 import { LitElement, html, nothing } from 'da-lit';
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
-import { DA_ORIGIN } from 'https://da.live/nx/public/utils/constants.js';
 import {
   getSiteConfig,
   getSatelliteTree,
@@ -178,11 +177,9 @@ class DaMsm extends LitElement {
       }
 
       // Load publish status for this site's page (for icon2 on the source row)
-      const siteEditResource = `${DA_ORIGIN}/source/${org}/${site}${path}.html`;
-      getSatellitePageStatus(org, site, path, siteTs.lastModified, siteEditResource)
-        .then((status) => {
-          this._sitePageStatus = status;
-        });
+      getSatellitePageStatus(org, site, path, siteTs.lastModified).then((status) => {
+        this._sitePageStatus = status;
+      });
     }
 
     this._loading = undefined;
@@ -241,17 +238,12 @@ class DaMsm extends LitElement {
     return chain;
   }
 
-  // Returns the site and Last-Modified of the nearest ancestor with local DA content,
-  // or the root-base site/timestamp when no ancestor has a local copy.
-  _resolveEditSource(siteId) {
+  _effectiveBaseLM(siteId) {
     const ancestors = this._ancestorChain(siteId);
     const nearest = ancestors.find((id) => this._satData.get(id)?.hasOverride === true);
-    return {
-      site: nearest || null,
-      lastModified: nearest
-        ? (this._satData.get(nearest)?.lastModified || null)
-        : this._baseSiteLastModified,
-    };
+    return nearest
+      ? (this._satData.get(nearest)?.lastModified || null)
+      : this._baseSiteLastModified;
   }
 
   async _loadNodes(siteIds) {
@@ -277,17 +269,12 @@ class DaMsm extends LitElement {
 
     siteIds.forEach((id) => {
       const d = this._satData.get(id);
-      const editSource = d?.hasOverride
-        ? { site: id, lastModified: d.lastModified }
-        : this._resolveEditSource(id);
-      const editResource = `${DA_ORIGIN}/source/${org}/${editSource.site || '[root-base]'}${path}.html`;
-      console.log('[MSM] load node', id, { editResource, editLM: editSource.lastModified });
-      getSatellitePageStatus(org, id, path, editSource.lastModified, editResource)
-        .then((status) => {
-          const m = new Map(this._satData);
-          m.set(id, { ...m.get(id), ...status });
-          this._satData = m;
-        });
+      const editLM = d?.hasOverride ? d.lastModified : this._effectiveBaseLM(id);
+      getSatellitePageStatus(org, id, path, editLM).then((status) => {
+        const m = new Map(this._satData);
+        m.set(id, { ...m.get(id), ...status });
+        this._satData = m;
+      });
     });
   }
 
