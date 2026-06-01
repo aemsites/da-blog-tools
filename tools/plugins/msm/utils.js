@@ -61,7 +61,11 @@ export async function getSatellitePageStatus(org, satellite, pagePath, editLastM
   const aemPath = pagePath.replace('.html', '');
   const resp = await daFetch(`${AEM_ADMIN}/status/${org}/${satellite}/main${aemPath}`);
 
-  if (!resp.ok) return { previewState: 'not-rolled-out', liveState: 'not-rolled-out' };
+  if (!resp.ok) {
+    return {
+      previewState: 'not-rolled-out', liveState: 'not-rolled-out', previewDate: null, liveDate: null,
+    };
+  }
   const json = await resp.json();
 
   const editTime = editLastModified ? new Date(editLastModified).getTime() : null;
@@ -91,7 +95,12 @@ export async function getSatellitePageStatus(org, satellite, pagePath, editLastM
     liveState = 'current';
   }
 
-  return { previewState, liveState };
+  return {
+    previewState,
+    liveState,
+    previewDate: json.preview?.lastModified || null,
+    liveDate: json.live?.lastModified || null,
+  };
 }
 
 export async function deleteOverride(org, satellite, pagePath) {

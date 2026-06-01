@@ -385,11 +385,42 @@ export async function getSatellitePageStatus(org, satellite, pagePath, ext = 'ht
   const aemPath = ext === 'html' ? pagePath : `${pagePath}.${ext}`;
   const url = `${AEM_ADMIN}/status/${org}/${satellite}/main${aemPath}`;
   const resp = await daFetch(url);
-  if (!resp.ok) return { preview: false, live: false };
+  if (!resp.ok) {
+    return {
+      previewState: 'not-rolled-out',
+      liveState: 'not-rolled-out',
+      previewDate: null,
+      liveDate: null,
+    };
+  }
   const json = await resp.json();
+
+  const previewTime = json.preview?.lastModified
+    ? new Date(json.preview.lastModified).getTime() : null;
+  const liveTime = json.live?.lastModified
+    ? new Date(json.live.lastModified).getTime() : null;
+
+  let previewState;
+  if (json.preview?.status !== 200) {
+    previewState = 'not-rolled-out';
+  } else {
+    previewState = 'current';
+  }
+
+  let liveState;
+  if (json.live?.status !== 200) {
+    liveState = 'not-rolled-out';
+  } else if (previewTime !== null && liveTime !== null && previewTime > liveTime) {
+    liveState = 'behind';
+  } else {
+    liveState = 'current';
+  }
+
   return {
-    preview: json.preview?.status === 200,
-    live: json.live?.status === 200,
+    previewState,
+    liveState,
+    previewDate: json.preview?.lastModified || null,
+    liveDate: json.live?.lastModified || null,
   };
 }
 
@@ -495,10 +526,10 @@ export async function executeBulkAction({
             const pageStatus = await getSatellitePageStatus(org, satSite, pagePath, ext);
             result = await deleteOverride(org, satSite, pagePath, ext);
             if (!result?.error) {
-              if (pageStatus.live) {
+              if (pageStatus.liveState !== 'not-rolled-out') {
                 await previewSatellite(org, satSite, pagePath, ext);
                 await publishSatellite(org, satSite, pagePath, ext);
-              } else if (pageStatus.preview) {
+              } else if (pageStatus.previewState !== 'not-rolled-out') {
                 await previewSatellite(org, satSite, pagePath, ext);
               }
             }

@@ -90,22 +90,22 @@
   cursor: pointer;
   user-select: none;
   transition: background-color 0.1s;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--s2-gray-800);
-  min-height: 32px;
+  min-height: 36px;
   box-sizing: border-box;
 }
 
 .item:hover {
-  background: var(--s2-gray-100, #f5f5f5);
+  background: var(--s2-gray-50, #f8f8f8);
 }
 
 .item.selected {
-  background: var(--s2-blue-100, #e0ecff);
+  background: var(--s2-blue-100, #e5f0fe);
 }
 
 .item.selected:hover {
-  background: var(--s2-blue-200, #cce0ff);
+  background: var(--s2-blue-200, #cbe2fe);
 }
 
 /* Ancestor folders on the path to the current column (previous columns) */
@@ -208,7 +208,7 @@
 /* ===== Inherited item (page or folder served via MSM fallback) ===== */
 
 .item.inherited .item-label {
-  color: var(--s2-gray-600, #6e6e6e);
+  color: var(--s2-gray-500, #929292);
 }
 
 .item.inherited .item-icon {
