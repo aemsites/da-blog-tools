@@ -57,17 +57,29 @@ export async function createOverride(org, base, satellite, pagePath) {
   return { ok: true };
 }
 
+async function getDaSourceLastModified(org, site, pagePath) {
+  const resp = await daFetch(
+    `${DA_ORIGIN}/source/${org}/${site}${pagePath}.html`,
+    { method: 'HEAD' },
+  );
+  return resp.ok ? (resp.headers?.get('Last-Modified') || null) : null;
+}
+
 export async function getSatellitePageStatus(org, satellite, pagePath) {
   const aemPath = pagePath.replace('.html', '');
-  const url = `${AEM_ADMIN}/status/${org}/${satellite}/main${aemPath}`;
-  const resp = await daFetch(url);
-  if (!resp.ok) return { previewState: 'not-rolled-out', liveState: 'not-rolled-out' };
-  const json = await resp.json();
+  const [statusResp, editLastModified] = await Promise.all([
+    daFetch(`${AEM_ADMIN}/status/${org}/${satellite}/main${aemPath}`),
+    getDaSourceLastModified(org, satellite, pagePath),
+  ]);
 
-  const editTime = json.edit?.lastModified ? new Date(json.edit.lastModified).getTime() : null;
-  const previewMod = json.preview?.lastModified;
-  const previewTime = previewMod ? new Date(previewMod).getTime() : null;
-  const liveTime = json.live?.lastModified ? new Date(json.live.lastModified).getTime() : null;
+  if (!statusResp.ok) return { previewState: 'not-rolled-out', liveState: 'not-rolled-out' };
+  const json = await statusResp.json();
+
+  const editTime = editLastModified ? new Date(editLastModified).getTime() : null;
+  const previewTime = json.preview?.lastModified
+    ? new Date(json.preview.lastModified).getTime() : null;
+  const liveTime = json.live?.lastModified
+    ? new Date(json.live.lastModified).getTime() : null;
 
   let previewState;
   if (json.preview?.status !== 200) {
