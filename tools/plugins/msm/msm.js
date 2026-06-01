@@ -178,9 +178,11 @@ class DaMsm extends LitElement {
       }
 
       // Load publish status for this site's page (for icon2 on the source row)
-      getSatellitePageStatus(org, site, path, siteTs.lastModified).then((status) => {
-        this._sitePageStatus = status;
-      });
+      const siteEditResource = `${DA_ORIGIN}/source/${org}/${site}${path}.html`;
+      getSatellitePageStatus(org, site, path, siteTs.lastModified, siteEditResource)
+        .then((status) => {
+          this._sitePageStatus = status;
+        });
     }
 
     this._loading = undefined;
@@ -280,11 +282,12 @@ class DaMsm extends LitElement {
         : this._resolveEditSource(id);
       const editResource = `${DA_ORIGIN}/source/${org}/${editSource.site || '[root-base]'}${path}.html`;
       console.log('[MSM] load node', id, { editResource, editLM: editSource.lastModified });
-      getSatellitePageStatus(org, id, path, editSource.lastModified).then((status) => {
-        const m = new Map(this._satData);
-        m.set(id, { ...m.get(id), ...status });
-        this._satData = m;
-      });
+      getSatellitePageStatus(org, id, path, editSource.lastModified, editResource)
+        .then((status) => {
+          const m = new Map(this._satData);
+          m.set(id, { ...m.get(id), ...status });
+          this._satData = m;
+        });
     });
   }
 
