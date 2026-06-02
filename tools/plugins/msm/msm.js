@@ -217,7 +217,21 @@ class DaMsm extends LitElement {
   }
 
   _inheritedInSubtree(rootSiteId) {
-    return this._subtree(rootSiteId).filter((id) => this._satData.get(id)?.hasOverride === false);
+    const find = (nodes) => nodes.reduce((acc, n) => {
+      if (acc) return acc;
+      if (n.siteId === rootSiteId) return n;
+      return find(n.children || []);
+    }, null);
+    const node = find(this._tree);
+    if (!node) return this._satData.get(rootSiteId)?.hasOverride === false ? [rootSiteId] : [];
+    const ids = [];
+    const collect = (n) => {
+      if (this._satData.get(n.siteId)?.hasOverride !== false) return;
+      ids.push(n.siteId);
+      (n.children || []).forEach(collect);
+    };
+    collect(node);
+    return ids;
   }
 
   _parentOf(siteId, nodes = this._tree, parent = null) {
@@ -550,7 +564,7 @@ class DaMsm extends LitElement {
     const isDestructive = ['sync', 'sync-source', 'cancel-inheritance', 'resume-inheritance'].includes(c.type);
 
     let scopeChips = nothing;
-    if (c.type === 'rollout' && this._fullConfirmScope.length > 1) {
+    if (c.type === 'rollout' && this._fullConfirmScope.length > 0) {
       scopeChips = html`
         <div class="confirm-scope">
           ${this._fullConfirmScope.map((id) => {
