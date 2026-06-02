@@ -329,6 +329,7 @@ class DaMsm extends LitElement {
   }
 
   async _resumeInheritance(siteId) {
+    if (this._busy) return;
     this._busy = true;
     const { org, path } = this.details;
     const pageStatus = await getSatellitePageStatus(org, siteId, path);
@@ -340,7 +341,11 @@ class DaMsm extends LitElement {
       } else if (pageStatus.previewState !== 'not-rolled-out') {
         await previewSatellite(org, siteId, path);
       }
-      this._setSatField(siteId, { hasOverride: false, outOfSync: false });
+      if (siteId === this.details.site) {
+        this._hasOverride = false;
+      } else {
+        this._setSatField(siteId, { hasOverride: false, outOfSync: false });
+      }
       this._successData = { targets: [siteId], action: 'resume-inheritance' };
     }
     this._busy = false;
@@ -381,25 +386,6 @@ class DaMsm extends LitElement {
     this._busy = false;
   }
 
-  async _revertToBase() {
-    if (this._busy) return;
-    this._busy = true;
-    const { org, site, path } = this.details;
-    const pageStatus = await getSatellitePageStatus(org, site, path);
-    const result = await deleteOverride(org, site, path);
-    if (!result?.error) {
-      if (pageStatus.liveState !== 'not-rolled-out') {
-        await previewSatellite(org, site, path);
-        await publishSatellite(org, site, path);
-      } else if (pageStatus.previewState !== 'not-rolled-out') {
-        await previewSatellite(org, site, path);
-      }
-      this._hasOverride = false;
-      this._successData = { targets: [site], action: 'revert-to-base' };
-    }
-    this._busy = false;
-  }
-
   // ── Confirm / scope chip helpers ──────────────────────────────────────────
 
   _openConfirm(siteId, type, message = null) {
@@ -410,7 +396,21 @@ class DaMsm extends LitElement {
     this._closeMenu();
   }
 
-  _openRolloutAllConfirm() {
+  async _openRolloutAllConfirm() {
+    const allSiteIds = [];
+    const collect = (nodes) => nodes.forEach((n) => {
+      allSiteIds.push(n.siteId);
+      if (n.children?.length) collect(n.children);
+    });
+    collect(this._tree);
+
+    const unloaded = allSiteIds.filter((id) => this._satData.get(id)?.hasOverride === undefined);
+    if (unloaded.length) {
+      this._busy = true;
+      await this._loadNodes(unloaded);
+      this._busy = false;
+    }
+
     const allInherited = [];
     this._tree.forEach((n) => allInherited.push(...this._inheritedInSubtree(n.siteId)));
     const full = [...new Set(allInherited)];
@@ -587,9 +587,9 @@ class DaMsm extends LitElement {
       actions = html`
         <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._cancelInheritance(c.siteId); }}>Create local copy</button>
         <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
-    } else if (c.type === 'resume-inheritance' || c.type === 'resume-source') {
+    } else if (c.type === 'resume-inheritance') {
       actions = html`
-        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); if (c.type === 'resume-source') this._revertToBase(); else this._resumeInheritance(c.siteId); }}>Remove local copy</button>
+        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._resumeInheritance(c.siteId); }}>Remove local copy</button>
         <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
     }
 
@@ -619,7 +619,7 @@ class DaMsm extends LitElement {
           danger: true,
           action: () => {
             const base = this._asSatellite?.baseLabel || this._asSatellite?.base || 'source';
-            this._openConfirm('__source__', 'resume-source', `Remove your local copy? This page will serve ${base}'s content again. This cannot be undone.`);
+            this._openConfirm(this.details.site, 'resume-inheritance', `Remove your local copy? This page will serve ${base}'s content again. This cannot be undone.`);
           },
         }, { sep: true }] : []),
         { label: 'Open source page ↗', action: () => { window.open(pageUrl, '_blank', 'noopener'); this._closeMenu(); } },
@@ -670,26 +670,36 @@ class DaMsm extends LitElement {
     } else if (action === 'cancel-inheritance') {
       title = `Local copy created for ${this._satData.get(targets[0])?.label || targets[0]}`;
     } else if (action === 'resume-inheritance') {
-      title = `Local copy removed — ${this._satData.get(targets[0])?.label || targets[0]} now follows base`;
+      const label = this._satData.get(targets[0])?.label;
+      title = label ? `Local copy removed — ${label} now follows base` : 'Local copy removed — now follows base';
     } else if (action === 'sync-merge') {
       title = `${this._satData.get(targets[0])?.label || targets[0]} merged from source`;
     } else if (action === 'sync-override') {
       title = `${this._satData.get(targets[0])?.label || targets[0]} overwritten from source`;
     } else if (action === 'pull-from-base') {
       title = 'Page updated from base';
-    } else if (action === 'revert-to-base') {
-      title = 'Local copy removed — now following base';
     }
+
+    const { org, path } = this.details;
+    const pagePath = path.replace('.html', '');
+
+    const successLink = (id) => {
+      if (action === 'resume-inheritance') return nothing;
+      const label = this._satData.get(id)?.label || id;
+      const url = action === 'rollout'
+        ? `https://main--${id}--${org}.${level === 'live' ? 'aem.live' : 'aem.page'}${pagePath}`
+        : `https://da.live/edit#/${org}/${id}${path}`;
+      return html`<button class="success-link-btn"
+        @click=${() => window.open(url, '_blank', 'noopener')}>
+        Open ${label} ↗
+      </button>`;
+    };
 
     return html`
       <div class="success-banner">
         <div class="success-title">${icon('icon-circle-check')}${title}</div>
         <div class="success-links">
-          ${targets.map((id) => html`
-            <button class="success-link-btn"
-              @click=${() => window.open(`https://da.live/edit#/${this.details.org}/${id}${this.details.path}`, '_blank', 'noopener')}>
-              Open ${this._satData.get(id)?.label || id} ↗
-            </button>`)}
+          ${targets.map((id) => successLink(id))}
           <button class="success-dismiss" @click=${() => { this._successData = null; }}>Dismiss</button>
         </div>
       </div>`;
@@ -793,7 +803,9 @@ class DaMsm extends LitElement {
     return html`
       <div class="plugin-meta">${org}/${site} · ${path}</div>
       <hr class="plugin-hr">
-      ${this.renderSuccessBanner()}
+      ${this._busy
+    ? html`<div class="busy-banner"><span class="busy-spinner"></span>Working…</div>`
+    : this.renderSuccessBanner()}
       ${this.renderSourceSection()}
       ${this.renderSatellitesSection()}
       ${this.renderOverflowMenu()}
