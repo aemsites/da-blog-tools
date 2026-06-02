@@ -1,6 +1,14 @@
 /* eslint-disable no-underscore-dangle, import/no-unresolved, no-console, class-methods-use-this */
 import { LitElement, html, nothing } from 'da-lit';
-import { listFolder, listFolderWithInheritance, isActionableItem } from './api.js';
+import {
+  listFolder,
+  listFolderWithInheritance,
+  isActionableItem,
+  getAllMsmSites,
+  getPageStatus,
+  getStatusConfig,
+} from './api.js';
+import { icon } from '../core/icons.js';
 
 const NX = 'https://da.live/nx';
 let sl;
@@ -15,112 +23,74 @@ try {
   console.warn('Failed to load column-browser styles:', e);
 }
 
-const FOLDER_ICON = html`<svg class="item-icon" viewBox="0 0 18 18" fill="currentColor"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h4l2 2h5A1.5 1.5 0 0 1 15 5.5v8a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 13.5z"/></svg>`;
-const PAGE_ICON = html`<svg class="item-icon" viewBox="0 0 18 18" fill="currentColor"><path d="M4 1h7l4 4v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2zm6.5 0v3.5H14"/></svg>`;
-const ARROW_RIGHT = html`<svg class="item-arrow" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="3,1 7,5 3,9"/></svg>`;
-const BACK_ARROW = html`<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="7,1 3,5 7,9"/></svg>`;
-const INHERITED_BADGE = html`<svg class="inherited-badge" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z" fill="currentColor"/></svg>`;
+const GLOBE_ICON = icon('S2_Icon_GlobeGrid_20_N');
+const FOLDER_ICON = icon('S2_Icon_Folder_20_N');
+const PAGE_ICON = icon('S2_Icon_File_20_N');
+const ARROW_RIGHT = icon('S2_Icon_ChevronRight_20_N', '0 0 20 20', 14, 14);
+const BACK_ARROW = icon('S2_Icon_ChevronLeft_20_N', '0 0 20 20', 14, 14);
+
+// Out-of-sync tolerance: publishing bumps lastModified slightly after the fact.
+const PUBLISH_LAG_MS = 5000;
+
+const itemKey = (item) => `${item.site || ''}:${item.path}`;
+const parseKey = (key) => {
+  const idx = key.indexOf(':');
+  return { site: key.slice(0, idx), path: key.slice(idx + 1) };
+};
 
 class MsmColumnBrowser extends LitElement {
   static properties = {
     org: { type: String },
-    role: { type: String },
-    site: { type: String },
     msmConfig: { attribute: false },
-    hideInherited: { type: Boolean },
-    deepLinkPath: { type: String },
+    initialSite: { type: String },
+    initialPath: { type: String },
     _columns: { state: true },
-    _checked: { state: true },
+    _selectedPages: { state: true },
+    _checkedContainers: { state: true },
+    _rowStatus: { state: true },
     _activeColumnIdx: { state: true },
     _loadingColumn: { state: true },
     _focusedItem: { state: true },
-    _selectionCategory: { state: true },
   };
 
   connectedCallback() {
     super.connectedCallback();
     this.shadowRoot.adoptedStyleSheets = [sl, sheet].filter(Boolean);
     this._columns = [];
-    this._checked = new Set();
+    this._selectedPages = new Map();
+    this._checkedContainers = new Set();
+    this._rowStatus = new Map();
     this._activeColumnIdx = 0;
     this._loadingColumn = -1;
     this._focusedItem = null;
-    this._selectionCategory = null;
-    this._folderCache = new Map();
     this._mergedFolderCache = new Map();
-    // Monotonic counter used by `emitSelection` to detect and drop stale
-    // dispatches when the user check/unchecks faster than folder pages load.
-    this._emitSeq = 0;
+    // Per-container crawl generation; bumping it cancels an in-flight crawl.
+    this._crawlGen = new Map();
+    this._initKey = null;
     this._handleKeydown = this._onKeydown.bind(this);
-
-    if (this.site) {
-      this.initSiteRoot();
-    } else {
-      this.initSitesColumn();
-    }
+    this._maybeInit();
   }
 
   updated(changed) {
-    if (changed.has('hideInherited') && this.hideInherited) {
-      this._pruneHiddenInheritedChecks();
+    if (changed.has('org') || changed.has('msmConfig')
+      || changed.has('initialSite') || changed.has('initialPath')) {
+      this._maybeInit();
     }
   }
 
-  _setFocus(columnIdx, item) {
-    this._focusedItem = item ? {
-      columnIdx,
-      path: item.path,
-      site: item.site || '',
-    } : null;
-  }
-
-  _getActiveFocusedIdx() {
-    const f = this._focusedItem;
-    if (!f || f.columnIdx !== this._activeColumnIdx) return -1;
-    const col = this._columns[this._activeColumnIdx];
-    if (!col) return -1;
-    const items = this._visibleItems(col);
-    return items.findIndex((it) => (
-      it.path === f.path && (it.site || '') === f.site
-    ));
-  }
-
-  _pruneHiddenInheritedChecks() {
-    if (!this._checked.size) return;
-    const itemByKey = new Map();
-    this._columns.forEach((col) => {
-      col.items.forEach((it) => {
-        itemByKey.set(`${it.site || ''}:${it.path}`, it);
-      });
-    });
-
-    const next = new Set(this._checked);
-    let modified = false;
-    this._checked.forEach((key) => {
-      const it = itemByKey.get(key);
-      if (it?.inheritedFrom) {
-        next.delete(key);
-        modified = true;
-      }
-    });
-    if (!modified) return;
-
-    this._checked = next;
+  _maybeInit() {
+    if (!this.org || !this.msmConfig) return;
+    const key = `${this.org}|${this.initialSite || ''}|${this.initialPath || ''}`;
+    if (key === this._initKey) return;
+    this._initKey = key;
+    this._selectedPages = new Map();
+    this._checkedContainers = new Set();
+    this._rowStatus = new Map();
+    this._crawlGen = new Map();
     this._focusedItem = null;
-    this._refreshSelectionCategory();
-    this.emitSelection(this.getCurrentSite());
-  }
-
-  _itemCategory(item) {
-    if (item.inheritedFrom) return 'inherited';
-    if (item.hasLocalOverride) return 'overridden';
-    return 'local';
-  }
-
-  _isCheckBlocked(item) {
-    if (!this._selectionCategory) return false;
-    if (this.isItemChecked(item)) return false;
-    return this._itemCategory(item) !== this._selectionCategory;
+    this._activeColumnIdx = 0;
+    this.initSitesColumn();
+    if (this.initialSite) this._openDeepLink();
   }
 
   invalidateMergedCache() {
@@ -129,16 +99,13 @@ class MsmColumnBrowser extends LitElement {
 
   _siteHasInheritance(site) {
     if (!this.msmConfig || !site) return false;
-    return (this.msmConfig.rows || [])
-      .some((row) => row.satellite === site);
+    return (this.msmConfig.rows || []).some((row) => row.satellite === site);
   }
 
   async _loadFolderItems(site, path) {
     if (this._siteHasInheritance(site)) {
       const cacheKey = `${site}::${path}`;
-      if (this._mergedFolderCache.has(cacheKey)) {
-        return this._mergedFolderCache.get(cacheKey);
-      }
+      if (this._mergedFolderCache.has(cacheKey)) return this._mergedFolderCache.get(cacheKey);
       const items = await listFolderWithInheritance(this.org, site, path, this.msmConfig);
       this._mergedFolderCache.set(cacheKey, items);
       return items;
@@ -146,299 +113,92 @@ class MsmColumnBrowser extends LitElement {
     return listFolder(this.org, site, path);
   }
 
-  disconnectedCallback() {
-    super.disconnectedCallback();
-  }
-
-  _onKeydown(e) {
-    const col = this._columns[this._activeColumnIdx];
-    if (!col) return;
-    const items = this._visibleItems(col);
-    if (!items.length) return;
-    const curIdx = this._getActiveFocusedIdx();
-
-    switch (e.key) {
-      case 'ArrowDown': {
-        e.preventDefault();
-        const nextIdx = Math.min(curIdx + 1, items.length - 1);
-        this._setFocus(this._activeColumnIdx, items[nextIdx]);
-        this.scrollFocusedIntoView();
-        break;
-      }
-      case 'ArrowUp': {
-        e.preventDefault();
-        const prevIdx = Math.max(curIdx - 1, 0);
-        this._setFocus(this._activeColumnIdx, items[prevIdx]);
-        this.scrollFocusedIntoView();
-        break;
-      }
-      case 'ArrowRight':
-      case 'Enter': {
-        e.preventDefault();
-        const item = items[curIdx];
-        if (item && (item.isFolder || item.isSite)) {
-          const fromColumn = this._activeColumnIdx;
-          this.navigateToFolder(fromColumn, item).then(() => {
-            const newCol = this._columns[fromColumn + 1];
-            const visible = newCol ? this._visibleItems(newCol) : [];
-            if (visible.length) {
-              this._setFocus(fromColumn + 1, visible[0]);
-              this.scrollFocusedIntoView();
-            }
-          });
-        }
-        break;
-      }
-      case 'ArrowLeft': {
-        e.preventDefault();
-        if (this._activeColumnIdx > 0) {
-          this._activeColumnIdx -= 1;
-          const prevCol = this._columns[this._activeColumnIdx];
-          const visible = prevCol ? this._visibleItems(prevCol) : [];
-          this._setFocus(this._activeColumnIdx, visible[0] || null);
-        }
-        break;
-      }
-      case ' ': {
-        e.preventDefault();
-        const item = items[curIdx];
-        if (item && this.showCheckbox(item)) {
-          this.toggleCheck(item, this._activeColumnIdx);
-        }
-        break;
-      }
-      default:
-        break;
-    }
-  }
-
-  _findItemElement(colIdx, path, site = '') {
-    const lists = this.shadowRoot.querySelectorAll('.column .column-items');
-    const list = lists[colIdx];
-    if (!list) return null;
-    return Array.from(list.querySelectorAll('.item')).find((el) => (
-      el.dataset.path === path
-      && (el.dataset.site || '') === (site || '')
-    )) || null;
-  }
-
-  scrollItemIntoView(colIdx, path, site = '', { block = 'nearest', behavior = 'auto' } = {}) {
-    return this.updateComplete.then(() => new Promise((resolve) => {
-      requestAnimationFrame(() => {
-        const target = this._findItemElement(colIdx, path, site);
-        if (target) {
-          target.scrollIntoView({ block, behavior, inline: 'nearest' });
-        }
-        resolve();
-      });
-    }));
-  }
-
-  scrollFocusedIntoView() {
-    const f = this._focusedItem;
-    if (!f) return this.updateComplete;
-    return this.scrollItemIntoView(f.columnIdx, f.path, f.site);
-  }
-
-  // Scroll the current selection into view (focused, checked, or path highlight).
-  // Used after deep-link navigation when the target row may be below the fold.
-  scrollSelectionIntoView({ block = 'center', behavior = 'smooth' } = {}) {
-    if (this._focusedItem) {
-      const { columnIdx, path, site } = this._focusedItem;
-      return this.scrollItemIntoView(columnIdx, path, site, { block, behavior });
-    }
-
-    for (let c = this._columns.length - 1; c >= 0; c -= 1) {
-      const col = this._columns[c];
-      const visible = this._visibleItems(col);
-      const checked = visible.find((item) => this.isItemChecked(item));
-      if (checked) {
-        return this.scrollItemIntoView(
-          c,
-          checked.path,
-          checked.site || '',
-          { block, behavior },
-        );
-      }
-    }
-
-    const highlighted = [...this._columns].reverse().find((col) => col.selectedPath);
-    if (highlighted) {
-      const item = highlighted.items.find((it) => it.path === highlighted.selectedPath);
-      if (item) {
-        const colIdx = this._columns.indexOf(highlighted);
-        return this.scrollItemIntoView(
-          colIdx,
-          item.path,
-          item.site || '',
-          { block, behavior },
-        );
-      }
-    }
-
-    return this.updateComplete;
-  }
-
-  scrollToActiveColumn() {
-    return this.updateComplete.then(() => new Promise((resolve) => {
-      requestAnimationFrame(() => {
-        if (window.innerWidth > 600) {
-          const browser = this.shadowRoot.querySelector('.browser');
-          if (browser) {
-            browser.scrollTo({ left: browser.scrollWidth, behavior: 'smooth' });
-          }
-        }
-        resolve();
-      });
-    }));
-  }
-
-  toggleCheck(item, colIdx) {
-    if (this._isCheckBlocked(item)) return;
-    // The user is acting on column `colIdx`; any deeper columns belong to a
-    // previously-opened folder that's no longer the current focus. Collapse
-    // them so the browser reflects the user's new context.
-    if (Number.isInteger(colIdx)) this._collapseColumnsAfter(colIdx);
-    const next = new Set(this._checked);
-    const key = `${item.site || ''}:${item.path}`;
-    const willUncheck = next.has(key);
-    if (willUncheck) next.delete(key);
-    else next.add(key);
-    this._checked = next;
-    if (willUncheck) this._clearFocusIfMatches(item);
-    this._refreshSelectionCategory();
-    const site = item.site || this.getCurrentSite();
-    this.emitSelection(site);
-  }
-
-  // Drops every column to the right of `colIdx` and prunes any checks that
-  // lived in those discarded columns. No-op when `colIdx` is already the
-  // rightmost column.
-  _collapseColumnsAfter(colIdx) {
-    if (colIdx >= this._columns.length - 1) return;
-    this._columns = this._columns.slice(0, colIdx + 1);
-    if (this._activeColumnIdx > colIdx) this._activeColumnIdx = colIdx;
-    if (this._focusedItem && this._focusedItem.columnIdx > colIdx) {
-      this._focusedItem = null;
-    }
-    this.clearChecksAfterColumn(colIdx);
-  }
-
-  _clearFocusIfMatches(item) {
-    const f = this._focusedItem;
-    if (!f) return;
-    if (f.path === item.path && f.site === (item.site || '')) {
-      this._focusedItem = null;
-    }
-  }
+  // ── Sites column ──────────────────────────────────────────────────────────
 
   initSitesColumn() {
-    if (!this.msmConfig?.baseSites?.length) return;
-    const items = this.msmConfig.baseSites.map((bs) => ({
-      name: `${this.org} / ${bs.label || bs.site}`,
-      path: bs.site,
-      isFolder: true,
+    const sites = getAllMsmSites(this.msmConfig);
+    const items = sites.map((s) => ({
+      name: s.label,
+      path: s.site,
+      site: s.site,
       isSite: true,
-      site: bs.site,
+      isFolder: false,
     }));
     this._columns = [{ header: 'Sites', items, selectedPath: null }];
   }
 
-  async initSiteRoot() {
-    this._loadingColumn = 0;
-    this._columns = [{
-      header: this.site, items: [], selectedPath: null,
-    }];
+  // ── Deep linking ────────────────────────────────────────────────────────
 
-    try {
-      const items = await this._loadFolderItems(this.site, '/');
-      this._columns = [{
-        header: this.site,
-        items: items.map((i) => ({ ...i, site: this.site })),
-        selectedPath: null,
-      }];
-    } catch (e) {
-      console.error('Failed to load site root:', e);
-      this._columns = [{ header: this.site, items: [], selectedPath: null }];
+  async _openDeepLink() {
+    const siteItem = this._columns[0]?.items.find((it) => it.site === this.initialSite);
+    if (!siteItem) {
+      this._dispatchDeepLinkWarning(this.initialSite, '');
+      this._dispatchDeepLinkConsumed();
+      return;
     }
-    this._loadingColumn = -1;
-
-    if (this.deepLinkPath && !this._deepLinkConsumed) {
-      this._deepLinkConsumed = true;
-      await this._navigateToPath(this.deepLinkPath);
-    }
-  }
-
-  async _navigateToPath(path) {
-    const requested = path;
-    const normalized = path.startsWith('/') ? path : `/${path}`;
-    const parts = normalized.split('/').filter(Boolean);
-
-    this._suppressEmit = true;
-    let colIdx = 0;
-    let cumPath = '';
-    let lastResolved = '';
-    let resolvedFully = parts.length === 0;
-
-    try {
-      /* eslint-disable no-await-in-loop */
-      for (let i = 0; i < parts.length; i += 1) {
-        cumPath += `/${parts[i]}`;
-        const stepPath = cumPath;
-        const col = this._columns[colIdx];
-        if (!col) break;
-
-        const isLast = i === parts.length - 1;
-        let item = col.items.find((it) => it.path === stepPath);
-        if (!item && isLast && !/\.[a-z0-9]+$/i.test(parts[i])) {
-          // Fall back to `.html` when the last segment lacks an extension.
-          const htmlPath = `${stepPath}.html`;
-          item = col.items.find((it) => it.path === htmlPath);
-        }
-        if (!item) break;
-        lastResolved = item.path;
-
-        if (isLast) {
-          if (item.isFolder || item.isSite) {
-            await this.navigateToFolder(colIdx, item);
-          } else if (this.showCheckbox(item)) {
-            this.toggleCheck(item, colIdx);
-            this._setFocus(colIdx, item);
-          }
-          resolvedFully = true;
-        } else if (item.isFolder || item.isSite) {
-          await this.navigateToFolder(colIdx, item);
-          colIdx += 1;
-        } else {
-          // Path expects a folder here but got a page; stop the walk.
-          break;
-        }
-      }
-      /* eslint-enable no-await-in-loop */
-    } finally {
-      this._suppressEmit = false;
-    }
-
-    await this.emitSelection(this.getCurrentSite());
-
-    if (!resolvedFully) {
-      this.dispatchEvent(new CustomEvent('deep-link-warning', {
-        detail: { requestedPath: requested, lastResolvedPath: lastResolved },
-        bubbles: true,
-        composed: true,
-      }));
-    }
-    this.dispatchEvent(new CustomEvent('deep-link-consumed', {
-      bubbles: true,
-      composed: true,
-    }));
-
+    await this.navigateToFolder(0, siteItem);
+    if (this.initialPath) await this._walkPath(this.initialPath);
+    this._dispatchDeepLinkConsumed();
     await this.scrollToActiveColumn();
     await this.scrollSelectionIntoView({ block: 'center', behavior: 'smooth' });
   }
 
+  async _walkPath(path) {
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    const parts = normalized.split('/').filter(Boolean);
+    let colIdx = 1; // column 1 is the site root opened by _openDeepLink
+    let cum = '';
+    let lastResolved = '';
+    let resolved = parts.length === 0;
+
+    /* eslint-disable no-await-in-loop */
+    for (let i = 0; i < parts.length; i += 1) {
+      cum += `/${parts[i]}`;
+      const stepPath = cum;
+      const col = this._columns[colIdx];
+      if (!col) break;
+      const isLast = i === parts.length - 1;
+      let item = col.items.find((it) => it.path === stepPath);
+      if (!item && isLast && !/\.[a-z0-9]+$/i.test(parts[i])) {
+        item = col.items.find((it) => it.path === `${stepPath}.html`);
+      }
+      if (!item) break;
+      lastResolved = item.path;
+
+      if (isLast) {
+        if (item.isFolder) {
+          await this.navigateToFolder(colIdx, item);
+        } else if (this.showCheckbox(item)) {
+          this._togglePage(item);
+          this._setFocus(colIdx, item);
+        }
+        resolved = true;
+      } else if (item.isFolder) {
+        await this.navigateToFolder(colIdx, item);
+        colIdx += 1;
+      } else {
+        break;
+      }
+    }
+    /* eslint-enable no-await-in-loop */
+
+    if (!resolved) this._dispatchDeepLinkWarning(path, lastResolved);
+  }
+
+  _dispatchDeepLinkWarning(requestedPath, lastResolvedPath) {
+    this.dispatchEvent(new CustomEvent('deep-link-warning', {
+      detail: { requestedPath, lastResolvedPath }, bubbles: true, composed: true,
+    }));
+  }
+
+  _dispatchDeepLinkConsumed() {
+    this.dispatchEvent(new CustomEvent('deep-link-consumed', { bubbles: true, composed: true }));
+  }
+
+  // ── Navigation ────────────────────────────────────────────────────────────
+
   async navigateToFolder(colIdx, item) {
-    const site = this.findSite(colIdx, item);
+    const { site } = item;
     if (!site) return;
 
     const newColumns = this._columns.slice(0, colIdx + 1);
@@ -447,62 +207,21 @@ class MsmColumnBrowser extends LitElement {
     this._activeColumnIdx = colIdx + 1;
     this._loadingColumn = colIdx + 1;
 
+    let items = [];
     try {
-      let items;
-      if (item.isSite) {
-        items = await this._loadFolderItems(site, '/');
-      } else {
-        items = await this._loadFolderItems(site, item.path);
-      }
-      items = items.map((i) => ({ ...i, site }));
-
-      const header = item.isSite ? item.path : item.name;
-      this._columns = [
-        ...newColumns,
-        { header, items, selectedPath: null },
-      ];
+      const raw = await this._loadFolderItems(site, item.isSite ? '/' : item.path);
+      items = raw.map((i) => ({ ...i, site: i.site || site }));
     } catch (e) {
       console.error('Failed to load folder:', e);
-      this._columns = [
-        ...newColumns,
-        { header: item.name, items: [], selectedPath: null },
-      ];
     }
+
+    this._columns = [...newColumns, { header: item.name, items, selectedPath: null }];
     this._loadingColumn = -1;
     this.scrollToActiveColumn();
-
-    this.clearChecksAfterColumn(colIdx);
-    this.emitSelection(site);
-  }
-
-  findSite(colIdx, item) {
-    if (item?.site) return item.site;
-    if (this.role === 'satellite' && this.site) return this.site;
-
-    const searchCols = this._columns.slice(0, colIdx + 1).reverse();
-    const match = searchCols.reduce((found, col) => {
-      if (found) return found;
-      if (col.selectedPath) {
-        const selItem = col.items.find((it) => it.path === col.selectedPath);
-        if (selItem?.site) return selItem.site;
-      }
-      const siteItem = col.items.find((it) => it.isSite && it.site);
-      if (siteItem && col.selectedPath === siteItem.path) return siteItem.site;
-      return null;
-    }, null);
-    if (match) return match;
-
-    const firstSiteCol = this._columns[0];
-    if (firstSiteCol?.selectedPath) {
-      const firstSel = firstSiteCol.items.find((i) => i.path === firstSiteCol.selectedPath);
-      return firstSel?.site;
-    }
-    return null;
+    this._loadRowStatuses(items);
   }
 
   getCurrentSite() {
-    if (this.role === 'satellite' && this.site) return this.site;
-
     const cols = [...this._columns].reverse();
     const match = cols.reduce((found, col) => (
       found || col.items.find((item) => item.site)
@@ -514,119 +233,179 @@ class MsmColumnBrowser extends LitElement {
     if (e?.target?.type === 'checkbox') return;
     if (item.isFolder || item.isSite) {
       this.navigateToFolder(colIdx, item);
-    } else {
-      this.toggleCheck(item, colIdx);
+    } else if (this.showCheckbox(item)) {
+      this._togglePage(item);
     }
   }
 
-  handleCheckChange(item, e, colIdx) {
-    e.stopPropagation();
-    if (this._isCheckBlocked(item)) {
-      e.target.checked = false;
-      return;
-    }
-    if (Number.isInteger(colIdx)) this._collapseColumnsAfter(colIdx);
-    const next = new Set(this._checked);
-    const key = `${item.site || ''}:${item.path}`;
-    if (e.target.checked) {
-      next.add(key);
-    } else {
-      next.delete(key);
-      this._clearFocusIfMatches(item);
-    }
-    this._checked = next;
-    this._refreshSelectionCategory();
-
-    const site = item.site || this.getCurrentSite();
-    this.emitSelection(site);
+  goBack() {
+    if (this._activeColumnIdx > 0) this._activeColumnIdx -= 1;
   }
 
-  _refreshSelectionCategory() {
-    if (this._checked.size === 0) {
-      this._selectionCategory = null;
+  // ── Selection model ─────────────────────────────────────────────────────
+  // `_selectedPages` (Map<key,item>) is the canonical set of selected leaf
+  // pages — this is what gets emitted. `_checkedContainers` (Set<key>) marks
+  // sites/folders the user (or a crawl) has fully selected, for optimistic and
+  // post-crawl "checked" display. A checked container shows checked instantly;
+  // a background crawl then fills in the exact leaf pages.
+
+  showCheckbox(item) {
+    if (item.isSite || item.isFolder) return true;
+    return isActionableItem(item);
+  }
+
+  isItemChecked(item) {
+    if (item.isSite || item.isFolder) return this._checkedContainers.has(itemKey(item));
+    return this._selectedPages.has(itemKey(item));
+  }
+
+  // 'checked' | 'indeterminate' | 'unchecked'
+  checkboxState(item, colIdx) {
+    if (!(item.isSite || item.isFolder)) {
+      return this._selectedPages.has(itemKey(item)) ? 'checked' : 'unchecked';
+    }
+    if (this._checkedContainers.has(itemKey(item))) return 'checked';
+    const derived = this._deriveOpenState(item, colIdx);
+    if (derived) return derived;
+    return this._hasSelectedUnder(item) ? 'indeterminate' : 'unchecked';
+  }
+
+  // When a container's child column is open we can reflect an exact state from
+  // what's loaded, without crawling — the "show what we can, fast" path.
+  _deriveOpenState(item, colIdx) {
+    const parentCol = this._columns[colIdx];
+    if (!parentCol || parentCol.selectedPath !== item.path) return null;
+    const child = this._columns[colIdx + 1];
+    if (!child) return null;
+    const selectable = child.items.filter((it) => it.isFolder || isActionableItem(it));
+    if (!selectable.length) return null;
+    let checked = 0;
+    let unchecked = 0;
+    selectable.forEach((it) => {
+      let st;
+      if (it.isFolder) st = this.checkboxState(it, colIdx + 1);
+      else st = this._selectedPages.has(itemKey(it)) ? 'checked' : 'unchecked';
+      if (st === 'checked') checked += 1;
+      else if (st === 'unchecked') unchecked += 1;
+    });
+    if (checked === selectable.length) return 'checked';
+    if (unchecked === selectable.length) return 'unchecked';
+    return 'indeterminate';
+  }
+
+  _isUnder(key, item) {
+    const { site, path } = parseKey(key);
+    if (site !== item.site) return false;
+    if (item.isSite) return path !== item.site;
+    return path.startsWith(`${item.path}/`);
+  }
+
+  _hasSelectedUnder(item) {
+    return Array.from(this._selectedPages.keys()).some((key) => this._isUnder(key, item));
+  }
+
+  // Site row + parent folder keys for a given path (excludes the path itself).
+  _ancestorContainerKeys(site, path) {
+    const segs = path.split('/').filter(Boolean);
+    const keys = [`${site}:${site}`];
+    for (let i = 1; i < segs.length; i += 1) {
+      keys.push(`${site}:/${segs.slice(0, i).join('/')}`);
+    }
+    return keys;
+  }
+
+  _togglePage(item) {
+    const key = itemKey(item);
+    const pages = new Map(this._selectedPages);
+    if (pages.has(key)) {
+      pages.delete(key);
+      const drop = new Set(this._ancestorContainerKeys(item.site, item.path));
+      const containers = new Set();
+      this._checkedContainers.forEach((k) => { if (!drop.has(k)) containers.add(k); });
+      this._checkedContainers = containers;
+    } else {
+      pages.set(key, item);
+    }
+    this._selectedPages = pages;
+    this.emitSelection(item.site);
+  }
+
+  toggleCheck(item, colIdx) {
+    if (item.isSite || item.isFolder) {
+      if (this.checkboxState(item, colIdx) === 'checked') this._unselectSubtree(item);
+      else this._selectSubtree(item);
+      this.emitSelection(item.site);
+    } else {
+      this._togglePage(item);
+    }
+  }
+
+  _selectSubtree(item) {
+    const rootKey = itemKey(item);
+    this._checkedContainers = new Set(this._checkedContainers).add(rootKey);
+    const gen = (this._crawlGen.get(rootKey) || 0) + 1;
+    this._crawlGen.set(rootKey, gen);
+    this._crawlInto(item.site, item.isSite ? '/' : item.path, rootKey, gen);
+  }
+
+  _unselectSubtree(item) {
+    const rootKey = itemKey(item);
+    // Cancel any crawl still adding pages under this container.
+    this._crawlGen.set(rootKey, (this._crawlGen.get(rootKey) || 0) + 1);
+
+    const pages = new Map();
+    this._selectedPages.forEach((v, k) => { if (!this._isUnder(k, item)) pages.set(k, v); });
+    this._selectedPages = pages;
+
+    const drop = new Set([rootKey, ...this._ancestorContainerKeys(item.site, item.path)]);
+    const containers = new Set();
+    this._checkedContainers.forEach((k) => {
+      if (drop.has(k)) return;
+      if (this._isUnder(k, item)) return;
+      containers.add(k);
+    });
+    this._checkedContainers = containers;
+  }
+
+  // Background recursive crawl: lists each folder, marks it checked, and adds
+  // its actionable pages to the selection — emitting as it goes so the UI fills
+  // in. A generation mismatch (the user unchecked the root) aborts the walk.
+  async _crawlInto(site, path, rootKey, gen) {
+    if (this._crawlGen.get(rootKey) !== gen) return;
+    let items;
+    try {
+      items = await this._loadFolderItems(site, path);
+    } catch {
       return;
     }
-    const firstKey = this._checked.values().next().value;
-    let category = null;
-    this._columns.some((col) => col.items.some((item) => {
-      const key = `${item.site || ''}:${item.path}`;
-      if (key === firstKey) {
-        category = this._itemCategory(item);
-        return true;
+    if (this._crawlGen.get(rootKey) !== gen) return;
+
+    const pages = new Map(this._selectedPages);
+    const containers = new Set(this._checkedContainers);
+    const folders = [];
+    items.forEach((it) => {
+      const isite = it.site || site;
+      if (it.isFolder) {
+        folders.push({ ...it, site: isite });
+        containers.add(`${isite}:${it.path}`);
+      } else if (isActionableItem(it)) {
+        pages.set(`${isite}:${it.path}`, { ...it, site: isite });
       }
-      return false;
-    }));
-    this._selectionCategory = category;
+    });
+    this._selectedPages = pages;
+    this._checkedContainers = containers;
+    this.emitSelection(site);
+
+    /* eslint-disable no-await-in-loop, no-restricted-syntax */
+    for (const folder of folders) {
+      if (this._crawlGen.get(rootKey) !== gen) return;
+      await this._crawlInto(folder.site, folder.path, rootKey, gen);
+    }
+    /* eslint-enable no-await-in-loop, no-restricted-syntax */
   }
 
-  clearChecksAfterColumn(colIdx) {
-    const validPaths = new Set(
-      this._columns.slice(0, colIdx + 1).flatMap(
-        (col) => col.items.map((item) => `${item.site || ''}:${item.path}`),
-      ),
-    );
-    this._checked = new Set([...this._checked].filter((key) => validPaths.has(key)));
-    this._refreshSelectionCategory();
-  }
-
-  async emitSelection(site) {
-    if (this._suppressEmit) return;
-    // Snapshot `_checked` synchronously so a later check/uncheck that fires
-    // its own `emitSelection` can't mutate what this call considers selected.
-    // Combined with the seq check below, this guarantees an in-flight stale
-    // dispatch can never re-introduce items the user has just unchecked.
-    this._emitSeq += 1;
-    const mySeq = this._emitSeq;
-    const checkedSnapshot = new Set(this._checked);
-    const checkedPages = [];
-    const checkedFolders = [];
-
-    this._columns.forEach((col) => {
-      col.items.forEach((item) => {
-        const key = `${item.site || site || ''}:${item.path}`;
-        if (!checkedSnapshot.has(key)) return;
-        if (item.isFolder && !item.isSite) {
-          checkedFolders.push(item);
-        } else if (!item.isSite) {
-          checkedPages.push(item);
-        }
-      });
-    });
-
-    const folderPages = await Promise.all(
-      checkedFolders.map(async (folder) => {
-        const folderSite = folder.site || site;
-        const cacheKey = `${this.org}/${folderSite}${folder.path}`;
-        if (!this._folderCache.has(cacheKey)) {
-          try {
-            const items = await this._loadFolderItems(folderSite, folder.path);
-            const files = items
-              .filter((i) => !i.isFolder && !i.isSite)
-              .map((i) => ({ ...i, site: folderSite }));
-            this._folderCache.set(cacheKey, files);
-          } catch (e) {
-            console.error('Failed to resolve folder pages:', e);
-            this._folderCache.set(cacheKey, []);
-          }
-        }
-        return this._folderCache.get(cacheKey);
-      }),
-    );
-
-    // A newer `emitSelection` has started (user clicked again while we were
-    // awaiting folder loads); drop this stale result instead of overriding
-    // the newer dispatch with files for a no-longer-checked folder.
-    if (mySeq !== this._emitSeq) return;
-
-    const allItems = [...checkedPages, ...folderPages.flat()];
-    const seen = new Set();
-    const selectedItems = allItems.filter((item) => {
-      const key = `${item.site || ''}:${item.path}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
+  emitSelection(site) {
+    const selectedItems = [...this._selectedPages.values()];
     const lastCol = this._columns[this._columns.length - 1];
     const currentPath = lastCol?.header || '';
     this.dispatchEvent(new CustomEvent('browse-selection', {
@@ -636,98 +415,272 @@ class MsmColumnBrowser extends LitElement {
     }));
   }
 
-  goBack() {
-    if (this._activeColumnIdx > 0) {
-      this._activeColumnIdx -= 1;
+  handleCheckChange(item, e, colIdx) {
+    e.stopPropagation();
+    this.toggleCheck(item, colIdx);
+  }
+
+  // ── Lazy per-row status (icon2) ───────────────────────────────────────────
+
+  _loadRowStatuses(items) {
+    const next = new Map(this._rowStatus);
+    const toFetch = [];
+    items.forEach((item) => {
+      if (!isActionableItem(item)) return;
+      // The status icon answers "do you need an MSM action relative to your
+      // source", so it only applies where inheritance does. Base-only sites
+      // have no source — skip the fetch entirely.
+      if (!this._siteHasInheritance(item.site)) return;
+      const key = itemKey(item);
+      if (next.has(key)) return;
+      next.set(key, 'loading');
+      toFetch.push(item);
+    });
+    if (!toFetch.length) return;
+    this._rowStatus = next;
+
+    toFetch.forEach((item) => {
+      const ext = item.ext || 'html';
+      const pagePath = item.path.replace(/\.[^/.]+$/, '');
+      getPageStatus(this.org, item.site, pagePath, item.lastModified, ext)
+        .then((status) => this._setRowStatus(itemKey(item), status))
+        .catch(() => this._setRowStatus(itemKey(item), { previewState: 'not-rolled-out', liveState: 'not-rolled-out' }));
+    });
+  }
+
+  _setRowStatus(key, status) {
+    const m = new Map(this._rowStatus);
+    m.set(key, status);
+    this._rowStatus = m;
+  }
+
+  // ── Keyboard navigation ─────────────────────────────────────────────────
+
+  _setFocus(columnIdx, item) {
+    this._focusedItem = item
+      ? { columnIdx, path: item.path, site: item.site || '' }
+      : null;
+  }
+
+  _getActiveFocusedIdx() {
+    const f = this._focusedItem;
+    if (!f || f.columnIdx !== this._activeColumnIdx) return -1;
+    const col = this._columns[this._activeColumnIdx];
+    if (!col) return -1;
+    return col.items.findIndex((it) => it.path === f.path && (it.site || '') === f.site);
+  }
+
+  _clearFocusIfMatches(item) {
+    const f = this._focusedItem;
+    if (f && f.path === item.path && f.site === (item.site || '')) this._focusedItem = null;
+  }
+
+  _onKeydown(e) {
+    const col = this._columns[this._activeColumnIdx];
+    if (!col || !col.items.length) return;
+    const { items } = col;
+    const curIdx = this._getActiveFocusedIdx();
+
+    switch (e.key) {
+      case 'ArrowDown': {
+        e.preventDefault();
+        this._setFocus(this._activeColumnIdx, items[Math.min(curIdx + 1, items.length - 1)]);
+        this.scrollFocusedIntoView();
+        break;
+      }
+      case 'ArrowUp': {
+        e.preventDefault();
+        this._setFocus(this._activeColumnIdx, items[Math.max(curIdx - 1, 0)]);
+        this.scrollFocusedIntoView();
+        break;
+      }
+      case 'ArrowRight':
+      case 'Enter': {
+        e.preventDefault();
+        const item = items[curIdx];
+        if (item && (item.isFolder || item.isSite)) {
+          const fromColumn = this._activeColumnIdx;
+          this.navigateToFolder(fromColumn, item).then(() => {
+            const newCol = this._columns[fromColumn + 1];
+            if (newCol?.items.length) {
+              this._setFocus(fromColumn + 1, newCol.items[0]);
+              this.scrollFocusedIntoView();
+            }
+          });
+        }
+        break;
+      }
+      case 'ArrowLeft': {
+        e.preventDefault();
+        if (this._activeColumnIdx > 0) {
+          this._activeColumnIdx -= 1;
+          const prevCol = this._columns[this._activeColumnIdx];
+          this._setFocus(this._activeColumnIdx, prevCol?.items[0] || null);
+        }
+        break;
+      }
+      case ' ': {
+        e.preventDefault();
+        const item = items[curIdx];
+        if (item && this.showCheckbox(item)) this.toggleCheck(item, this._activeColumnIdx);
+        break;
+      }
+      default:
+        break;
     }
   }
 
-  isItemChecked(item) {
-    const key = `${item.site || ''}:${item.path}`;
-    return this._checked.has(key);
+  // ── Scrolling helpers ─────────────────────────────────────────────────────
+
+  _findItemElement(colIdx, path, site = '') {
+    const lists = this.shadowRoot.querySelectorAll('.column .column-items');
+    const list = lists[colIdx];
+    if (!list) return null;
+    return Array.from(list.querySelectorAll('.item')).find((el) => (
+      el.dataset.path === path && (el.dataset.site || '') === (site || '')
+    )) || null;
   }
 
-  showCheckbox(item) {
-    return !item.isSite && (isActionableItem(item) || item.isFolder);
+  scrollItemIntoView(colIdx, path, site = '', { block = 'nearest', behavior = 'auto' } = {}) {
+    return this.updateComplete.then(() => new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        const target = this._findItemElement(colIdx, path, site);
+        if (target) target.scrollIntoView({ block, behavior, inline: 'nearest' });
+        resolve();
+      });
+    }));
+  }
+
+  scrollFocusedIntoView() {
+    const f = this._focusedItem;
+    if (!f) return this.updateComplete;
+    return this.scrollItemIntoView(f.columnIdx, f.path, f.site);
+  }
+
+  scrollSelectionIntoView({ block = 'center', behavior = 'smooth' } = {}) {
+    if (this._focusedItem) {
+      const { columnIdx, path, site } = this._focusedItem;
+      return this.scrollItemIntoView(columnIdx, path, site, { block, behavior });
+    }
+    for (let c = this._columns.length - 1; c >= 0; c -= 1) {
+      const checked = this._columns[c].items.find((item) => this.isItemChecked(item));
+      if (checked) {
+        return this.scrollItemIntoView(c, checked.path, checked.site || '', { block, behavior });
+      }
+    }
+    return this.updateComplete;
+  }
+
+  scrollToActiveColumn() {
+    return this.updateComplete.then(() => new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        if (window.innerWidth > 600) {
+          const browser = this.shadowRoot.querySelector('.browser');
+          if (browser) browser.scrollTo({ left: browser.scrollWidth, behavior: 'smooth' });
+        }
+        resolve();
+      });
+    }));
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  // Small corner badge overlaid on the type icon. Inheritance state only
+  // applies to satellite listings (which carry an `inheritedFrom` field) and
+  // never to the sites column.
+  renderInheritanceBadge(item) {
+    if (item.isSite || !('inheritedFrom' in item)) return nothing;
+    const inherited = !!item.inheritedFrom;
+    const tip = inherited ? `Inheriting from ${item.inheritedFrom}` : 'Local copy — inheritance broken';
+    return html`<span class="inherit-badge ${inherited ? 'inherited' : 'override'}" title=${tip}>
+      ${icon(inherited ? 'S2_Icon_LinkApplied_20_N' : 'S2_Icon_UnLink_20_N')}
+    </span>`;
+  }
+
+  renderStatusIcon(item) {
+    if (!isActionableItem(item)) return nothing;
+    if (!this._siteHasInheritance(item.site)) return nothing;
+    const status = this._rowStatus.get(itemKey(item));
+    if (!status) return nothing;
+    if (status === 'loading') return html`<span class="row-icon row-icon-loading"></span>`;
+    const hasOverride = !item.inheritedFrom;
+    const outOfSync = !!(item.hasLocalOverride && item.baseLastModified && item.lastModified
+      && new Date(item.baseLastModified).getTime()
+        > new Date(item.lastModified).getTime() + PUBLISH_LAG_MS);
+    const cfg = getStatusConfig({
+      hasOverride, outOfSync, previewState: status.previewState, liveState: status.liveState,
+    });
+    return html`<span class="row-icon" style="color:${cfg.color}" title=${cfg.tip}>
+      ${icon(cfg.name)}
+    </span>`;
   }
 
   renderItem(colIdx, item) {
     const isSelected = this._columns[colIdx]?.selectedPath === item.path;
-    const isPathAncestor = isSelected
-      && (item.isFolder || item.isSite)
+    const isPathAncestor = isSelected && (item.isFolder || item.isSite)
       && colIdx < this._columns.length - 1;
     const f = this._focusedItem;
-    const isFocused = !!f
-      && f.columnIdx === colIdx
-      && f.path === item.path
-      && f.site === (item.site || '');
-    const isInherited = !!item.inheritedFrom;
-    const blocked = this._isCheckBlocked(item);
-    const tooltipParts = [];
-    if (isInherited) tooltipParts.push(`Inherited from ${item.inheritedFrom}`);
-    if (blocked) {
-      tooltipParts.push(`Cannot mix with ${this._selectionCategory} pages. Clear the selection to switch categories.`);
-    }
-    const title = tooltipParts.join(' \u2022 ') || undefined;
+    const isFocused = !!f && f.columnIdx === colIdx
+      && f.path === item.path && f.site === (item.site || '');
+    const state = this.checkboxState(item, colIdx);
+    const isContainer = item.isFolder || item.isSite;
+
+    let typeIcon = PAGE_ICON;
+    if (item.isSite) typeIcon = GLOBE_ICON;
+    else if (item.isFolder) typeIcon = FOLDER_ICON;
+
     return html`
       <div
-        class="item ${isSelected ? 'selected' : ''} ${isPathAncestor ? 'path-ancestor' : ''} ${isFocused ? 'focused' : ''} ${isInherited ? 'inherited' : ''} ${blocked ? 'blocked' : ''}"
+        class="item ${isSelected ? 'selected' : ''} ${isPathAncestor ? 'path-ancestor' : ''} ${isFocused ? 'focused' : ''}"
         data-path=${item.path}
         data-site=${item.site || ''}
         @click=${(e) => this.handleItemClick(colIdx, item, e)}
-        title=${title || nothing}
         role="option"
         aria-selected=${isSelected}
       >
         ${this.showCheckbox(item) ? html`
           <input
             type="checkbox"
-            .checked=${this.isItemChecked(item)}
-            ?disabled=${blocked}
+            .checked=${state === 'checked'}
+            .indeterminate=${state === 'indeterminate'}
             @change=${(e) => this.handleCheckChange(item, e, colIdx)}
             @click=${(e) => e.stopPropagation()}
           />
         ` : nothing}
-        ${item.isFolder || item.isSite ? FOLDER_ICON : PAGE_ICON}
-        ${isInherited ? INHERITED_BADGE : nothing}
+        <span class="item-icon">
+          ${typeIcon}
+          ${this.renderInheritanceBadge(item)}
+        </span>
         <span class="item-label">${item.name}</span>
-        ${item.isFolder || item.isSite ? ARROW_RIGHT : nothing}
+        <span class="item-trailing">
+          ${isContainer
+    ? html`<span class="item-arrow">${ARROW_RIGHT}</span>`
+    : this.renderStatusIcon(item)}
+        </span>
       </div>
     `;
-  }
-
-  _visibleItems(col) {
-    if (!this.hideInherited) return col.items;
-    return col.items.filter((i) => !i.inheritedFrom);
   }
 
   renderColumn(col, colIdx) {
     const isActive = colIdx === this._activeColumnIdx;
     const isLoading = this._loadingColumn === colIdx;
-    const items = this._visibleItems(col);
 
     return html`
       <div class="column ${isActive ? 'active' : ''}">
         <div class="column-header">
           ${colIdx > 0 ? html`
-            <button class="back-btn" @click=${() => this.goBack()}>
-              ${BACK_ARROW} Back
-            </button>
+            <button class="back-btn" @click=${() => this.goBack()}>${BACK_ARROW} Back</button>
           ` : nothing}
           ${col.header}
         </div>
-        <div class="column-items" role="listbox" aria-label="${col.header}">
+        <div class="column-items" role="listbox" aria-label=${col.header}>
           ${isLoading ? html`
-            <div class="column-loading">
-              <div class="mini-spinner"></div> Loading\u2026
-            </div>
+            <div class="column-loading"><div class="mini-spinner"></div> Loading…</div>
           ` : nothing}
-          ${!isLoading && items.length === 0 ? html`
+          ${!isLoading && col.items.length === 0 ? html`
             <div class="column-empty">Empty folder</div>
           ` : nothing}
-          ${!isLoading ? items.map(
-    (item, idx) => this.renderItem(colIdx, item, idx),
-  ) : nothing}
+          ${!isLoading ? col.items.map((item) => this.renderItem(colIdx, item)) : nothing}
         </div>
       </div>
     `;
@@ -737,19 +690,15 @@ class MsmColumnBrowser extends LitElement {
     if (!this._columns.length) {
       return html`<div class="browser"><div class="column-empty">No sites available</div></div>`;
     }
-
     const loadingNext = this._loadingColumn === this._columns.length;
-
     return html`
       <div class="browser" tabindex="0" @keydown=${this._handleKeydown}>
         ${this._columns.map((col, idx) => this.renderColumn(col, idx))}
         ${loadingNext ? html`
           <div class="column active">
-            <div class="column-header">Loading\u2026</div>
+            <div class="column-header">Loading…</div>
             <div class="column-items">
-              <div class="column-loading">
-                <div class="mini-spinner"></div> Loading\u2026
-              </div>
+              <div class="column-loading"><div class="mini-spinner"></div> Loading…</div>
             </div>
           </div>
         ` : nothing}

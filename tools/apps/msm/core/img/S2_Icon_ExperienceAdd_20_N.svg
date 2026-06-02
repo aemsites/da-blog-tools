@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20">
+<svg id="S2_Icon_ExperienceAdd_20_N" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20">
   <g id="S2_Icon_Experience_Add">
     <path fill="currentColor" d="M14.55,10c-2.46,0-4.45,1.99-4.45,4.45s1.99,4.45,4.45,4.45,4.45-1.99,4.45-4.45-1.99-4.45-4.45-4.45h0ZM17.05,14.7c0,.14-.11.25-.25.25h-1.75v1.75c0,.14-.11.25-.25.25h-.5c-.14,0-.25-.11-.25-.25v-1.75h-1.75c-.14,0-.25-.11-.25-.25v-.5c0-.14.11-.25.25-.25h1.75v-1.75c0-.14.11-.25.25-.25h.5c.14,0,.25.11.25.25v1.75h1.75c.14,0,.25.11.25.25v.5Z"/>
     <circle fill="currentColor" cx="4.12" cy="5" r=".75"/>

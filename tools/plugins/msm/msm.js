@@ -15,12 +15,13 @@ import {
   deleteOverride,
   mergeFromBase,
   getSatellitePageStatus,
+  getStatusConfig,
   setSdkFetch as setUtilsSdkFetch,
   setEditUrlOrigin,
 } from './utils.js';
+import { icon } from '../../apps/msm/core/icons.js';
 
 const MSM_APP_URL = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/msm/msm';
-const ICON_BASE = './img';
 const NX = 'https://da.live/nx';
 
 // Publishing a page bumps its lastModified date after the publish timestamp is
@@ -41,39 +42,6 @@ try {
   ]);
 } catch (e) {
   console.warn('[MSM Plugin] Failed to load nexter styles:', e);
-}
-
-// ── Icon helpers — use external SVG files via <use>, color via currentColor ─
-
-const icon = (name, viewBox = '0 0 14 14', w = 16, h = 16) => html`
-  <svg width="${w}" height="${h}" viewBox="${viewBox}">
-    <use href="${ICON_BASE}/${name}.svg#${name}"/>
-  </svg>`;
-
-// Returns { name, color, tip } for the status icon given a row's data object.
-// Combines inheritance state (hasOverride, outOfSync) with publish state (previewState, liveState).
-function getStatusConfig({
-  hasOverride, outOfSync, previewState, liveState,
-}) {
-  const green = (tip) => ({ name: 'S2_Icon_CheckmarkCircle_20_N', color: 'var(--s2-green-700,#0ba45d)', tip });
-  const amber = (tip) => ({ name: 'S2_Icon_AlertTriangle_20_N', color: 'var(--s2-yellow-700,#e68619)', tip });
-  const orange = (tip) => ({ name: 'S2_Icon_AlertTriangle_20_N', color: 'var(--s2-orange-600,#fc7d00)', tip });
-  const red = (tip) => ({ name: 'S2_Icon_AlertDiamond_20_N', color: 'var(--s2-red-700,#ff513d)', tip });
-
-  if (!hasOverride) {
-    if (liveState === 'current') return green('Live and current');
-    if (previewState === 'current') return amber('Previewed — not yet published to live');
-    if (liveState === 'not-rolled-out' && previewState === 'not-rolled-out') return red('Not rolled out');
-    return red('Base has changed — rollout needed');
-  }
-
-  if (outOfSync) {
-    if (liveState === 'current') return orange('Out of sync — base has changed since last sync');
-    return red('Out of sync — needs sync and publish');
-  }
-  if (liveState === 'current') return green('Live and current');
-  if (previewState === 'current') return amber('Previewed — not yet published to live');
-  return red('Not yet previewed or published');
 }
 
 class DaMsm extends LitElement {
@@ -187,7 +155,7 @@ class DaMsm extends LitElement {
         this._sourceOutOfSync = new Date(effectiveTs.lastModified) > new Date(siteTs.lastModified);
       }
 
-      // Load publish status for this site's page (for icon2 on the source row)
+      // Load publish status for this site's page (for the source row's status icon)
       getSatellitePageStatus(org, site, path, siteTs.lastModified).then((status) => {
         this._sitePageStatus = status;
       });
@@ -487,7 +455,7 @@ class DaMsm extends LitElement {
   // ── Render helpers ────────────────────────────────────────────────────────
 
   // Gray icon: shows inheritance state only — no urgency implied.
-  _renderIcon1(siteId, parentLabel) {
+  _renderInheritanceIcon(siteId, parentLabel) {
     const d = this._satData.get(siteId);
     if (!d || d.hasOverride === undefined) return nothing;
     if (!d.hasOverride) {
@@ -498,7 +466,7 @@ class DaMsm extends LitElement {
   }
 
   // Color-coded: green=all good, amber=preview only, orange=out-of-sync+live, red=needs action.
-  _renderIcon2(siteId) {
+  _renderStatusIcon(siteId) {
     const d = this._satData.get(siteId);
     if (!d || d.hasOverride === undefined) return nothing;
     if (d.previewState === undefined) {
@@ -550,12 +518,12 @@ class DaMsm extends LitElement {
         <button class="row-toggle ${toggleClass}" tabindex="-1" aria-hidden="true">
           ${hasKids ? icon('S2_Icon_ChevronDown_20_N', '0 0 20 20', 10, 10) : nothing}
         </button>
-        ${this._renderIcon1(siteId, parentLabel)}
+        ${this._renderInheritanceIcon(siteId, parentLabel)}
         <div class="row-name-group">
           <span class="row-name">${label}</span>
           ${hasKids && isCollapsed ? html`<span class="region-count">${children.length}</span>` : nothing}
         </div>
-        ${this._renderIcon2(siteId)}
+        ${this._renderStatusIcon(siteId)}
         ${actionBtn}
         <button class="btn-more" title="More actions"
           @click=${(e) => { e.stopPropagation(); this._openMenu(siteId, e.currentTarget); }}>
@@ -733,14 +701,14 @@ class DaMsm extends LitElement {
     const inheritTip = this._hasOverride
       ? 'Inheritance broken'
       : `Inheriting from ${sourceLabel}`;
-    const icon1 = this._hasOverride === undefined ? nothing
+    const inheritanceIcon = this._hasOverride === undefined ? nothing
       : html`<span class="row-icon row-icon-inherit" title=${inheritTip}>
           ${icon(this._hasOverride ? 'S2_Icon_UnLink_20_N' : 'S2_Icon_LinkApplied_20_N', '0 0 20 20')}
         </span>`;
 
-    let icon2;
+    let statusIcon;
     if (!this._sitePageStatus) {
-      icon2 = html`<span class="row-icon row-icon-loading"></span>`;
+      statusIcon = html`<span class="row-icon row-icon-loading"></span>`;
     } else {
       const cfg = getStatusConfig({
         hasOverride: this._hasOverride,
@@ -748,7 +716,7 @@ class DaMsm extends LitElement {
         previewState: this._sitePageStatus.previewState,
         liveState: this._sitePageStatus.liveState,
       });
-      icon2 = html`<span class="row-icon" style="color:${cfg.color}" title=${cfg.tip}>${icon(cfg.name, '0 0 18 18')}</span>`;
+      statusIcon = html`<span class="row-icon" style="color:${cfg.color}" title=${cfg.tip}>${icon(cfg.name, '0 0 18 18')}</span>`;
     }
 
     const viaNote = this._effectiveBase
@@ -767,11 +735,11 @@ class DaMsm extends LitElement {
         <div class="sat-list">
           <div class="sat-row" style="padding-left:14px">
             <span class="row-toggle leaf"></span>
-            ${icon1}
+            ${inheritanceIcon}
             <div class="row-name-group">
               <span class="row-name">${sourceLabel}</span>
             </div>
-            ${icon2}
+            ${statusIcon}
             <div class="source-actions">
               ${this._hasOverride
     ? html`<button class="btn-row" ?disabled=${this._busy}
