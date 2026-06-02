@@ -23,6 +23,10 @@ const MSM_APP_URL = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/msm/m
 const ICON_BASE = './img';
 const NX = 'https://da.live/nx';
 
+// Publishing a page bumps its lastModified date after the publish timestamp is
+// recorded, producing a spurious "out of sync" signal. This tolerance absorbs that lag.
+const PUBLISH_LAG_MS = 5000;
+
 let nexter = null;
 let styles = null;
 try {
@@ -46,23 +50,29 @@ const icon = (name, viewBox = '0 0 14 14', w = 16, h = 16) => html`
     <use href="${ICON_BASE}/${name}.svg#${name}"/>
   </svg>`;
 
-// Publish-state key → { name, viewBox, color, tip }
-const ICON2_CONFIG = {
-  'not-rolled-out': { name: 'icon-circle-alert', color: 'var(--s2-red-700,#ff513d)', tip: 'Not yet previewed or published' },
-  'preview-current': { name: 'icon-triangle-alert', color: 'var(--s2-orange-600,#fc7d00)', tip: 'Previewed — not yet published to live' },
-  'preview-behind': { name: 'icon-circle-alert', color: 'var(--s2-red-700,#ff513d)', tip: 'WIP has changed — preview is out of date' },
-  'preview-current-live-behind': { name: 'icon-triangle-alert', color: 'var(--s2-orange-600,#fc7d00)', tip: 'Preview current — published content is out of date' },
-  'live-current': { name: 'icon-circle-check', color: 'var(--s2-green-700,#0ba45d)', tip: 'Preview and published are current' },
-  'live-behind': { name: 'icon-circle-alert', color: 'var(--s2-red-700,#ff513d)', tip: 'WIP has changed — re-publish needed' },
-};
+// Returns { name, color, tip } for the status icon given a row's data object.
+// Combines inheritance state (hasOverride, outOfSync) with publish state (previewState, liveState).
+function getStatusConfig({
+  hasOverride, outOfSync, previewState, liveState,
+}) {
+  const green = (tip) => ({ name: 'S2_Icon_CheckmarkCircle_20_N', color: 'var(--s2-green-700,#0ba45d)', tip });
+  const amber = (tip) => ({ name: 'S2_Icon_AlertTriangle_20_N', color: 'var(--s2-yellow-700,#e68619)', tip });
+  const orange = (tip) => ({ name: 'S2_Icon_AlertTriangle_20_N', color: 'var(--s2-orange-600,#fc7d00)', tip });
+  const red = (tip) => ({ name: 'S2_Icon_AlertDiamond_20_N', color: 'var(--s2-red-700,#ff513d)', tip });
 
-function getStatusKey(d) {
-  const { previewState, liveState } = d;
-  if (liveState === 'current') return 'live-current';
-  if (liveState === 'behind') return previewState === 'current' ? 'preview-current-live-behind' : 'live-behind';
-  if (previewState === 'current') return 'preview-current';
-  if (previewState === 'behind') return 'preview-behind';
-  return 'not-rolled-out';
+  if (!hasOverride) {
+    if (liveState === 'current') return green('Live and current');
+    if (previewState === 'current') return amber('Previewed — not yet published to live');
+    return red('Not rolled out');
+  }
+
+  if (outOfSync) {
+    if (liveState === 'current') return orange('Out of sync — base has changed since last sync');
+    return red('Out of sync — needs sync and publish');
+  }
+  if (liveState === 'current') return green('Live and current');
+  if (previewState === 'current') return amber('Previewed — not yet published to live');
+  return red('Not yet previewed or published');
 }
 
 class DaMsm extends LitElement {
@@ -273,7 +283,7 @@ class DaMsm extends LitElement {
       if (exists) {
         const refLM = this._effectiveBaseLM(id);
         const refTime = refLM ? new Date(refLM).getTime() : null;
-        outOfSync = refTime !== null && satTime !== null && satTime < refTime;
+        outOfSync = refTime !== null && satTime !== null && satTime + PUBLISH_LAG_MS < refTime;
       }
       update.set(id, {
         ...update.get(id), hasOverride: exists, outOfSync, lastModified,
@@ -475,33 +485,29 @@ class DaMsm extends LitElement {
 
   // ── Render helpers ────────────────────────────────────────────────────────
 
-  _renderIcon1(siteId) {
+  // Gray icon: shows inheritance state only — no urgency implied.
+  _renderIcon1(siteId, parentLabel) {
     const d = this._satData.get(siteId);
     if (!d || d.hasOverride === undefined) return nothing;
     if (!d.hasOverride) {
-      return html`<span class="row-icon" style="color:var(--s2-green-700,#0ba45d)" title="Following base — no local copy">${icon('icon-doc-check')}</span>`;
+      const tip = parentLabel ? `Inheriting from ${parentLabel}` : 'Inheriting from base';
+      return html`<span class="row-icon row-icon-inherit" title="${tip}">${icon('S2_Icon_LinkApplied_20_N', '0 0 20 20')}</span>`;
     }
-    if (d.outOfSync) {
-      return html`<span class="row-icon" style="color:var(--s2-red-700,#ff513d)" title="Local copy — source has changed, sync needed">${icon('icon-doc-alert')}</span>`;
-    }
-    return html`<span class="row-icon" style="color:var(--s2-orange-600,#fc7d00)" title="Local copy — in sync with source">${icon('icon-doc-x')}</span>`;
+    return html`<span class="row-icon row-icon-inherit" title="Inheritance broken">${icon('S2_Icon_UnLink_20_N', '0 0 20 20')}</span>`;
   }
 
+  // Color-coded: green=all good, amber=preview only, orange=out-of-sync+live, red=needs action.
   _renderIcon2(siteId) {
     const d = this._satData.get(siteId);
-    if (!d || d.previewState === undefined) {
+    if (!d || d.hasOverride === undefined) return nothing;
+    if (d.previewState === undefined) {
       return html`<span class="row-icon row-icon-loading"></span>`;
     }
-    const key = getStatusKey(d);
-    const cfg = ICON2_CONFIG[key] || ICON2_CONFIG['not-rolled-out'];
-    return html`<span class="row-icon" style="color:${cfg.color}" title=${cfg.tip}>${icon(cfg.name)}</span>`;
+    const cfg = getStatusConfig(d);
+    return html`<span class="row-icon" style="color:${cfg.color}" title=${cfg.tip}>${icon(cfg.name, '0 0 18 18')}</span>`;
   }
 
-  renderStatusIcons(siteId) {
-    return html`<div class="row-icons">${this._renderIcon1(siteId)}${this._renderIcon2(siteId)}</div>`;
-  }
-
-  renderSiteRow(node, depth = 0) {
+  renderSiteRow(node, depth = 0, parentLabel = '') {
     const { siteId, label, children } = node;
     const d = this._satData.get(siteId) || {};
     const hasKids = (children?.length || 0) > 0;
@@ -541,21 +547,21 @@ class DaMsm extends LitElement {
       <div class="sat-row" style="padding-left:${14 + depth * 22}px"
         @click=${onToggle || nothing}>
         <button class="row-toggle ${toggleClass}" tabindex="-1" aria-hidden="true">
-          ${hasKids ? icon('icon-chevron-down', '0 0 10 10', 10, 10) : nothing}
+          ${hasKids ? icon('S2_Icon_ChevronDown_20_N', '0 0 20 20', 10, 10) : nothing}
         </button>
+        ${this._renderIcon1(siteId, parentLabel)}
         <div class="row-name-group">
           <span class="row-name">${label}</span>
           ${hasKids && isCollapsed ? html`<span class="region-count">${children.length}</span>` : nothing}
         </div>
-        ${this.renderStatusIcons(siteId)}
+        ${this._renderIcon2(siteId)}
         ${actionBtn}
         <button class="btn-more" title="More actions"
           @click=${(e) => { e.stopPropagation(); this._openMenu(siteId, e.currentTarget); }}>
-          ${icon('icon-more', '0 0 14 4', 14, 4)}
         </button>
       </div>
       ${showConfirm ? this.renderConfirmRow() : nothing}
-      ${hasKids && !isCollapsed ? children.map((child) => this.renderSiteRow(child, depth + 1)) : nothing}`;
+      ${hasKids && !isCollapsed ? children.map((child) => this.renderSiteRow(child, depth + 1, label)) : nothing}`;
   }
 
   renderConfirmRow() {
@@ -711,7 +717,7 @@ class DaMsm extends LitElement {
 
     return html`
       <div class="success-banner">
-        <div class="success-title">${icon('icon-circle-check')}${title}</div>
+        <div class="success-title">${icon('S2_Icon_CheckmarkCircle_20_N', '0 0 18 18')}${title}</div>
         <div class="success-links">
           ${targets.map((id) => successLink(id))}
           <button class="success-dismiss" @click=${() => { this._successData = null; }}>Dismiss</button>
@@ -723,22 +729,25 @@ class DaMsm extends LitElement {
     if (!this._asSatellite) return nothing;
     const parentLabel = this._asSatellite.baseLabel || this._asSatellite.base;
     const sourceLabel = this._effectiveBase?.label || parentLabel;
-    let icon1;
-    if (!this._hasOverride) {
-      icon1 = html`<span class="row-icon" style="color:var(--s2-green-700,#0ba45d)" title="Following base — no local copy">${icon('icon-doc-check')}</span>`;
-    } else if (this._sourceOutOfSync) {
-      icon1 = html`<span class="row-icon" style="color:var(--s2-red-700,#ff513d)" title="Local copy — source has changed, sync needed">${icon('icon-doc-alert')}</span>`;
-    } else {
-      icon1 = html`<span class="row-icon" style="color:var(--s2-orange-600,#fc7d00)" title="Local copy — in sync with source">${icon('icon-doc-x')}</span>`;
-    }
+    const inheritTip = this._hasOverride
+      ? 'Inheritance broken'
+      : `Inheriting from ${sourceLabel}`;
+    const icon1 = this._hasOverride === undefined ? nothing
+      : html`<span class="row-icon row-icon-inherit" title=${inheritTip}>
+          ${icon(this._hasOverride ? 'S2_Icon_UnLink_20_N' : 'S2_Icon_LinkApplied_20_N', '0 0 20 20')}
+        </span>`;
 
     let icon2;
     if (!this._sitePageStatus) {
       icon2 = html`<span class="row-icon row-icon-loading"></span>`;
     } else {
-      const key = getStatusKey(this._sitePageStatus);
-      const cfg = ICON2_CONFIG[key] || ICON2_CONFIG['not-rolled-out'];
-      icon2 = html`<span class="row-icon" style="color:${cfg.color}" title=${cfg.tip}>${icon(cfg.name)}</span>`;
+      const cfg = getStatusConfig({
+        hasOverride: this._hasOverride,
+        outOfSync: this._sourceOutOfSync,
+        previewState: this._sitePageStatus.previewState,
+        liveState: this._sitePageStatus.liveState,
+      });
+      icon2 = html`<span class="row-icon" style="color:${cfg.color}" title=${cfg.tip}>${icon(cfg.name, '0 0 18 18')}</span>`;
     }
 
     const viaNote = this._effectiveBase
@@ -757,10 +766,11 @@ class DaMsm extends LitElement {
         <div class="sat-list">
           <div class="sat-row" style="padding-left:14px">
             <span class="row-toggle leaf"></span>
+            ${icon1}
             <div class="row-name-group">
               <span class="row-name">${sourceLabel}</span>
             </div>
-            <div class="row-icons">${icon1}${icon2}</div>
+            ${icon2}
             <div class="source-actions">
               ${this._hasOverride
     ? html`<button class="btn-row" ?disabled=${this._busy}
@@ -774,7 +784,6 @@ class DaMsm extends LitElement {
             </div>
             <button class="btn-more" title="More actions"
               @click=${(e) => { e.stopPropagation(); this._openMenu('__source__', e.currentTarget); }}>
-              ${icon('icon-more', '0 0 14 4', 14, 4)}
             </button>
           </div>
           ${this._pendingConfirm?.siteId === '__source__' ? this.renderConfirmRow() : nothing}
@@ -798,7 +807,7 @@ class DaMsm extends LitElement {
         </div>
         ${this._pendingConfirm?.siteId === '__all__' ? this.renderConfirmRow() : nothing}
         <div class="sat-list">
-          ${this._tree.map((node) => this.renderSiteRow(node, 0))}
+          ${this._tree.map((node) => this.renderSiteRow(node, 0, this._asBase?.baseLabel))}
         </div>
       </div>`;
   }

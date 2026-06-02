@@ -263,13 +263,6 @@
   flex-shrink: 0;
 }
 
-.row-icons {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
 .row-icon {
   display: flex;
   align-items: center;
@@ -277,6 +270,7 @@
   width: 16px;
   height: 16px;
   flex-shrink: 0;
+  --iconPrimary: currentColor;
 }
 
 .row-icon svg,
@@ -290,6 +284,10 @@
 
 .row-toggle.closed svg {
   transform: rotate(-90deg);
+}
+
+.row-icon-inherit {
+  color: var(--s2-gray-400, #b3b3b3);
 }
 
 .row-icon-loading {
@@ -352,6 +350,16 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.btn-more::after {
+  content: '';
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: -5px 0 0 currentColor, 5px 0 0 currentColor;
 }
 
 .btn-more:hover {

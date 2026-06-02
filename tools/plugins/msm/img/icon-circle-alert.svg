@@ -1,5 +1,0 @@
-<svg id="icon-circle-alert" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none">
-  <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5"/>
-  <path d="M7 4v3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-  <circle cx="7" cy="9.8" r="0.85" fill="currentColor"/>
-</svg>

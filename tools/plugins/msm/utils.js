@@ -3,6 +3,10 @@ import { DA_ORIGIN } from 'https://da.live/nx/public/utils/constants.js';
 
 const AEM_ADMIN = 'https://admin.hlx.page';
 
+// Publishing a page bumps its lastModified date after the publish timestamp is
+// recorded, producing a spurious "stale" signal. This tolerance absorbs that lag.
+const PUBLISH_LAG_MS = 5000;
+
 // NX origin used to dynamically load the `mergeCopy` function. Kept as a
 // runtime constant so the plugin can be repointed at a different NX build
 // (e.g. for staging) without code changes elsewhere.
@@ -77,7 +81,7 @@ export async function getSatellitePageStatus(org, satellite, pagePath, editLastM
   let previewState;
   if (json.preview?.status !== 200) {
     previewState = 'not-rolled-out';
-  } else if (editTime !== null && previewTime !== null && editTime > previewTime) {
+  } else if (editTime !== null && previewTime !== null && editTime > previewTime + PUBLISH_LAG_MS) {
     previewState = 'behind';
   } else {
     previewState = 'current';
@@ -88,7 +92,7 @@ export async function getSatellitePageStatus(org, satellite, pagePath, editLastM
     liveState = 'not-rolled-out';
   } else if (
     (previewTime !== null && liveTime !== null && previewTime > liveTime)
-    || (editTime !== null && liveTime !== null && editTime > liveTime)
+    || (editTime !== null && liveTime !== null && editTime > liveTime + PUBLISH_LAG_MS)
   ) {
     liveState = 'behind';
   } else {

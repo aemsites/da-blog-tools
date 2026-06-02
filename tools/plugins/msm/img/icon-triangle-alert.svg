@@ -1,5 +1,0 @@
-<svg id="icon-triangle-alert" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none">
-  <path d="M7 1.5L12.5 11.5H1.5L7 1.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-  <path d="M7 5.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-  <circle cx="7" cy="10" r="0.9" fill="currentColor"/>
-</svg>
