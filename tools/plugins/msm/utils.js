@@ -63,7 +63,7 @@ export async function createOverride(org, base, satellite, pagePath) {
 
 export async function getSatellitePageStatus(org, satellite, pagePath, editLastModified = null) {
   const aemPath = pagePath.replace('.html', '');
-  const resp = await daFetch(`${AEM_ADMIN}/status/${org}/${satellite}/main${aemPath}`);
+  const resp = await daFetch(`${AEM_ADMIN}/status/${org}/${satellite}/main${aemPath}`, { cache: 'no-store' });
 
   if (!resp.ok) {
     return {

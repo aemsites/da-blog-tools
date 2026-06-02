@@ -328,15 +328,6 @@
   background: var(--s2-gray-75, #f3f3f3);
 }
 
-.btn-row.urgent {
-  border-color: var(--s2-red-700, #ff513d);
-  color: var(--s2-red-900, #d73220);
-  background: #fff5f4;
-}
-
-.btn-row.urgent:hover:not(:disabled) {
-  background: #ffe8e5;
-}
 
 .btn-more {
   width: 28px;

@@ -63,7 +63,8 @@ function getStatusConfig({
   if (!hasOverride) {
     if (liveState === 'current') return green('Live and current');
     if (previewState === 'current') return amber('Previewed — not yet published to live');
-    return red('Not rolled out');
+    if (liveState === 'not-rolled-out' && previewState === 'not-rolled-out') return red('Not rolled out');
+    return red('Base has changed — rollout needed');
   }
 
   if (outOfSync) {
@@ -536,7 +537,7 @@ class DaMsm extends LitElement {
       actionBtn = html`<button class="btn-row" ?disabled=${this._busy}
         @click=${(e) => { e.stopPropagation(); this._openConfirm(siteId, 'rollout'); }}>Roll out</button>`;
     } else if (depth === 0 && d.hasOverride === true) {
-      actionBtn = html`<button class="btn-row ${d.outOfSync ? 'urgent' : ''}" ?disabled=${this._busy}
+      actionBtn = html`<button class="btn-row" ?disabled=${this._busy}
         @click=${(e) => { e.stopPropagation(); this._openConfirm(siteId, 'sync'); }}>Sync</button>`;
     }
 

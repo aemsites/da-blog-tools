@@ -162,7 +162,7 @@ export async function getBaseSite(org, satellite) {
 export async function getPageTimestamp(org, site, pagePath) {
   const resp = await daFetch(
     `${DA_ORIGIN}/source/${org}/${site}${pagePath}.html`,
-    { method: 'HEAD' },
+    { method: 'HEAD', cache: 'no-store' },
   );
   return { exists: resp.ok, lastModified: resp.headers?.get('Last-Modified') || null };
 }
