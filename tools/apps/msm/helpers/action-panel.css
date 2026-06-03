@@ -244,6 +244,7 @@
   text-align: left;
   padding: 6px 16px 6px 4px;
   font-weight: 400;
+  min-width: 240px;
   max-width: 320px;
 }
 
