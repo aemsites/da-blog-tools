@@ -549,11 +549,18 @@ class MsmActionPanel extends LitElement {
     const inh = cell.hasOverride
       ? { name: 'S2_Icon_UnLink_20_N', tip: 'Local copy (inheritance broken)' }
       : { name: 'S2_Icon_LinkApplied_20_N', tip: `Inheriting from ${this._siteTitle(cell.sourceSite)}` };
-    return html`
+    const body = html`
       <span class="cell-pair">
         <span class="cell-inherit" title=${inh.tip}>${icon(inh.name, '0 0 20 20', 13, 13)}</span>
         ${this._statusIcon(cell)}
       </span>`;
+    // A local copy is editable on that satellite — link the cell to its doc.
+    if (cell.hasOverride && (page.ext || 'html') === 'html') {
+      return html`<a class="cell-link" href=${this._editUrl(satSite, page.path)}
+        target="_blank" rel="noopener"
+        title="Open ${this._siteTitle(satSite)} copy of ${page.path} in editor">${body}</a>`;
+    }
+    return body;
   }
 
   renderTargetHeader(col) {
@@ -730,6 +737,10 @@ class MsmActionPanel extends LitElement {
     return `https://da.live/edit#/${this.org}/${site}${clean}`;
   }
 
+  _editUrl(site, pagePath) {
+    return `https://da.live/edit#/${this.org}/${site}${pagePath.replace(/\.html$/, '')}`;
+  }
+
   // Editor URL for a page's actual content doc: this site when it has a local
   // copy (or is the base), else the ancestor it inherits from. Only docs (html)
   // have an editor; assets return null.
@@ -738,7 +749,7 @@ class MsmActionPanel extends LitElement {
     const row = this._rows.get(page.path);
     const site = row && row.category === 'inherited' ? row.source : this.site;
     if (!site) return null;
-    return `https://da.live/edit#/${this.org}/${site}${page.path.replace(/\.html$/, '')}`;
+    return this._editUrl(site, page.path);
   }
 
   renderPageName(page) {

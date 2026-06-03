@@ -261,6 +261,18 @@ a.page-link:hover {
   gap: 4px;
 }
 
+/* A local-copy cell links to that satellite's editor doc */
+.cell-link {
+  display: inline-flex;
+  text-decoration: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.cell-link:hover {
+  background: var(--s2-gray-100, #f5f5f5);
+}
+
 /* ===== Upward (satellite) table ===== */
 
 .up-col {
