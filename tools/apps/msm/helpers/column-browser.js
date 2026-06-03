@@ -95,13 +95,13 @@ class MsmColumnBrowser extends LitElement {
     this._mergedFolderCache = new Map();
   }
 
-  _siteHasInheritance(site) {
+  _siteHasSource(site) {
     if (!this.msmConfig || !site) return false;
-    return (this.msmConfig.rows || []).some((row) => row.satellite === site);
+    return (this.msmConfig.rows || []).some((row) => (row.satellite ?? row.linked) === site);
   }
 
   async _loadFolderItems(site, path) {
-    if (this._siteHasInheritance(site)) {
+    if (this._siteHasSource(site)) {
       const cacheKey = `${site}::${path}`;
       if (this._mergedFolderCache.has(cacheKey)) return this._mergedFolderCache.get(cacheKey);
       const items = await listFolderWithInheritance(this.org, site, path, this.msmConfig);
@@ -480,7 +480,7 @@ class MsmColumnBrowser extends LitElement {
       // The status icon answers "do you need an MSM action relative to your
       // source", so it only applies where inheritance does. Base-only sites
       // have no source — skip the fetch entirely.
-      if (!this._siteHasInheritance(item.site)) return;
+      if (!this._siteHasSource(item.site)) return;
       const key = itemKey(item);
       if (next.has(key)) return;
       next.set(key, 'loading');
@@ -494,7 +494,7 @@ class MsmColumnBrowser extends LitElement {
       const pagePath = item.path.replace(/\.[^/.]+$/, '');
       getPageStatus(this.org, item.site, pagePath, item.lastModified, ext)
         .then((status) => this._setRowStatus(itemKey(item), status))
-        .catch(() => this._setRowStatus(itemKey(item), { previewState: 'not-rolled-out', liveState: 'not-rolled-out' }));
+        .catch(() => this._setRowStatus(itemKey(item), { previewState: 'not-published', liveState: 'not-published' }));
     });
   }
 
@@ -635,30 +635,30 @@ class MsmColumnBrowser extends LitElement {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  // Small corner badge overlaid on the type icon. Inheritance state only
-  // applies to satellite listings (which carry an `inheritedFrom` field) and
-  // never to the sites column.
-  renderInheritanceBadge(item) {
-    if (item.isSite || !('inheritedFrom' in item)) return nothing;
-    const inherited = !!item.inheritedFrom;
-    const tip = inherited ? `Inheriting from ${item.inheritedFrom}` : 'Local copy — inheritance broken';
-    return html`<span class="inherit-badge ${inherited ? 'inherited' : 'override'}" title=${tip}>
-      ${icon(inherited ? 'S2_Icon_LinkApplied_20_N' : 'S2_Icon_UnLink_20_N')}
+  // Small corner badge overlaid on the type icon. Link state only applies to
+  // linked-site listings (which carry a `linkedFrom` field) and never to the
+  // sites column.
+  renderLinkBadge(item) {
+    if (item.isSite || !('linkedFrom' in item)) return nothing;
+    const linked = !!item.linkedFrom;
+    const tip = linked ? `Linked to ${item.linkedFrom}` : 'Detached (independent copy)';
+    return html`<span class="inherit-badge ${linked ? 'inherited' : 'override'}" title=${tip}>
+      ${icon(linked ? 'S2_Icon_LinkApplied_20_N' : 'S2_Icon_UnLink_20_N')}
     </span>`;
   }
 
   renderStatusIcon(item) {
     if (!isActionableItem(item)) return nothing;
-    if (!this._siteHasInheritance(item.site)) return nothing;
+    if (!this._siteHasSource(item.site)) return nothing;
     const status = this._rowStatus.get(itemKey(item));
     if (!status) return nothing;
     if (status === 'loading') return html`<span class="row-icon row-icon-loading"></span>`;
-    const hasOverride = !item.inheritedFrom;
-    const outOfSync = !!(item.hasLocalOverride && item.baseLastModified && item.lastModified
-      && new Date(item.baseLastModified).getTime()
+    const isDetached = !item.linkedFrom;
+    const outOfSync = !!(item.shadowsSource && item.sourceLastModified && item.lastModified
+      && new Date(item.sourceLastModified).getTime()
         > new Date(item.lastModified).getTime() + PUBLISH_LAG_MS);
     const cfg = getStatusConfig({
-      hasOverride, outOfSync, previewState: status.previewState, liveState: status.liveState,
+      isDetached, outOfSync, previewState: status.previewState, liveState: status.liveState,
     });
     return html`<span class="row-icon" style="color:${cfg.color}" title=${cfg.tip}>
       ${icon(cfg.name)}
@@ -699,7 +699,7 @@ class MsmColumnBrowser extends LitElement {
         ` : nothing}
         <span class="item-icon">
           ${typeIcon}
-          ${this.renderInheritanceBadge(item)}
+          ${this.renderLinkBadge(item)}
         </span>
         <span class="item-label">${item.name}</span>
         <span class="item-trailing">

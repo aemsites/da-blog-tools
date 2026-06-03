@@ -33,7 +33,7 @@ async function ensureMergeCopy() {
   return mergeCopyFn;
 }
 
-export async function previewSatellite(org, site, pagePath, ext = 'html') {
+export async function previewPage(org, site, pagePath, ext = 'html') {
   const clean = cleanPath(pagePath, ext);
   const aemPath = ext === 'html' ? clean : `${clean}.${ext}`;
   const resp = await daFetch(`${AEM_ADMIN}/preview/${org}/${site}/main${aemPath}`, { method: 'POST' });
@@ -41,7 +41,7 @@ export async function previewSatellite(org, site, pagePath, ext = 'html') {
   return resp.json();
 }
 
-export async function publishSatellite(org, site, pagePath, ext = 'html') {
+export async function publishPage(org, site, pagePath, ext = 'html') {
   const clean = cleanPath(pagePath, ext);
   const aemPath = ext === 'html' ? clean : `${clean}.${ext}`;
   const resp = await daFetch(`${AEM_ADMIN}/live/${org}/${site}/main${aemPath}`, { method: 'POST' });
@@ -49,41 +49,45 @@ export async function publishSatellite(org, site, pagePath, ext = 'html') {
   return resp.json();
 }
 
-export async function createOverride(org, baseSite, satellite, pagePath, ext = 'html') {
+// Detach a page on `targetSite` by writing it an independent copy of the
+// source's content. Also the primitive behind a "replace" sync (overwrite the
+// existing copy from source).
+export async function copyFromSource(org, sourceSite, targetSite, pagePath, ext = 'html') {
   const clean = cleanPath(pagePath, ext);
-  const baseUrl = `${DA_ORIGIN}/source/${org}/${baseSite}${clean}.${ext}`;
-  const resp = await daFetch(baseUrl);
-  if (!resp.ok) return { error: `Failed to fetch base content (${resp.status})` };
+  const sourceUrl = `${DA_ORIGIN}/source/${org}/${sourceSite}${clean}.${ext}`;
+  const resp = await daFetch(sourceUrl);
+  if (!resp.ok) return { error: `Failed to fetch source content (${resp.status})` };
 
   const content = await resp.blob();
   const mimeType = EXT_MIME_TYPES[ext] || 'application/octet-stream';
   const formData = new FormData();
   formData.append('data', new Blob([content], { type: mimeType }));
 
-  const satUrl = `${DA_ORIGIN}/source/${org}/${satellite}${clean}.${ext}`;
-  const saveResp = await daFetch(satUrl, { method: 'PUT', body: formData });
-  if (!saveResp.ok) return { error: `Failed to create override (${saveResp.status})` };
+  const targetUrl = `${DA_ORIGIN}/source/${org}/${targetSite}${clean}.${ext}`;
+  const saveResp = await daFetch(targetUrl, { method: 'PUT', body: formData });
+  if (!saveResp.ok) return { error: `Failed to copy from source (${saveResp.status})` };
   return { ok: true };
 }
 
-export async function deleteOverride(org, satellite, pagePath, ext = 'html') {
+// Reconnect a page by deleting its independent copy so it links to its source again.
+export async function deleteCopy(org, site, pagePath, ext = 'html') {
   const clean = cleanPath(pagePath, ext);
-  const resp = await daFetch(`${DA_ORIGIN}/source/${org}/${satellite}${clean}.${ext}`, { method: 'DELETE' });
-  if (!resp.ok) return { error: `Failed to delete override (${resp.status})` };
+  const resp = await daFetch(`${DA_ORIGIN}/source/${org}/${site}${clean}.${ext}`, { method: 'DELETE' });
+  if (!resp.ok) return { error: `Failed to remove copy (${resp.status})` };
   return { ok: true };
 }
 
-export async function mergeFromBase(org, baseSite, satellite, pagePath, ext = 'html') {
+export async function mergeFromSource(org, sourceSite, targetSite, pagePath, ext = 'html') {
   try {
     const clean = cleanPath(pagePath, ext);
     const mergeCopy = await ensureMergeCopy();
     const url = {
-      source: `/${org}/${baseSite}${clean}.${ext}`,
-      destination: `/${org}/${satellite}${clean}.${ext}`,
+      source: `/${org}/${sourceSite}${clean}.${ext}`,
+      destination: `/${org}/${targetSite}${clean}.${ext}`,
     };
     const result = await mergeCopy(url, 'MSM Merge');
     if (!result?.ok) return { error: 'Merge failed' };
-    return { ok: true, editUrl: `${editUrlOrigin}/edit#/${org}/${satellite}${clean}` };
+    return { ok: true, editUrl: `${editUrlOrigin}/edit#/${org}/${targetSite}${clean}` };
   } catch (e) {
     return { error: e.message || 'Merge failed' };
   }

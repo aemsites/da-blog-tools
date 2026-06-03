@@ -29,7 +29,7 @@
 /* ── Loading / empty states ───────────────────────────────────────────────── */
 
 .loading,
-.no-satellites {
+.no-linked {
   font-size: 14px;
   font-style: italic;
   color: var(--s2-gray-600, #717171);
@@ -158,7 +158,7 @@
   color: var(--s2-gray-500, #929292);
 }
 
-.btn-rollout-all {
+.btn-publish-all {
   height: 26px;
   padding: 0 10px;
   border-radius: 6px;
@@ -172,24 +172,24 @@
   white-space: nowrap;
 }
 
-.btn-rollout-all:disabled {
+.btn-publish-all:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-.btn-rollout-all:hover:not(:disabled) {
+.btn-publish-all:hover:not(:disabled) {
   background: var(--s2-gray-75, #f3f3f3);
 }
 
-/* ── Satellite list ───────────────────────────────────────────────────────── */
+/* ── Linked-site list ───────────────────────────────────────────────────────── */
 
-.sat-list {
+.linked-list {
   border: 1px solid var(--s2-gray-200, #e1e1e1);
   border-radius: 8px;
   overflow: hidden;
 }
 
-.sat-row {
+.linked-row {
   display: flex;
   align-items: center;
   height: 44px;
@@ -200,11 +200,11 @@
   box-sizing: border-box;
 }
 
-.sat-row:first-child {
+.linked-row:first-child {
   border-top: none;
 }
 
-.sat-row:hover {
+.linked-row:hover {
   background: var(--s2-gray-50, #f8f8f8);
   cursor: pointer;
 }

@@ -186,7 +186,7 @@
   color: var(--s2-gray-800);
 }
 
-/* Satellite name: reads as a column label, reveals its jump affordance
+/* Linked-site name: reads as a column label, reveals its jump affordance
    (down the tree) on hover so a row of columns isn't a wall of blue links. */
 .target-jump {
   appearance: none;
@@ -322,7 +322,7 @@ a.page-link:hover {
   gap: 4px;
 }
 
-/* A local-copy cell links to that satellite's editor doc */
+/* A local-copy cell links to that site's editor doc */
 .cell-link {
   display: inline-flex;
   text-decoration: none;
@@ -334,7 +334,7 @@ a.page-link:hover {
   background: var(--s2-gray-100, #f5f5f5);
 }
 
-/* ===== Upward (satellite) table ===== */
+/* ===== Upward (source) table ===== */
 
 .up-col {
   padding: 8px 12px;

@@ -4,17 +4,17 @@ import { LitElement, html, nothing } from 'da-lit';
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import {
   getSiteConfig,
-  getSatelliteTree,
+  getLinkedTree,
   getPageTimestamp,
   setSdkFetch as setConfigSdkFetch,
 } from './config.js';
 import {
-  previewSatellite,
-  publishSatellite,
-  createOverride,
-  deleteOverride,
-  mergeFromBase,
-  getSatellitePageStatus,
+  previewPage,
+  publishPage,
+  copyFromSource,
+  deleteCopy,
+  mergeFromSource,
+  getPageStatus,
   getStatusConfig,
   setSdkFetch as setUtilsSdkFetch,
   setEditUrlOrigin,
@@ -25,7 +25,7 @@ const MSM_APP_URL = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/msm/m
 const NX = 'https://da.live/nx';
 
 // Publishing a page bumps its lastModified date after the publish timestamp is
-// recorded, producing a spurious "out of sync" signal. This tolerance absorbs that lag.
+// recorded, producing a spurious "behind source" signal. This tolerance absorbs that lag.
 const PUBLISH_LAG_MS = 5000;
 
 let nexter = null;
@@ -49,11 +49,11 @@ class DaMsm extends LitElement {
     details: { attribute: false },
     _loading: { state: true },
     _busy: { state: true },
-    _asBase: { state: true },
-    _asSatellite: { state: true },
-    _hasOverride: { state: true },
+    _asSource: { state: true },
+    _asLinked: { state: true },
+    _isDetached: { state: true },
     _tree: { state: true },
-    _satData: { state: true },
+    _linkedData: { state: true },
     _collapsed: { state: true },
     _pendingConfirm: { state: true },
     _fullConfirmScope: { state: true },
@@ -61,7 +61,7 @@ class DaMsm extends LitElement {
     _successData: { state: true },
     _menuSiteId: { state: true },
     _menuPos: { state: true },
-    _effectiveBase: { state: true },
+    _effectiveSource: { state: true },
     _sourceOutOfSync: { state: true },
     _sitePageStatus: { state: true },
     _sourceError: { state: true },
@@ -73,7 +73,7 @@ class DaMsm extends LitElement {
     this._loading = 'Loading…';
     this._busy = false;
     this._tree = [];
-    this._satData = new Map();
+    this._linkedData = new Map();
     this._collapsed = new Set();
     this._pendingConfirm = null;
     this._fullConfirmScope = [];
@@ -81,8 +81,8 @@ class DaMsm extends LitElement {
     this._successData = null;
     this._menuSiteId = null;
     this._menuPos = null;
-    this._baseSiteLastModified = null;
-    this._effectiveBase = null;
+    this._sourceLastModified = null;
+    this._effectiveSource = null;
     this._sourceOutOfSync = null;
     this._sitePageStatus = null;
     this._sourceError = null;
@@ -95,7 +95,7 @@ class DaMsm extends LitElement {
 
     const [config, tree] = await Promise.all([
       getSiteConfig(org, site),
-      getSatelliteTree(org, site),
+      getLinkedTree(org, site),
     ]);
 
     if (!config) {
@@ -103,18 +103,18 @@ class DaMsm extends LitElement {
       return;
     }
 
-    this._asBase = config.asBase;
-    this._asSatellite = config.asSatellite;
+    this._asSource = config.asSource;
+    this._asLinked = config.asLinked;
     this._tree = tree;
 
-    // Seed satData with labels so tree renders names immediately
+    // Seed linkedData with labels so tree renders names immediately
     const initial = new Map();
     const seed = (nodes) => nodes.forEach(({ siteId, label, children }) => {
       initial.set(siteId, { label });
       if (children?.length) seed(children);
     });
     seed(tree);
-    this._satData = initial;
+    this._linkedData = initial;
 
     // Auto-collapse mid-tier nodes (those with children)
     const collapsed = new Set();
@@ -124,18 +124,18 @@ class DaMsm extends LitElement {
     markCollapsed(tree);
     this._collapsed = collapsed;
 
-    // Load upward override status; resolve effective source if direct parent has no local copy
-    if (this._asSatellite) {
-      const baseSite = this._asSatellite.base;
-      const [siteTs, baseTs] = await Promise.all([
+    // Load upward detached status; resolve effective source if direct parent has no copy
+    if (this._asLinked) {
+      const sourceSite = this._asLinked.source;
+      const [siteTs, sourceTs] = await Promise.all([
         getPageTimestamp(org, site, path),
-        getPageTimestamp(org, baseSite, path),
+        getPageTimestamp(org, sourceSite, path),
       ]);
-      this._hasOverride = siteTs.exists;
+      this._isDetached = siteTs.exists;
 
-      let effectiveTs = baseTs;
-      if (!baseTs.exists) {
-        const chain = this._asSatellite.chain || [];
+      let effectiveTs = sourceTs;
+      if (!sourceTs.exists) {
+        const chain = this._asLinked.chain || [];
         const ancestors = chain.slice(0, chain.length - 1);
         if (ancestors.length > 0) {
           const checks = await Promise.all(
@@ -144,7 +144,7 @@ class DaMsm extends LitElement {
           );
           const nearest = [...checks].reverse().find((a) => a.hasContent);
           const resolved = nearest || checks[0];
-          this._effectiveBase = resolved;
+          this._effectiveSource = resolved;
           effectiveTs = resolved
             ? { exists: resolved.hasContent, lastModified: resolved.lastModified }
             : null;
@@ -156,7 +156,7 @@ class DaMsm extends LitElement {
       }
 
       // Load publish status for this site's page (for the source row's status icon)
-      getSatellitePageStatus(org, site, path, siteTs.lastModified).then((status) => {
+      getPageStatus(org, site, path, siteTs.lastModified).then((status) => {
         this._sitePageStatus = status;
       });
     }
@@ -164,9 +164,9 @@ class DaMsm extends LitElement {
     this._loading = undefined;
 
     // Top-level nodes load eagerly; deeper nodes load lazily when their parent is expanded
-    if (this._asBase) {
-      const baseSiteTs = await getPageTimestamp(org, site, path);
-      this._baseSiteLastModified = baseSiteTs.lastModified;
+    if (this._asSource) {
+      const sourceSiteTs = await getPageTimestamp(org, site, path);
+      this._sourceLastModified = sourceSiteTs.lastModified;
       this._loadNodes(tree.map((n) => n.siteId));
     }
   }
@@ -195,17 +195,17 @@ class DaMsm extends LitElement {
     return ids;
   }
 
-  _inheritedInSubtree(rootSiteId) {
+  _linkedInSubtree(rootSiteId) {
     const find = (nodes) => nodes.reduce((acc, n) => {
       if (acc) return acc;
       if (n.siteId === rootSiteId) return n;
       return find(n.children || []);
     }, null);
     const node = find(this._tree);
-    if (!node) return this._satData.get(rootSiteId)?.hasOverride === false ? [rootSiteId] : [];
+    if (!node) return this._linkedData.get(rootSiteId)?.isDetached === false ? [rootSiteId] : [];
     const ids = [];
     const collect = (n) => {
-      if (this._satData.get(n.siteId)?.hasOverride !== false) return;
+      if (this._linkedData.get(n.siteId)?.isDetached !== false) return;
       ids.push(n.siteId);
       (n.children || []).forEach(collect);
     };
@@ -231,12 +231,12 @@ class DaMsm extends LitElement {
     return chain;
   }
 
-  _effectiveBaseLM(siteId) {
+  _effectiveSourceLM(siteId) {
     const ancestors = this._ancestorChain(siteId);
-    const nearest = ancestors.find((id) => this._satData.get(id)?.hasOverride === true);
+    const nearest = ancestors.find((id) => this._linkedData.get(id)?.isDetached === true);
     return nearest
-      ? (this._satData.get(nearest)?.lastModified || null)
-      : this._baseSiteLastModified;
+      ? (this._linkedData.get(nearest)?.lastModified || null)
+      : this._sourceLastModified;
   }
 
   async _loadNodes(siteIds) {
@@ -245,101 +245,101 @@ class DaMsm extends LitElement {
       siteIds.map((id) => getPageTimestamp(org, id, path).then((ts) => ({ id, ...ts }))),
     );
 
-    const update = new Map(this._satData);
+    const update = new Map(this._linkedData);
     timestamps.forEach(({ id, exists, lastModified }) => {
-      const satTime = lastModified ? new Date(lastModified).getTime() : null;
+      const siteTime = lastModified ? new Date(lastModified).getTime() : null;
       let outOfSync = false;
       if (exists) {
-        const refLM = this._effectiveBaseLM(id);
+        const refLM = this._effectiveSourceLM(id);
         const refTime = refLM ? new Date(refLM).getTime() : null;
-        outOfSync = refTime !== null && satTime !== null && satTime + PUBLISH_LAG_MS < refTime;
+        outOfSync = refTime !== null && siteTime !== null && siteTime + PUBLISH_LAG_MS < refTime;
       }
       update.set(id, {
-        ...update.get(id), hasOverride: exists, outOfSync, lastModified,
+        ...update.get(id), isDetached: exists, outOfSync, lastModified,
       });
     });
-    this._satData = update;
+    this._linkedData = update;
 
     siteIds.forEach((id) => {
-      const d = this._satData.get(id);
-      const editLM = d?.hasOverride ? d.lastModified : this._effectiveBaseLM(id);
-      getSatellitePageStatus(org, id, path, editLM).then((status) => {
-        const m = new Map(this._satData);
+      const d = this._linkedData.get(id);
+      const editLM = d?.isDetached ? d.lastModified : this._effectiveSourceLM(id);
+      getPageStatus(org, id, path, editLM).then((status) => {
+        const m = new Map(this._linkedData);
         m.set(id, { ...m.get(id), ...status });
-        this._satData = m;
+        this._linkedData = m;
       });
     });
   }
 
   // ── Action execution ──────────────────────────────────────────────────────
 
-  _setSatField(siteId, fields) {
-    const next = new Map(this._satData);
+  _setLinkedField(siteId, fields) {
+    const next = new Map(this._linkedData);
     next.set(siteId, { ...next.get(siteId), ...fields });
-    this._satData = next;
+    this._linkedData = next;
   }
 
-  async _rollout(siteIds, level) {
+  async _publish(siteIds, level) {
     this._busy = true;
     const { org, path } = this.details;
 
-    siteIds.forEach((id) => this._setSatField(id, { actionStatus: 'pending' }));
+    siteIds.forEach((id) => this._setLinkedField(id, { actionStatus: 'pending' }));
     const results = await Promise.allSettled(siteIds.map(async (id) => {
-      const previewResult = await previewSatellite(org, id, path);
+      const previewResult = await previewPage(org, id, path);
       if (previewResult?.error) return previewResult;
-      if (level === 'live') return publishSatellite(org, id, path);
+      if (level === 'live') return publishPage(org, id, path);
       return previewResult;
     }));
 
     const succeeded = [];
     results.forEach((r, idx) => {
       const ok = r.status === 'fulfilled' && !r.value?.error;
-      this._setSatField(siteIds[idx], { actionStatus: ok ? 'success' : 'error' });
+      this._setLinkedField(siteIds[idx], { actionStatus: ok ? 'success' : 'error' });
       if (ok) succeeded.push(siteIds[idx]);
     });
 
     if (succeeded.length) {
       succeeded.forEach((id) => {
-        this._setSatField(id, {
+        this._setLinkedField(id, {
           previewState: 'current',
           ...(level === 'live' ? { liveState: 'current' } : {}),
         });
       });
-      this._successData = { targets: succeeded, action: 'rollout', level };
+      this._successData = { targets: succeeded, action: 'publish', level };
     }
     this._busy = false;
   }
 
-  async _cancelInheritance(siteId) {
+  async _detach(siteId) {
     this._busy = true;
     const { org, site, path } = this.details;
-    const result = await createOverride(org, site, siteId, path);
+    const result = await copyFromSource(org, site, siteId, path);
     if (!result.error) {
-      this._setSatField(siteId, { hasOverride: true, outOfSync: false });
-      this._successData = { targets: [siteId], action: 'cancel-inheritance' };
+      this._setLinkedField(siteId, { isDetached: true, outOfSync: false });
+      this._successData = { targets: [siteId], action: 'detach' };
     }
     this._busy = false;
   }
 
-  async _resumeInheritance(siteId) {
+  async _reconnect(siteId) {
     if (this._busy) return;
     this._busy = true;
     const { org, path } = this.details;
-    const pageStatus = await getSatellitePageStatus(org, siteId, path);
-    const result = await deleteOverride(org, siteId, path);
+    const pageStatus = await getPageStatus(org, siteId, path);
+    const result = await deleteCopy(org, siteId, path);
     if (!result?.error) {
-      if (pageStatus.liveState !== 'not-rolled-out') {
-        await previewSatellite(org, siteId, path);
-        await publishSatellite(org, siteId, path);
-      } else if (pageStatus.previewState !== 'not-rolled-out') {
-        await previewSatellite(org, siteId, path);
+      if (pageStatus.liveState !== 'not-published') {
+        await previewPage(org, siteId, path);
+        await publishPage(org, siteId, path);
+      } else if (pageStatus.previewState !== 'not-published') {
+        await previewPage(org, siteId, path);
       }
       if (siteId === this.details.site) {
-        this._hasOverride = false;
+        this._isDetached = false;
       } else {
-        this._setSatField(siteId, { hasOverride: false, outOfSync: false });
+        this._setLinkedField(siteId, { isDetached: false, outOfSync: false });
       }
-      this._successData = { targets: [siteId], action: 'resume-inheritance' };
+      this._successData = { targets: [siteId], action: 'reconnect' };
     }
     this._busy = false;
   }
@@ -348,10 +348,10 @@ class DaMsm extends LitElement {
     this._busy = true;
     const { org, site, path } = this.details;
     const result = mode === 'merge'
-      ? await mergeFromBase(org, site, siteId, path)
-      : await createOverride(org, site, siteId, path);
+      ? await mergeFromSource(org, site, siteId, path)
+      : await copyFromSource(org, site, siteId, path);
     if (!result?.error) {
-      this._setSatField(siteId, {
+      this._setLinkedField(siteId, {
         outOfSync: false,
         ...(result.editUrl ? { editUrl: result.editUrl } : {}),
       });
@@ -360,21 +360,21 @@ class DaMsm extends LitElement {
     this._busy = false;
   }
 
-  async _pullFromBase(mode = 'override') {
+  async _pullFromSource(mode = 'replace') {
     if (this._busy) return;
     this._busy = true;
     this._sourceError = null;
     const { org, site, path } = this.details;
-    const baseSite = this._effectiveBase?.site || this._asSatellite?.base;
+    const sourceSite = this._effectiveSource?.site || this._asLinked?.source;
     const result = mode === 'merge'
-      ? await mergeFromBase(org, baseSite, site, path)
-      : await createOverride(org, baseSite, site, path);
+      ? await mergeFromSource(org, sourceSite, site, path)
+      : await copyFromSource(org, sourceSite, site, path);
     if (result?.error) {
       this._sourceError = result.error;
     } else {
-      this._hasOverride = true;
+      this._isDetached = true;
       this._sourceOutOfSync = false;
-      this._successData = { targets: [site], action: 'pull-from-base' };
+      this._successData = { targets: [site], action: 'pull-from-source' };
     }
     this._busy = false;
   }
@@ -382,14 +382,14 @@ class DaMsm extends LitElement {
   // ── Confirm / scope chip helpers ──────────────────────────────────────────
 
   _openConfirm(siteId, type, message = null) {
-    const full = type === 'rollout' ? this._inheritedInSubtree(siteId) : [];
+    const full = type === 'publish' ? this._linkedInSubtree(siteId) : [];
     this._fullConfirmScope = full;
     this._confirmScope = [...full];
     this._pendingConfirm = { siteId, type, message };
     this._closeMenu();
   }
 
-  async _openRolloutAllConfirm() {
+  async _openPublishAllConfirm() {
     const allSiteIds = [];
     const collect = (nodes) => nodes.forEach((n) => {
       allSiteIds.push(n.siteId);
@@ -397,19 +397,19 @@ class DaMsm extends LitElement {
     });
     collect(this._tree);
 
-    const unloaded = allSiteIds.filter((id) => this._satData.get(id)?.hasOverride === undefined);
+    const unloaded = allSiteIds.filter((id) => this._linkedData.get(id)?.isDetached === undefined);
     if (unloaded.length) {
       this._busy = true;
       await this._loadNodes(unloaded);
       this._busy = false;
     }
 
-    const allInherited = [];
-    this._tree.forEach((n) => allInherited.push(...this._inheritedInSubtree(n.siteId)));
-    const full = [...new Set(allInherited)];
+    const allLinked = [];
+    this._tree.forEach((n) => allLinked.push(...this._linkedInSubtree(n.siteId)));
+    const full = [...new Set(allLinked)];
     this._fullConfirmScope = full;
     this._confirmScope = [...full];
-    this._pendingConfirm = { siteId: '__all__', type: 'rollout' };
+    this._pendingConfirm = { siteId: '__all__', type: 'publish' };
   }
 
   _toggleScope(id) {
@@ -454,21 +454,21 @@ class DaMsm extends LitElement {
 
   // ── Render helpers ────────────────────────────────────────────────────────
 
-  // Gray icon: shows inheritance state only — no urgency implied.
-  _renderInheritanceIcon(siteId, parentLabel) {
-    const d = this._satData.get(siteId);
-    if (!d || d.hasOverride === undefined) return nothing;
-    if (!d.hasOverride) {
-      const tip = parentLabel ? `Inheriting from ${parentLabel}` : 'Inheriting from base';
+  // Gray icon: shows link state only — no urgency implied.
+  _renderLinkIcon(siteId, parentLabel) {
+    const d = this._linkedData.get(siteId);
+    if (!d || d.isDetached === undefined) return nothing;
+    if (!d.isDetached) {
+      const tip = parentLabel ? `Linked to ${parentLabel}` : 'Linked to source';
       return html`<span class="row-icon row-icon-inherit" title="${tip}">${icon('S2_Icon_LinkApplied_20_N', '0 0 20 20')}</span>`;
     }
-    return html`<span class="row-icon row-icon-inherit" title="Inheritance broken">${icon('S2_Icon_UnLink_20_N', '0 0 20 20')}</span>`;
+    return html`<span class="row-icon row-icon-inherit" title="Detached (independent copy)">${icon('S2_Icon_UnLink_20_N', '0 0 20 20')}</span>`;
   }
 
-  // Color-coded: green=all good, amber=preview only, orange=out-of-sync+live, red=needs action.
+  // Color-coded: green=all good, amber=preview only, orange=behind-source+live, red=needs action.
   _renderStatusIcon(siteId) {
-    const d = this._satData.get(siteId);
-    if (!d || d.hasOverride === undefined) return nothing;
+    const d = this._linkedData.get(siteId);
+    if (!d || d.isDetached === undefined) return nothing;
     if (d.previewState === undefined) {
       return html`<span class="row-icon row-icon-loading"></span>`;
     }
@@ -478,7 +478,7 @@ class DaMsm extends LitElement {
 
   renderSiteRow(node, depth = 0, parentLabel = '') {
     const { siteId, label, children } = node;
-    const d = this._satData.get(siteId) || {};
+    const d = this._linkedData.get(siteId) || {};
     const hasKids = (children?.length || 0) > 0;
     const isCollapsed = this._collapsed.has(siteId);
     const showConfirm = this._pendingConfirm?.siteId === siteId;
@@ -490,7 +490,7 @@ class DaMsm extends LitElement {
         if (isCollapsed) {
           next.delete(siteId);
           const unloaded = (children || [])
-            .filter((c) => this._satData.get(c.siteId)?.hasOverride === undefined)
+            .filter((c) => this._linkedData.get(c.siteId)?.isDetached === undefined)
             .map((c) => c.siteId);
           if (unloaded.length) this._loadNodes(unloaded);
         } else {
@@ -501,10 +501,10 @@ class DaMsm extends LitElement {
       : null;
 
     let actionBtn = nothing;
-    if (depth === 0 && d.hasOverride === false) {
+    if (depth === 0 && d.isDetached === false) {
       actionBtn = html`<button class="btn-row" ?disabled=${this._busy}
-        @click=${(e) => { e.stopPropagation(); this._openConfirm(siteId, 'rollout'); }}>Roll out</button>`;
-    } else if (depth === 0 && d.hasOverride === true) {
+        @click=${(e) => { e.stopPropagation(); this._openConfirm(siteId, 'publish'); }}>Publish</button>`;
+    } else if (depth === 0 && d.isDetached === true) {
       actionBtn = html`<button class="btn-row" ?disabled=${this._busy}
         @click=${(e) => { e.stopPropagation(); this._openConfirm(siteId, 'sync'); }}>Sync</button>`;
     }
@@ -513,12 +513,12 @@ class DaMsm extends LitElement {
     const toggleClass = !hasKids ? 'leaf' : isCollapsed ? 'closed' : 'open';
 
     return html`
-      <div class="sat-row" style="padding-left:${14 + depth * 22}px"
+      <div class="linked-row" style="padding-left:${14 + depth * 22}px"
         @click=${onToggle || nothing}>
         <button class="row-toggle ${toggleClass}" tabindex="-1" aria-hidden="true">
           ${hasKids ? icon('S2_Icon_ChevronDown_20_N', '0 0 20 20', 10, 10) : nothing}
         </button>
-        ${this._renderInheritanceIcon(siteId, parentLabel)}
+        ${this._renderLinkIcon(siteId, parentLabel)}
         <div class="row-name-group">
           <span class="row-name">${label}</span>
           ${hasKids && isCollapsed ? html`<span class="region-count">${children.length}</span>` : nothing}
@@ -536,14 +536,14 @@ class DaMsm extends LitElement {
   renderConfirmRow() {
     const c = this._pendingConfirm;
     if (!c) return nothing;
-    const isDestructive = ['sync', 'sync-source', 'cancel-inheritance', 'resume-inheritance'].includes(c.type);
+    const isDestructive = ['sync', 'sync-source', 'detach', 'reconnect'].includes(c.type);
 
     let scopeChips = nothing;
-    if (c.type === 'rollout' && this._fullConfirmScope.length > 0) {
+    if (c.type === 'publish' && this._fullConfirmScope.length > 0) {
       scopeChips = html`
         <div class="confirm-scope">
           ${this._fullConfirmScope.map((id) => {
-    const label = this._satData.get(id)?.label || id;
+    const label = this._linkedData.get(id)?.label || id;
     const isOn = this._confirmScope.includes(id);
     return html`<span class="scope-chip ${isOn ? '' : 'off'}"
             @click=${() => this._toggleScope(id)}>
@@ -555,30 +555,30 @@ class DaMsm extends LitElement {
     }
 
     let actions;
-    if (c.type === 'rollout') {
+    if (c.type === 'publish') {
       const targets = [...this._confirmScope];
       const noTargets = targets.length === 0;
       actions = html`
-        <button class="btn btn-primary" ?disabled=${noTargets} @click=${() => { this._dismissConfirm(); this._rollout(targets, 'live'); }}>Roll out to live</button>
-        <button class="btn btn-secondary" ?disabled=${noTargets} @click=${() => { this._dismissConfirm(); this._rollout(targets, 'preview'); }}>Roll out to preview</button>
+        <button class="btn btn-primary" ?disabled=${noTargets} @click=${() => { this._dismissConfirm(); this._publish(targets, 'live'); }}>Publish</button>
+        <button class="btn btn-secondary" ?disabled=${noTargets} @click=${() => { this._dismissConfirm(); this._publish(targets, 'preview'); }}>Preview</button>
         <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
     } else if (c.type === 'sync') {
       actions = html`
         <button class="btn btn-secondary" @click=${() => { this._dismissConfirm(); this._sync(c.siteId, 'merge'); }}>Merge</button>
-        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._sync(c.siteId, 'override'); }}>Override</button>
+        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._sync(c.siteId, 'replace'); }}>Replace</button>
         <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
     } else if (c.type === 'sync-source') {
       actions = html`
-        <button class="btn btn-secondary" @click=${() => { this._dismissConfirm(); this._pullFromBase('merge'); }}>Merge</button>
-        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._pullFromBase('override'); }}>Override</button>
+        <button class="btn btn-secondary" @click=${() => { this._dismissConfirm(); this._pullFromSource('merge'); }}>Merge</button>
+        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._pullFromSource('replace'); }}>Replace</button>
         <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
-    } else if (c.type === 'cancel-inheritance') {
+    } else if (c.type === 'detach') {
       actions = html`
-        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._cancelInheritance(c.siteId); }}>Create local copy</button>
+        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._detach(c.siteId); }}>Detach</button>
         <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
-    } else if (c.type === 'resume-inheritance') {
+    } else if (c.type === 'reconnect') {
       actions = html`
-        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._resumeInheritance(c.siteId); }}>Remove local copy</button>
+        <button class="btn btn-danger" @click=${() => { this._dismissConfirm(); this._reconnect(c.siteId); }}>Reconnect</button>
         <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
     }
 
@@ -600,15 +600,15 @@ class DaMsm extends LitElement {
     let items;
     if (siteId === '__source__') {
       const { path } = this.details;
-      const effectiveSite = this._effectiveBase?.site || this._asSatellite?.base;
+      const effectiveSite = this._effectiveSource?.site || this._asLinked?.source;
       const pageUrl = `https://da.live/edit#/${org}/${effectiveSite}${path}`;
       items = [
-        ...(this._hasOverride ? [{
-          label: 'Resume inheritance',
+        ...(this._isDetached ? [{
+          label: 'Reconnect',
           danger: true,
           action: () => {
-            const base = this._asSatellite?.baseLabel || this._asSatellite?.base || 'source';
-            this._openConfirm(this.details.site, 'resume-inheritance', `Remove your local copy? This page will serve ${base}'s content again. This cannot be undone.`);
+            const source = this._asLinked?.sourceLabel || this._asLinked?.source || 'source';
+            this._openConfirm(this.details.site, 'reconnect', `Reconnect this page to its source? Your independent copy is removed and the page serves ${source}'s content again. This cannot be undone.`);
           },
         }, { sep: true }] : []),
         { label: 'Open source page ↗', action: () => { window.open(pageUrl, '_blank', 'noopener'); this._closeMenu(); } },
@@ -616,25 +616,25 @@ class DaMsm extends LitElement {
         manageApp,
       ];
     } else {
-      const d = this._satData.get(siteId) || {};
+      const d = this._linkedData.get(siteId) || {};
       const pageUrl = `https://da.live/edit#/${org}/${siteId}${this.details.path}`;
       const openPage = { label: 'Open page ↗', action: () => { window.open(pageUrl, '_blank', 'noopener'); this._closeMenu(); } };
 
-      items = d.hasOverride === false
+      items = d.isDetached === false
         ? [
           {
-            label: 'Cancel inheritance',
+            label: 'Detach',
             danger: true,
-            action: () => this._openConfirm(siteId, 'cancel-inheritance', `Create a local copy for ${d.label || siteId}? It will need to be independently previewed and published.`),
+            action: () => this._openConfirm(siteId, 'detach', `Detach ${d.label || siteId}? It becomes an independent copy you preview and publish separately.`),
           },
           { sep: true },
           manageApp,
         ]
         : [
           {
-            label: 'Resume inheritance',
+            label: 'Reconnect',
             danger: true,
-            action: () => this._openConfirm(siteId, 'resume-inheritance', `Remove ${d.label || siteId}'s local copy? This page will serve source content again. This cannot be undone.`),
+            action: () => this._openConfirm(siteId, 'reconnect', `Reconnect ${d.label || siteId} to its source? Its independent copy is removed and it serves source content again. This cannot be undone.`),
           },
           { sep: true },
           openPage,
@@ -654,28 +654,28 @@ class DaMsm extends LitElement {
     if (!this._successData) return nothing;
     const { targets, action, level } = this._successData;
     let title = 'Done';
-    if (action === 'rollout') {
+    if (action === 'publish') {
       title = `${level === 'live' ? 'Live' : 'Preview'} updated for ${targets.length} site${targets.length === 1 ? '' : 's'}`;
-    } else if (action === 'cancel-inheritance') {
-      title = `Local copy created for ${this._satData.get(targets[0])?.label || targets[0]}`;
-    } else if (action === 'resume-inheritance') {
-      const label = this._satData.get(targets[0])?.label;
-      title = label ? `Local copy removed — ${label} now follows base` : 'Local copy removed — now follows base';
+    } else if (action === 'detach') {
+      title = `${this._linkedData.get(targets[0])?.label || targets[0]} detached`;
+    } else if (action === 'reconnect') {
+      const label = this._linkedData.get(targets[0])?.label;
+      title = label ? `${label} reconnected to source` : 'Reconnected to source';
     } else if (action === 'sync-merge') {
-      title = `${this._satData.get(targets[0])?.label || targets[0]} merged from source`;
-    } else if (action === 'sync-override') {
-      title = `${this._satData.get(targets[0])?.label || targets[0]} overwritten from source`;
-    } else if (action === 'pull-from-base') {
-      title = 'Page updated from base';
+      title = `${this._linkedData.get(targets[0])?.label || targets[0]} merged from source`;
+    } else if (action === 'sync-replace') {
+      title = `${this._linkedData.get(targets[0])?.label || targets[0]} replaced from source`;
+    } else if (action === 'pull-from-source') {
+      title = 'Page updated from source';
     }
 
     const { org, path } = this.details;
     const pagePath = path.replace('.html', '');
 
     const successLink = (id) => {
-      if (action === 'resume-inheritance') return nothing;
-      const label = this._satData.get(id)?.label || id;
-      const url = action === 'rollout'
+      if (action === 'reconnect') return nothing;
+      const label = this._linkedData.get(id)?.label || id;
+      const url = action === 'publish'
         ? `https://main--${id}--${org}.${level === 'live' ? 'aem.live' : 'aem.page'}${pagePath}`
         : `https://da.live/edit#/${org}/${id}${path}`;
       return html`<button class="success-link-btn"
@@ -695,15 +695,15 @@ class DaMsm extends LitElement {
   }
 
   renderSourceSection() {
-    if (!this._asSatellite) return nothing;
-    const parentLabel = this._asSatellite.baseLabel || this._asSatellite.base;
-    const sourceLabel = this._effectiveBase?.label || parentLabel;
-    const inheritTip = this._hasOverride
-      ? 'Inheritance broken'
-      : `Inheriting from ${sourceLabel}`;
-    const inheritanceIcon = this._hasOverride === undefined ? nothing
-      : html`<span class="row-icon row-icon-inherit" title=${inheritTip}>
-          ${icon(this._hasOverride ? 'S2_Icon_UnLink_20_N' : 'S2_Icon_LinkApplied_20_N', '0 0 20 20')}
+    if (!this._asLinked) return nothing;
+    const parentLabel = this._asLinked.sourceLabel || this._asLinked.source;
+    const sourceLabel = this._effectiveSource?.label || parentLabel;
+    const linkTip = this._isDetached
+      ? 'Detached (independent copy)'
+      : `Linked to ${sourceLabel}`;
+    const linkIcon = this._isDetached === undefined ? nothing
+      : html`<span class="row-icon row-icon-inherit" title=${linkTip}>
+          ${icon(this._isDetached ? 'S2_Icon_UnLink_20_N' : 'S2_Icon_LinkApplied_20_N', '0 0 20 20')}
         </span>`;
 
     let statusIcon;
@@ -711,7 +711,7 @@ class DaMsm extends LitElement {
       statusIcon = html`<span class="row-icon row-icon-loading"></span>`;
     } else {
       const cfg = getStatusConfig({
-        hasOverride: this._hasOverride,
+        isDetached: this._isDetached,
         outOfSync: this._sourceOutOfSync,
         previewState: this._sitePageStatus.previewState,
         liveState: this._sitePageStatus.liveState,
@@ -719,7 +719,7 @@ class DaMsm extends LitElement {
       statusIcon = html`<span class="row-icon" style="color:${cfg.color}" title=${cfg.tip}>${icon(cfg.name, '0 0 18 18')}</span>`;
     }
 
-    const viaNote = this._effectiveBase
+    const viaNote = this._effectiveSource
       ? html`<div class="source-note">via ${parentLabel}</div>`
       : nothing;
 
@@ -732,23 +732,23 @@ class DaMsm extends LitElement {
         <div class="section-header">
           <span class="section-label">Source</span>
         </div>
-        <div class="sat-list">
-          <div class="sat-row" style="padding-left:14px">
+        <div class="linked-list">
+          <div class="linked-row" style="padding-left:14px">
             <span class="row-toggle leaf"></span>
-            ${inheritanceIcon}
+            ${linkIcon}
             <div class="row-name-group">
               <span class="row-name">${sourceLabel}</span>
             </div>
             ${statusIcon}
             <div class="source-actions">
-              ${this._hasOverride
+              ${this._isDetached
     ? html`<button class="btn-row" ?disabled=${this._busy}
                   @click=${(e) => { e.stopPropagation(); this._openConfirm('__source__', 'sync-source'); }}>
                   Sync
                 </button>`
     : html`<button class="btn-row" ?disabled=${this._busy}
-                  @click=${() => this._pullFromBase()}>
-                  Get from base
+                  @click=${() => this._pullFromSource()}>
+                  Get from source
                 </button>`}
             </div>
             <button class="btn-more" title="More actions"
@@ -762,21 +762,21 @@ class DaMsm extends LitElement {
       </div>`;
   }
 
-  renderSatellitesSection() {
-    if (!this._asBase || !this._tree.length) return nothing;
-    const hasInherited = this._tree.some((n) => this._satData.get(n.siteId)?.hasOverride === false);
+  renderLinkedSection() {
+    if (!this._asSource || !this._tree.length) return nothing;
+    const hasLinked = this._tree.some((n) => this._linkedData.get(n.siteId)?.isDetached === false);
 
     return html`
       <div class="plugin-section">
         <div class="section-header">
-          <span class="section-label">Satellites</span>
-          ${hasInherited ? html`
-            <button class="btn-rollout-all" ?disabled=${this._busy}
-              @click=${() => this._openRolloutAllConfirm()}>Roll out all</button>` : nothing}
+          <span class="section-label">Linked sites</span>
+          ${hasLinked ? html`
+            <button class="btn-publish-all" ?disabled=${this._busy}
+              @click=${() => this._openPublishAllConfirm()}>Publish all</button>` : nothing}
         </div>
         ${this._pendingConfirm?.siteId === '__all__' ? this.renderConfirmRow() : nothing}
-        <div class="sat-list">
-          ${this._tree.map((node) => this.renderSiteRow(node, 0, this._asBase?.baseLabel))}
+        <div class="linked-list">
+          ${this._tree.map((node) => this.renderSiteRow(node, 0, this._asSource?.sourceLabel))}
         </div>
       </div>`;
   }
@@ -786,8 +786,8 @@ class DaMsm extends LitElement {
       return html`<p class="loading">${this._loading}</p>`;
     }
 
-    if (!this._asBase && !this._asSatellite) {
-      return html`<p class="no-satellites">No satellite sites configured.</p>`;
+    if (!this._asSource && !this._asLinked) {
+      return html`<p class="no-linked">No linked sites configured.</p>`;
     }
 
     const { org, site, path } = this.details;
@@ -799,7 +799,7 @@ class DaMsm extends LitElement {
     ? html`<div class="busy-banner"><span class="busy-spinner"></span>Working…</div>`
     : this.renderSuccessBanner()}
       ${this.renderSourceSection()}
-      ${this.renderSatellitesSection()}
+      ${this.renderLinkedSection()}
       ${this.renderOverflowMenu()}
       <div class="plugin-footer">
         <a class="app-link" href=${this._getAppDeepLink()} target="_blank" rel="noopener">

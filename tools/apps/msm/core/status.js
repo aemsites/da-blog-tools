@@ -10,7 +10,7 @@ export async function getPageTimestamp(org, site, pagePath, ext = 'html') {
   return { exists: resp.ok, lastModified: resp.headers?.get('Last-Modified') || null };
 }
 
-// Rich rollout status for a single page. `editLastModified` is the source
+// Rich publish status for a single page. `editLastModified` is the source
 // timestamp used to decide whether the published preview/live copies are
 // current or behind.
 export async function getPageStatus(org, site, pagePath, editLastModified = null, ext = 'html') {
@@ -19,7 +19,7 @@ export async function getPageStatus(org, site, pagePath, editLastModified = null
   const resp = await daFetch(`${AEM_ADMIN}/status/${org}/${site}/main${aemPath}`, { cache: 'no-store' });
   if (!resp.ok) {
     return {
-      previewState: 'not-rolled-out', liveState: 'not-rolled-out', previewDate: null, liveDate: null,
+      previewState: 'not-published', liveState: 'not-published', previewDate: null, liveDate: null,
     };
   }
   const json = await resp.json();
@@ -31,7 +31,7 @@ export async function getPageStatus(org, site, pagePath, editLastModified = null
 
   let previewState;
   if (json.preview?.status !== 200) {
-    previewState = 'not-rolled-out';
+    previewState = 'not-published';
   } else if (editTime !== null && previewTime !== null && editTime > previewTime + PUBLISH_LAG_MS) {
     previewState = 'behind';
   } else {
@@ -40,7 +40,7 @@ export async function getPageStatus(org, site, pagePath, editLastModified = null
 
   let liveState;
   if (json.live?.status !== 200) {
-    liveState = 'not-rolled-out';
+    liveState = 'not-published';
   } else if (
     (previewTime !== null && liveTime !== null && previewTime > liveTime)
     || (editTime !== null && liveTime !== null && editTime > liveTime + PUBLISH_LAG_MS)
@@ -58,25 +58,25 @@ export async function getPageStatus(org, site, pagePath, editLastModified = null
   };
 }
 
-// Maps inheritance + publish state to a status icon. Returns { name, color, tip }.
+// Maps link + publish state to a status icon. Returns { name, color, tip }.
 export function getStatusConfig({
-  hasOverride, outOfSync, previewState, liveState,
+  isDetached, outOfSync, previewState, liveState,
 }) {
   const green = (tip) => ({ name: 'S2_Icon_CheckmarkCircle_20_N', color: 'var(--s2-green-700,#0ba45d)', tip });
   const amber = (tip) => ({ name: 'S2_Icon_AlertTriangle_20_N', color: 'var(--s2-yellow-700,#e68619)', tip });
   const orange = (tip) => ({ name: 'S2_Icon_AlertTriangle_20_N', color: 'var(--s2-orange-600,#fc7d00)', tip });
   const red = (tip) => ({ name: 'S2_Icon_AlertDiamond_20_N', color: 'var(--s2-red-700,#ff513d)', tip });
 
-  if (!hasOverride) {
+  if (!isDetached) {
     if (liveState === 'current') return green('Live and current');
     if (previewState === 'current') return amber('Previewed — not yet published to live');
-    if (liveState === 'not-rolled-out' && previewState === 'not-rolled-out') return red('Not rolled out');
-    return red('Base has changed — rollout needed');
+    if (liveState === 'not-published' && previewState === 'not-published') return red('Not published');
+    return red('Source changed — publish needed');
   }
 
   if (outOfSync) {
-    if (liveState === 'current') return orange('Out of sync — base has changed since last sync');
-    return red('Out of sync — needs sync and publish');
+    if (liveState === 'current') return orange('Behind source — changed since last sync');
+    return red('Behind source — needs sync and publish');
   }
   if (liveState === 'current') return green('Live and current');
   if (previewState === 'current') return amber('Previewed — not yet published to live');

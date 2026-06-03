@@ -1,6 +1,14 @@
 /* eslint-disable import/no-unresolved */
 import { daFetch, DA_ORIGIN } from './fetch.js';
 
+// The authored config sheet may use either the original `base`/`satellite`
+// column names or the new `source`/`linked` names. These accessors read
+// whichever is present, so the sheet can be migrated to the new vocabulary
+// without a code change (and mixed rows still work during a migration).
+const sourceOf = (row) => row.base ?? row.source;
+const linkedOf = (row) => row.satellite ?? row.linked;
+const hasGraphCols = (rows) => rows.length > 0 && sourceOf(rows[0]) !== undefined;
+
 // ──────────────────────────────────────────────
 // Org config fetching + caching
 // ──────────────────────────────────────────────
@@ -31,21 +39,21 @@ export async function fetchOrgMsmRows(org) {
 }
 
 // ──────────────────────────────────────────────
-// Inheritance graph helpers (operate on raw rows)
+// Link graph helpers (operate on raw rows)
 // ──────────────────────────────────────────────
 
 function getDirectChildren(rows, site) {
   return rows
-    .filter((row) => row.base === site && row.satellite)
-    .map((row) => ({ site: row.satellite, label: row.title || row.satellite }));
+    .filter((row) => sourceOf(row) === site && linkedOf(row))
+    .map((row) => ({ site: linkedOf(row), label: row.title || linkedOf(row) }));
 }
 
 function getParentRow(rows, site) {
-  return rows.find((row) => row.satellite === site);
+  return rows.find((row) => linkedOf(row) === site);
 }
 
-function getBaseLabel(rows, site) {
-  const labelRow = rows.find((row) => row.base === site && !row.satellite);
+function getSourceLabel(rows, site) {
+  const labelRow = rows.find((row) => sourceOf(row) === site && !linkedOf(row));
   return labelRow?.title;
 }
 
@@ -66,16 +74,17 @@ function walkChain(rows, site) {
     visited.add(current);
     const parentRow = getParentRow(rows, current);
     if (!parentRow) break;
+    const parentSite = sourceOf(parentRow);
     chain.unshift({
-      site: parentRow.base,
-      label: getBaseLabel(rows, parentRow.base) || parentRow.base,
+      site: parentSite,
+      label: getSourceLabel(rows, parentSite) || parentSite,
     });
-    current = parentRow.base;
+    current = parentSite;
   }
   return chain;
 }
 
-/** Nested satellite tree (direct children at each level) for rollout UI. */
+/** Nested linked-site tree (direct children at each level) for the publish UI. */
 export function buildDescendantTree(rows, rootSite, visited = new Set()) {
   if (!rows?.length || visited.has(rootSite)) return [];
   visited.add(rootSite);
@@ -95,7 +104,7 @@ function buildDialogTree(rows, siteId) {
   }));
 }
 
-export function getInheritanceChain(config, site) {
+export function getSourceChain(config, site) {
   return walkChain(config?.rows || [], site);
 }
 
@@ -105,7 +114,7 @@ export function getSiteRoles(config, site) {
   const parentRow = getParentRow(rows, site);
   const result = {};
   if (children.length) {
-    const satellites = children.reduce((acc, child) => {
+    const linked = children.reduce((acc, child) => {
       acc[child.site] = {
         label: child.label,
         descendantCount: walkSubtree(rows, child.site).length,
@@ -113,12 +122,13 @@ export function getSiteRoles(config, site) {
       };
       return acc;
     }, {});
-    result.asBase = { baseLabel: getBaseLabel(rows, site), satellites };
+    result.asSource = { sourceLabel: getSourceLabel(rows, site), linked };
   }
   if (parentRow) {
-    result.asSatellite = {
-      base: parentRow.base,
-      baseLabel: getBaseLabel(rows, parentRow.base) || parentRow.base,
+    const parentSite = sourceOf(parentRow);
+    result.asLinked = {
+      source: parentSite,
+      sourceLabel: getSourceLabel(rows, parentSite) || parentSite,
       chain: walkChain(rows, site),
     };
   }
@@ -129,40 +139,41 @@ export function getSiteRoles(config, site) {
 // Derived config shapes
 // ──────────────────────────────────────────────
 
-function resolveBaseSites(rows) {
-  const hasBaseCol = rows.length > 0 && rows[0].base !== undefined;
-  if (!hasBaseCol) return [];
+function resolveSourceSites(rows) {
+  if (!hasGraphCols(rows)) return [];
 
-  const baseSites = rows
-    .filter((row) => row.base)
+  const sourceSites = rows
+    .filter((row) => sourceOf(row))
     .reduce((acc, row) => {
-      if (!acc.has(row.base)) {
-        acc.set(row.base, { site: row.base, label: '', satellites: {} });
+      const source = sourceOf(row);
+      const linked = linkedOf(row);
+      if (!acc.has(source)) {
+        acc.set(source, { site: source, label: '', linked: {} });
       }
-      const entry = acc.get(row.base);
-      if (!row.satellite) entry.label = row.title || row.base;
-      else entry.satellites[row.satellite] = { label: row.title || row.satellite };
+      const entry = acc.get(source);
+      if (!linked) entry.label = row.title || source;
+      else entry.linked[linked] = { label: row.title || linked };
       return acc;
     }, new Map());
 
-  return [...baseSites.values()].filter((b) => Object.keys(b.satellites).length > 0);
+  return [...sourceSites.values()].filter((b) => Object.keys(b.linked).length > 0);
 }
 
-/** App-facing config: `{ baseSites, rows }`, cached per org. */
+/** App-facing config: `{ sourceSites, rows }`, cached per org. */
 export async function fetchMsmConfig(org) {
   if (msmConfigCache[org]) return msmConfigCache[org];
   const rows = await fetchOrgMsmRows(org);
   if (!rows.length) return null;
-  const baseSites = resolveBaseSites(rows);
-  if (!baseSites.length) return null;
-  const config = { baseSites, rows };
+  const sourceSites = resolveSourceSites(rows);
+  if (!sourceSites.length) return null;
+  const config = { sourceSites, rows };
   msmConfigCache[org] = config;
   return config;
 }
 
 // Flat, de-duplicated list of every site referenced in the org's MSM config —
-// both sources (bases) and targets (satellites). Each entry carries its
-// inheritance `level` (0 = root source, 1 = its direct satellites, …).
+// both sources and linked sites. Each entry carries its link `level`
+// (0 = root source, 1 = its direct linked sites, …).
 //
 // Ordering is breadth-first but grouped under parents: all of one level before
 // the next, and within a level the sites are ordered by their parent's order
@@ -179,10 +190,12 @@ export function getAllMsmSites(config) {
     else if (label && existing.label === site) existing.label = label;
   };
   rows.forEach((row) => {
-    if (row.base && !row.satellite) add(row.base, row.title);
-    if (row.base && row.satellite) {
-      add(row.base);
-      add(row.satellite, row.title);
+    const source = sourceOf(row);
+    const linked = linkedOf(row);
+    if (source && !linked) add(source, row.title);
+    if (source && linked) {
+      add(source);
+      add(linked, row.title);
     }
   });
 
@@ -217,30 +230,31 @@ export function getAllMsmSites(config) {
 }
 
 // ──────────────────────────────────────────────
-// Dialog-facing config: `{ asBase, asSatellite }`
+// Dialog-facing config: `{ asSource, asLinked }`
 // ──────────────────────────────────────────────
 
 function resolveConfig(rows, site) {
-  if (!rows.length || rows[0].base === undefined) return null;
+  if (!rows.length || !hasGraphCols(rows)) return null;
   const directChildren = getDirectChildren(rows, site);
   const parentRow = getParentRow(rows, site);
   if (!directChildren.length && !parentRow) return null;
 
   const result = {};
   if (directChildren.length) {
-    const satellites = directChildren.reduce((acc, child) => {
+    const linked = directChildren.reduce((acc, child) => {
       acc[child.site] = {
         label: child.label,
         descendantCount: walkSubtree(rows, child.site).length,
       };
       return acc;
     }, {});
-    result.asBase = { baseLabel: getBaseLabel(rows, site), satellites };
+    result.asSource = { sourceLabel: getSourceLabel(rows, site), linked };
   }
   if (parentRow) {
-    result.asSatellite = {
-      base: parentRow.base,
-      baseLabel: getBaseLabel(rows, parentRow.base) || parentRow.base,
+    const parentSite = sourceOf(parentRow);
+    result.asLinked = {
+      source: parentSite,
+      sourceLabel: getSourceLabel(rows, parentSite) || parentSite,
       chain: walkChain(rows, site),
     };
   }
@@ -263,24 +277,24 @@ export async function getSiteConfig(org, site) {
   return entry?.config || null;
 }
 
-export async function getSatelliteTree(org, site) {
+export async function getLinkedTree(org, site) {
   const entry = await fetchSiteConfig(org, site);
   if (!entry) return [];
   return buildDialogTree(entry.rows, site);
 }
 
-export async function getSubtreeSatellites(org, baseSite) {
-  const entry = await fetchSiteConfig(org, baseSite);
+export async function getSubtreeLinked(org, sourceSite) {
+  const entry = await fetchSiteConfig(org, sourceSite);
   if (!entry) return [];
-  return walkSubtree(entry.rows, baseSite);
+  return walkSubtree(entry.rows, sourceSite);
 }
 
-export async function getSatellites(org, baseSite) {
-  const config = await getSiteConfig(org, baseSite);
-  return config?.asBase?.satellites || {};
+export async function getLinkedSites(org, sourceSite) {
+  const config = await getSiteConfig(org, sourceSite);
+  return config?.asSource?.linked || {};
 }
 
-export async function getBaseSite(org, satellite) {
-  const config = await getSiteConfig(org, satellite);
-  return config?.asSatellite?.base || null;
+export async function getSourceSite(org, site) {
+  const config = await getSiteConfig(org, site);
+  return config?.asLinked?.source || null;
 }

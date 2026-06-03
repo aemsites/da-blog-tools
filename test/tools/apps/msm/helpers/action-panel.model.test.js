@@ -19,7 +19,7 @@ import {
   planSelectionLoad,
 } from '../../../../../tools/apps/msm/helpers/action-panel.model.js';
 
-// Satellite subtree centered on root `global`:
+// Linked-site subtree centered on root `global`:
 //   apac ─ india, japan
 //   eu   ─ france
 const tree = [
@@ -127,27 +127,27 @@ describe('effectiveSource', () => {
     assert.deepEqual(src, { site: 'global', lm: '2024-01-01T00:00:00Z' });
   });
 
-  it('resolves to the nearest ancestor holding a local copy', () => {
-    const cells = new Map([[cellKey('/p', 'apac'), { hasOverride: true, lastModified: '2024-05-05' }]]);
+  it('resolves to the nearest ancestor holding a detached copy', () => {
+    const cells = new Map([[cellKey('/p', 'apac'), { isDetached: true, lastModified: '2024-05-05' }]]);
     const src = effectiveSource(page, 'india', pm, cells, ROOT);
     assert.deepEqual(src, { site: 'apac', lm: '2024-05-05' });
   });
 
-  it('skips ancestors without a local copy', () => {
+  it('skips ancestors without a detached copy', () => {
     const src = effectiveSource(page, 'france', pm, new Map(), ROOT);
     assert.equal(src.site, 'global');
   });
 });
 
 describe('deriveCategory', () => {
-  it('is inherited with no local copy', () => {
-    assert.equal(deriveCategory({ hasOverride: false }), 'inherited');
+  it('is linked with no copy', () => {
+    assert.equal(deriveCategory({ isDetached: false }), 'linked');
   });
-  it('is override with a local copy and an existing source', () => {
-    assert.equal(deriveCategory({ hasOverride: true, sourceExists: true }), 'override');
+  it('is detached with a copy and an existing source', () => {
+    assert.equal(deriveCategory({ isDetached: true, sourceExists: true }), 'detached');
   });
   it('is local with a copy but no source above', () => {
-    assert.equal(deriveCategory({ hasOverride: true, sourceExists: false }), 'local');
+    assert.equal(deriveCategory({ isDetached: true, sourceExists: false }), 'local');
   });
 });
 
@@ -172,39 +172,39 @@ describe('scopedCells', () => {
   const included = new Set(['apac', 'india', 'japan', 'eu', 'france']);
   const pages = [{ path: '/p' }];
   const cells = new Map([
-    [cellKey('/p', 'apac'), { hasOverride: true }],
-    [cellKey('/p', 'india'), { hasOverride: false }],
-    [cellKey('/p', 'japan'), { hasOverride: false }],
-    [cellKey('/p', 'france'), { hasOverride: false }],
+    [cellKey('/p', 'apac'), { isDetached: true }],
+    [cellKey('/p', 'india'), { isDetached: false }],
+    [cellKey('/p', 'japan'), { isDetached: false }],
+    [cellKey('/p', 'france'), { isDetached: false }],
     // no eu cell — should be skipped
   ]);
 
-  it('selects inherited cells (no local copy)', () => {
-    const cellsOut = scopedCells(allColumns, pages, included, cells, 'inherited');
-    assert.deepEqual(cellsOut.map((c) => c.satSite).sort(), ['france', 'india', 'japan']);
+  it('selects linked cells (no copy)', () => {
+    const cellsOut = scopedCells(allColumns, pages, included, cells, 'linked');
+    assert.deepEqual(cellsOut.map((c) => c.targetSite).sort(), ['france', 'india', 'japan']);
   });
 
-  it('selects custom cells (local copy)', () => {
-    const cellsOut = scopedCells(allColumns, pages, included, cells, 'custom');
-    assert.deepEqual(cellsOut.map((c) => c.satSite), ['apac']);
+  it('selects detached cells (has copy)', () => {
+    const cellsOut = scopedCells(allColumns, pages, included, cells, 'detached');
+    assert.deepEqual(cellsOut.map((c) => c.targetSite), ['apac']);
   });
 
   it('ignores excluded targets', () => {
-    const cellsOut = scopedCells(allColumns, pages, new Set(['india']), cells, 'inherited');
-    assert.deepEqual(cellsOut.map((c) => c.satSite), ['india']);
+    const cellsOut = scopedCells(allColumns, pages, new Set(['india']), cells, 'linked');
+    assert.deepEqual(cellsOut.map((c) => c.targetSite), ['india']);
   });
 });
 
 describe('scopedPagesUp', () => {
   const pages = [{ path: '/a' }, { path: '/b' }, { path: '/c' }];
   const rows = new Map([
-    ['/a', { category: 'inherited' }],
-    ['/b', { category: 'override' }],
+    ['/a', { category: 'linked' }],
+    ['/b', { category: 'detached' }],
     ['/c', { category: 'local' }],
   ]);
-  it('filters pages by inheritance category', () => {
-    assert.deepEqual(scopedPagesUp(pages, rows, 'inherited').map((p) => p.path), ['/a']);
-    assert.deepEqual(scopedPagesUp(pages, rows, 'override').map((p) => p.path), ['/b']);
+  it('filters pages by link category', () => {
+    assert.deepEqual(scopedPagesUp(pages, rows, 'linked').map((p) => p.path), ['/a']);
+    assert.deepEqual(scopedPagesUp(pages, rows, 'detached').map((p) => p.path), ['/b']);
   });
 });
 
@@ -213,16 +213,16 @@ describe('downGroups', () => {
     const pages = [{ path: '/p' }];
     const included = new Set(['apac', 'india', 'japan', 'eu', 'france']);
     const cells = new Map([
-      [cellKey('/p', 'apac'), { hasOverride: true, lastModified: '2024-05-05' }],
-      [cellKey('/p', 'india'), { hasOverride: false }],
-      [cellKey('/p', 'japan'), { hasOverride: false }],
-      [cellKey('/p', 'france'), { hasOverride: false }],
+      [cellKey('/p', 'apac'), { isDetached: true, lastModified: '2024-05-05' }],
+      [cellKey('/p', 'india'), { isDetached: false }],
+      [cellKey('/p', 'japan'), { isDetached: false }],
+      [cellKey('/p', 'france'), { isDetached: false }],
     ]);
     const groups = downGroups({
-      tree, pages, allColumns: flattenAll(tree, ROOT), included, cells, rootSite: ROOT, scope: 'inherited',
+      tree, pages, allColumns: flattenAll(tree, ROOT), included, cells, rootSite: ROOT, scope: 'linked',
     });
     const byTarget = Object.fromEntries(groups.map((g) => [g.target, g]));
-    // india/japan inherit through apac's local copy; france falls back to the root.
+    // india/japan link through apac's detached copy; france falls back to the root.
     assert.equal(byTarget.india.source, 'apac');
     assert.equal(byTarget.japan.source, 'apac');
     assert.equal(byTarget.france.source, 'global');
@@ -235,12 +235,12 @@ describe('upGroups', () => {
   it('groups pages by their resolved source, target is the current site', () => {
     const pages = [{ path: '/a' }, { path: '/b' }, { path: '/c' }];
     const rows = new Map([
-      ['/a', { category: 'inherited', source: 'global' }],
-      ['/b', { category: 'inherited', source: 'na' }],
-      ['/c', { category: 'inherited' }], // no source — falls back to base
+      ['/a', { category: 'linked', source: 'global' }],
+      ['/b', { category: 'linked', source: 'na' }],
+      ['/c', { category: 'linked' }], // no source — falls back to root source
     ]);
     const groups = upGroups({
-      pages, rows, scope: 'inherited', base: 'global', target: 'apac',
+      pages, rows, scope: 'linked', base: 'global', target: 'apac',
     });
     const bySource = Object.fromEntries(groups.map((g) => [g.source, g]));
     assert.deepEqual(Object.keys(bySource).sort(), ['global', 'na']);
@@ -256,8 +256,8 @@ describe('planSelectionLoad', () => {
     contextKey: 'org|apac',
     loadedDownPaths: new Set(),
     loadedUpPaths: new Set(),
-    hasBase: true,
-    hasSatellite: false,
+    hasSource: true,
+    hasLinked: false,
   };
   const paths = (list) => list.map((p) => p.path);
 
@@ -324,7 +324,7 @@ describe('planSelectionLoad', () => {
   it('filters down and up views independently for a dual site', () => {
     const plan = planSelectionLoad({
       ...base,
-      hasSatellite: true,
+      hasLinked: true,
       prevSelKey: '/a',
       selKey: '/a,/b',
       pages: [{ path: '/a' }, { path: '/b' }],
@@ -339,8 +339,8 @@ describe('planSelectionLoad', () => {
   it('skips a view whose role is absent', () => {
     const plan = planSelectionLoad({
       ...base,
-      hasBase: false,
-      hasSatellite: true,
+      hasSource: false,
+      hasLinked: true,
       prevContextKey: 'org|global',
       prevSelKey: '',
       selKey: '/a',

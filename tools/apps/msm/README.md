@@ -1,60 +1,63 @@
 # MSM — Multi-Site Management
 
-A DA (Document Authoring) tool for managing content inheritance across base sites and their satellite sites. MSM lets authors preview, publish, sync, and control content overrides between a base site and its satellites from a single interface.
+A DA (Document Authoring) tool for managing content links across source sites and the sites that link to them. MSM lets authors preview, publish, sync, and control independent copies between a source site and its linked sites from a single interface.
 
 ## Overview
 
-In an AEM Edge Delivery Services multi-site setup, a **base site** holds the canonical content while **satellite sites** inherit from it. Satellites can either inherit pages directly from the base or maintain custom overrides. MSM provides a UI to manage this relationship — browsing content, checking inheritance status, and executing bulk actions across satellites.
+In an AEM Edge Delivery Services multi-site setup, a **source site** holds the canonical content while **linked sites** pull from it. A linked site either stays linked (resolving content from its source) or holds its own detached copy. MSM provides a UI to manage this relationship — browsing content, checking link status, and executing bulk actions across linked sites.
 
 ## How It Works
 
 ### Roles
 
-- **Base mode** — The user operates from the perspective of a base site. Actions target inherited or customized satellites for the selected pages.
-- **Satellite mode** — The user operates from a single satellite site. Actions apply only to that satellite.
+A site's role is relative to a relationship, so the UI names the two directions rather than labelling a site absolutely:
 
-The role is determined automatically based on the org's MSM configuration and the site entered in the toolbar.
+- **Linked sites view** — the sites that link to the current site (looking down). Actions target those sites for the selected pages.
+- **Source view** — the single site the current site links up to (looking up). Actions apply between the current site and its source.
 
-### Content Inheritance
+A site that is both (a mid-tier site) shows both via tabs. The role is determined automatically from the org's MSM configuration and the site entered in the toolbar.
 
-Each page on a satellite is either:
+### Link state
 
-- **Following base** — No local copy exists on the satellite; it inherits content from the base site.
-- **With local copy** — A local copy exists on the satellite (customized), breaking inheritance.
+Each page on a linked site is either:
 
-Actions are scoped by this status. For example, roll out actions target sites following base, while push/discard actions target sites with a local copy.
+- **Linked** — no copy exists on the site; content resolves from its source (at preview/publish time).
+- **Detached** — the site holds its own independent copy of the page, so it no longer follows the source.
+
+Actions are scoped by this state. For example, Publish targets linked pages, while Merge/Replace target detached copies.
 
 ### Actions
 
-Terminology matches the [MSM Prepare plugin](../../plugins/msm/README.md).
+Terminology matches the [MSM plugin](../../plugins/msm/README.md).
 
 | Action | Scope | Description |
 |---|---|---|
-| **Roll out to preview** | Following base | Triggers a preview of the page on inherited satellites |
-| **Roll out to live** | Following base | Publishes the page to inherited satellites |
-| **Make a local copy on selected sites** | Following base | Creates a local copy on the satellite, breaking inheritance |
-| **Push update to customized sites** | With local copy | Updates the satellite's override — **Keep local edits (merge)** or **Replace with base (override)** |
-| **Discard local copy on customized sites** | With local copy | Deletes the satellite override and re-previews/publishes if the page was previously live |
-| **Pull latest from base** | Satellite (upward) | Copies or merges content from the parent base into this site |
-| **Revert to base** | Satellite (upward) | Deletes the local copy so the page follows the base again |
+| **Preview** | Linked | Triggers a preview of the page on linked sites |
+| **Publish** | Linked | Publishes the page to linked sites (live) |
+| **Detach** | Linked | Creates an independent copy on the site, breaking the link |
+| **Merge** | Detached | Updates the detached copy from source, keeping local edits (3-way merge) |
+| **Replace** | Detached | Overwrites the detached copy with the source's content |
+| **Reconnect** | Detached | Deletes the independent copy so the page links to its source again |
+
+Confirmations name the destination, e.g. *"Publish 6 pages to 2 linked sites: India, Japan?"*.
 
 ## Configuration
 
-MSM is configured at the **org level** via the DA Admin config API (`/config/{org}/`). The config must include an `msm` property with a `data` array of rows:
+MSM is configured at the **org level** via the DA Admin config API (`/config/{org}/`). The config must include an `msm` property with a `data` array of rows. Columns may use either the original `base`/`satellite` names or the new `source`/`linked` names — the app reads whichever is present:
 
 | Column | Required | Description |
 |---|---|---|
-| `base` | Yes | The base site/repo name |
-| `satellite` | No | A satellite site name. Rows without `satellite` define the base site label. |
-| `title` | No | Display label for the base or satellite |
+| `source` (or `base`) | Yes | The source site/repo name |
+| `linked` (or `satellite`) | No | A linked site name. Rows without it define the source-site label. |
+| `title` | No | Display label for the source or linked site |
 
-A base site must have at least one satellite to appear in the app.
+A source site must have at least one linked site to appear in the app.
 
 **Example config rows:**
 
-| base | satellite | title |
+| source | linked | title |
 |---|---|---|
-| `en` | | English (Base) |
+| `en` | | English (Source) |
 | `en` | `fr` | French |
 | `en` | `de` | German |
 
@@ -67,19 +70,25 @@ tools/apps/msm/
 ├── msm.html                    # Entry point (DA tool shell page)
 ├── msm.js                      # Root Lit component (MsmApp)
 ├── msm.css                     # Shell and layout styles
+├── core/                       # Shared MSM logic (also used by the plugin)
+│   ├── config.js               # Org config + link graph (source/linked)
+│   ├── status.js               # Page timestamp + publish status + status config
+│   ├── operations.js           # preview/publish/copy/delete/merge primitives
+│   └── fetch.js                # Pluggable daFetch + constants
 └── helpers/
-    ├── api.js                  # All API calls (DA Admin, AEM Admin, NX merge)
+    ├── api.js                  # App-facing API facade (folder listing, bulk exec)
     ├── column-browser.js       # Finder-style multi-column content browser
     ├── column-browser.css      # Column browser styles
     ├── action-panel.js         # Action selection, execution, and progress UI
+    ├── action-panel.model.js   # Pure decision logic behind the action panel
     └── action-panel.css        # Action panel styles
 ```
 
 ### Components
 
-- **`msm-app`** (`msm.js`) — Root component. Manages state (org, site, role, config), loads MSM configuration, classifies the site as base or satellite, and coordinates the browser and action panel.
-- **`msm-column-browser`** (`column-browser.js`) — A Finder-style multi-column browser for navigating site content. Lists base sites (in base mode) or navigates directly into a satellite's content tree. Supports folder expansion, checkbox selection, keyboard navigation, and recursive folder selection.
-- **`msm-action-panel`** (`action-panel.js`) — Displays available actions based on role and selection. Supports single-page and bulk modes, satellite filtering, sync mode selection (Merge vs Override), confirmation dialogs for destructive actions, and per-item progress tracking.
+- **`msm-app`** (`msm.js`) — Root component. Manages state (org, site, config), loads MSM configuration, and coordinates the browser and action panel.
+- **`msm-column-browser`** (`column-browser.js`) — A Finder-style multi-column browser for navigating site content. Lists all sites, then navigates into a site's content tree (merging in linked content where applicable). Supports folder expansion, checkbox selection, keyboard navigation, and recursive folder selection.
+- **`msm-action-panel`** (`action-panel.js`) — Displays available actions for the active view and selection. Supports the linked-sites matrix and source table, linked-site filtering, sync mode selection (Merge vs Replace), confirmation dialogs for destructive actions, and per-item progress tracking.
 
 ### External Dependencies
 
@@ -98,7 +107,7 @@ tools/apps/msm/
 |---|---|---|---|
 | `/config/{org}/` | `admin.da.live` | GET | Fetch org config including MSM rows |
 | `/list/{org}/{site}{path}` | `admin.da.live` | GET | List folder contents |
-| `/source/{org}/{site}{path}` | `admin.da.live` | HEAD, GET, PUT, DELETE | Check overrides, read/write/delete content |
+| `/source/{org}/{site}{path}` | `admin.da.live` | HEAD, GET, PUT, DELETE | Check copies, read/write/delete content |
 | `/preview/{org}/{site}/main{path}` | `admin.hlx.page` | POST | Trigger preview |
 | `/live/{org}/{site}/main{path}` | `admin.hlx.page` | POST | Trigger publish |
 | `/status/{org}/{site}/main{path}` | `admin.hlx.page` | GET | Check preview/live status |
@@ -110,5 +119,5 @@ Bulk operations run with a concurrency limit of 5 parallel requests.
 1. Open the MSM tool from the DA interface (hosted at `/tools/apps/msm/msm`).
 2. Enter an org (e.g., `/myorg`) or org + site (e.g., `/myorg/en`) in the toolbar and click **Load**.
 3. Browse the content tree using the column browser. Select pages or folders.
-4. Choose an action from the action panel, configure options (sync mode, satellite filter), and execute.
-5. Monitor progress in the progress panel — each page/satellite combination shows pending, success, or error status.
+4. Choose an action from the action panel, configure options (sync mode, linked-site filter), and execute.
+5. Monitor progress in the progress panel — each page/site combination shows pending, success, or error status.

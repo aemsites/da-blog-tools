@@ -1,18 +1,18 @@
 // Pure decision logic behind the MSM action panel. No DOM, no fetch, no Lit —
-// everything here takes plain inputs (the satellite column tree, the loaded
+// everything here takes plain inputs (the linked-site column tree, the loaded
 // cells/rows maps, the user's selection) and returns plain values, so it can be
 // unit-tested directly. `action-panel.js` orchestrates IO and delegates these
 // decisions here.
 //
 // Shared shapes:
-//   tree        [{ site, label, children: [...] }]  satellite subtree as columns
-//   rootSite    the site the panel is centered on (matrix base / source site)
-//   cells       Map(cellKey(path, site) -> { hasOverride, lastModified, ... })
+//   tree        [{ site, label, children: [...] }]  linked-site subtree as columns
+//   rootSite    the site the panel is centered on (matrix source site)
+//   cells       Map(cellKey(path, site) -> { isDetached, lastModified, ... })
 //   rows        Map(path -> { category, source, ... })  upward source-view rows
 //   included    Set(site)                              target sites in scope
 
-// Stable key for a (page, satellite) matrix cell.
-export const cellKey = (pagePath, satSite) => `${pagePath}:${satSite}`;
+// Stable key for a (page, linked-site) matrix cell.
+export const cellKey = (pagePath, targetSite) => `${pagePath}:${targetSite}`;
 
 // First node in the tree matching `site`, or null.
 export function findNode(tree, site) {
@@ -106,35 +106,35 @@ export function toggleTarget(tree, included, site, rootSite) {
   return next;
 }
 
-// The source a satellite pulls from for a page: the nearest ancestor holding a
-// local copy (per already-loaded cells), else the root site.
-export function effectiveSource(page, sat, pm, cells, rootSite) {
-  let cur = pm.get(sat);
+// The source a linked site pulls from for a page: the nearest ancestor holding
+// a detached copy (per already-loaded cells), else the root site.
+export function effectiveSource(page, targetSite, pm, cells, rootSite) {
+  let cur = pm.get(targetSite);
   while (cur && cur !== rootSite) {
     const cell = cells.get(cellKey(page.path, cur));
-    if (cell?.hasOverride) return { site: cur, lm: cell.lastModified };
+    if (cell?.isDetached) return { site: cur, lm: cell.lastModified };
     cur = pm.get(cur);
   }
   return { site: rootSite, lm: page.lastModified };
 }
 
-// Inheritance category of a page from whether it has a local copy and whether
-// any ancestor source exists: inherited (no copy) | override (copy + source) |
-// local (copy, no source anywhere above).
-export function deriveCategory({ hasOverride, sourceExists }) {
-  if (!hasOverride) return 'inherited';
-  return sourceExists ? 'override' : 'local';
+// Link category of a page from whether it has a detached copy and whether any
+// ancestor source exists: linked (no copy) | detached (copy + source) | local
+// (copy, no source anywhere above).
+export function deriveCategory({ isDetached, sourceExists }) {
+  if (!isDetached) return 'linked';
+  return sourceExists ? 'detached' : 'local';
 }
 
-// A local copy is out of sync when its source changed after the copy was last
-// modified (beyond the publish-lag grace window).
+// A detached copy is behind its source when the source changed after the copy
+// was last modified (beyond the publish-lag grace window).
 export function isOutOfSync(sourceLm, selfLm, lagMs) {
   return !!(sourceLm && selfLm
     && new Date(sourceLm).getTime() > new Date(selfLm).getTime() + lagMs);
 }
 
 // Included downward cells matching a scope.
-// scope: 'inherited' (rollout / cancel) | 'custom' (sync / re-enable).
+// scope: 'linked' (publish / detach) | 'detached' (sync / reconnect).
 export function scopedCells(allColumns, pages, included, cells, scope) {
   const out = [];
   const targets = allColumns.filter((c) => included.has(c.site));
@@ -142,15 +142,15 @@ export function scopedCells(allColumns, pages, included, cells, scope) {
     targets.forEach((col) => {
       const cell = cells.get(cellKey(page.path, col.site));
       if (!cell) return;
-      const match = scope === 'custom' ? cell.hasOverride : !cell.hasOverride;
-      if (match) out.push({ page, satSite: col.site });
+      const match = scope === 'detached' ? cell.isDetached : !cell.isDetached;
+      if (match) out.push({ page, targetSite: col.site });
     });
   });
   return out;
 }
 
-// Source-view pages matching a scope, by inheritance category.
-// scope: 'inherited' (roll out / cancel) | 'override' (sync / re-enable).
+// Source-view pages matching a scope, by link category.
+// scope: 'linked' (publish / detach) | 'detached' (sync / reconnect).
 export function scopedPagesUp(pages, rows, scope) {
   return pages.filter((p) => rows.get(p.path)?.category === scope);
 }
@@ -163,10 +163,10 @@ export function downGroups({
 }) {
   const pm = parentMap(tree, rootSite);
   const groups = new Map();
-  scopedCells(allColumns, pages, included, cells, scope).forEach(({ page, satSite }) => {
-    const source = effectiveSource(page, satSite, pm, cells, rootSite).site;
-    const key = `${satSite}|${source}`;
-    if (!groups.has(key)) groups.set(key, { target: satSite, source, pages: [] });
+  scopedCells(allColumns, pages, included, cells, scope).forEach(({ page, targetSite }) => {
+    const source = effectiveSource(page, targetSite, pm, cells, rootSite).site;
+    const key = `${targetSite}|${source}`;
+    if (!groups.has(key)) groups.set(key, { target: targetSite, source, pages: [] });
     groups.get(key).pages.push(page);
   });
   return [...groups.values()];
@@ -197,7 +197,7 @@ export function upGroups({
 //   - 'incremental' selection changed → load only pages not already loaded
 export function planSelectionLoad({
   prevContextKey, prevSelKey, contextKey, selKey,
-  pages, loadedDownPaths, loadedUpPaths, hasBase, hasSatellite,
+  pages, loadedDownPaths, loadedUpPaths, hasSource, hasLinked,
 }) {
   if (contextKey === prevContextKey && selKey === prevSelKey) {
     return { kind: 'noop', downPages: [], upPages: [] };
@@ -205,13 +205,13 @@ export function planSelectionLoad({
   if (contextKey !== prevContextKey) {
     return {
       kind: 'reset',
-      downPages: hasBase ? pages : [],
-      upPages: hasSatellite ? pages : [],
+      downPages: hasSource ? pages : [],
+      upPages: hasLinked ? pages : [],
     };
   }
   return {
     kind: 'incremental',
-    downPages: hasBase ? pages.filter((p) => !loadedDownPaths.has(p.path)) : [],
-    upPages: hasSatellite ? pages.filter((p) => !loadedUpPaths.has(p.path)) : [],
+    downPages: hasSource ? pages.filter((p) => !loadedDownPaths.has(p.path)) : [],
+    upPages: hasLinked ? pages.filter((p) => !loadedUpPaths.has(p.path)) : [],
   };
 }

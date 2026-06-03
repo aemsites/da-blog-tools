@@ -1,8 +1,8 @@
 # Multi-site Manager (MSM) Plugin
 
-A DA Prepare-menu plugin for managing multi-site inheritance from the page editor.
-Lets authors roll out, sync, override, and resume inheritance between a base site
-and its satellite sites without leaving DA.
+A DA Prepare-menu plugin for managing multi-site links from the page editor.
+Lets authors publish, sync, detach, and reconnect between a source site and the
+sites that link to it without leaving DA.
 
 This plugin is a standalone fork of the OOTB `Multi-site Manager` action that
 ships in [`da-live`](https://github.com/adobe/da-live/tree/main/blocks/edit/da-prepare/actions/msm).
@@ -15,12 +15,11 @@ described below.
 
 1. Authors open a page in DA, click the Prepare menu, and pick **Multi-site Manager**.
 2. The plugin reads the org's `msm` config sheet to determine the page's role:
-   - **As a base** — lists satellites that inherit from this site.
-   - **As a satellite** — shows the inheritance chain up to the base.
-   - **Dual role** — both, with a "Sync from parent" switch to flip direction.
-3. The author picks an action (roll out to preview/live, cancel inheritance,
-   sync from base, resume inheritance, etc.) and the plugin executes it via
-   the DA Admin and AEM Admin APIs.
+   - **As a source** — lists the sites that link to this one.
+   - **As a linked site** — shows the source chain up to the root source.
+   - **Dual role** — both, shown as separate **Source** and **Linked sites** sections.
+3. The author picks an action (publish to preview/live, detach, sync, reconnect,
+   etc.) and the plugin executes it via the DA Admin and AEM Admin APIs.
 
 The plugin uses [`DA_SDK`](https://da.live/nx/utils/sdk.js) so all admin calls
 are authenticated against the host page's signed-in user — no separate auth
@@ -30,21 +29,23 @@ is required.
 
 ### 1. `.da/config.json` — `msm` sheet
 
-The plugin reads the org-level `msm` sheet to discover the base/satellite
-relationships. Each row describes one site:
+The plugin reads the org-level `msm` sheet to discover the source/linked
+relationships. Columns may use either the original `base`/`satellite` names or
+the new `source`/`linked` names — readers accept whichever is present. Each row
+describes one site:
 
-| base   | satellite   | title           |
+| source | linked      | title           |
 | ------ | ----------- | --------------- |
 | mccs   |             | MCCS Global     |
 | mccs   | san-diego   | San Diego       |
 | mccs   | pendleton   | Camp Pendleton  |
 
-- A row with `base` set and `satellite` empty defines the **base label** for
+- A row with `source` set and `linked` empty defines the **source label** for
   that site (used in the breadcrumb).
-- A row with both `base` and `satellite` defines an inheritance edge: edits
-  to the base flow to the satellite unless the satellite has a local override.
-- Multi-level inheritance works: a `satellite` row can also appear as a
-  `base` row pointing to deeper satellites.
+- A row with both `source` and `linked` defines a link edge: the linked site
+  resolves the source's content unless it holds a detached copy.
+- Multi-level links work: a `linked` row can also appear as a `source` row
+  pointing to deeper linked sites.
 
 ### 2. `.da/config.json` — `prepare` sheet
 
@@ -70,36 +71,36 @@ plugin into your own repo:
 
 ## Behavior matrix
 
-| Page role        | Direction available     | Actions                                                                   |
-| ---------------- | ----------------------- | ------------------------------------------------------------------------- |
-| Base only        | Downward (children)     | Roll out to preview · Roll out to live · Cancel inheritance · Sync · Resume inheritance |
-| Satellite only   | Upward (parent)         | Sync from base · Resume inheritance                                       |
-| Both             | Toggleable via switch   | Both sets, scoped by the switch position                                  |
+| Page role     | Direction available  | Actions                                            |
+| ------------- | -------------------- | -------------------------------------------------- |
+| Source only   | Linked sites (down)  | Publish · Preview · Detach · Sync (Merge/Replace) · Reconnect |
+| Linked only   | Source (up)          | Get from source · Sync (Merge/Replace) · Reconnect |
+| Both          | Source + Linked sites sections | Both sets                                |
 
 ### Sync modes
 
-When syncing content from a base to a satellite (or vice versa), two modes are
-available:
+When syncing content from a source into a linked site (or pulling into the
+current site from its source), two modes are available:
 
-- **Merge** — runs a 3-way merge that preserves local edits in the satellite
-  while pulling in changes from the base. Backed by the
+- **Merge** — runs a 3-way merge that preserves local edits in the linked site
+  while pulling in changes from the source. Backed by the
   `mergeCopy` function from [`nx/blocks/loc/project`](https://da.live/nx/blocks/loc/project/index.js),
   loaded dynamically at runtime.
-- **Override** — replaces the satellite's content with the base's content.
+- **Replace** — replaces the linked site's content with the source's content.
   Local edits are lost.
 
 ### Cascade to nested sites
 
-For recursive actions (Roll out to preview / live) on sites that have nested
-descendants, an extra checkbox appears in the footer:
-**"Cascade to nested sites (+N more)"**. When checked, the action runs against
-the entire subtree below each selected satellite, not just the direct child.
+For recursive actions (Publish / Preview) on sites that have nested
+descendants, the publish confirm shows scope chips for the whole subtree, so
+the action can run against every linked site below the selected one, not just
+the direct child.
 
 ## Relationship to the OOTB version
 
-This plugin is a **fork-copy** of `blocks/edit/da-prepare/actions/msm/` in
-da-live. The component itself (`<da-msm>`) and its CSS are the same; only
-the dependency wiring differs:
+This plugin began as a **fork-copy** of `blocks/edit/da-prepare/actions/msm/` in
+da-live and has since diverged (rewritten UI/logic over a shared `core/`). The
+dependency wiring also differs:
 
 | Concern            | OOTB (da-live)                                  | Plugin (this repo)                                                 |
 | ------------------ | ----------------------------------------------- | ------------------------------------------------------------------ |
@@ -120,6 +121,6 @@ tools/plugins/msm/
 ├── msm.html    (iframe entry; loads da-lit via importmap and msm.js)
 ├── msm.js      (<da-msm> Lit component + self-init from DA_SDK)
 ├── msm.css     (component styles, adapted to fill the 400x400 iframe)
-├── config.js   (org/site msm-config resolution, override checks)
-└── utils.js    (preview/publish/override/merge AEM+DA admin calls)
+├── config.js   (re-exports core config: source/linked resolution)
+└── utils.js    (re-exports core operations: preview/publish/copy/delete/merge)
 ```

@@ -88,7 +88,7 @@ class MsmApp extends LitElement {
   async loadConfig(org) {
     try {
       const config = await fetchMsmConfig(org);
-      if (!config || !config.baseSites.length) {
+      if (!config || !config.sourceSites.length) {
         this._state = 'no-config';
         return;
       }
@@ -175,7 +175,7 @@ class MsmApp extends LitElement {
     }
 
     if (this._state === 'no-config') {
-      return html`<div class="msm-empty"><p>No MSM base sites configured for <strong>${this._org}</strong>.</p></div>`;
+      return html`<div class="msm-empty"><p>No MSM source sites configured for <strong>${this._org}</strong>.</p></div>`;
     }
 
     return html`

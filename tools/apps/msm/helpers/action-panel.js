@@ -82,7 +82,7 @@ class MsmActionPanel extends LitElement {
     this._rows = new Map();
     this._includedTargets = new Set();
     this._expandedCols = new Set();
-    this._tab = 'satellites';
+    this._tab = 'linked';
     this._confirm = null;
     this._busy = false;
     this._taskStatus = new Map();
@@ -116,12 +116,12 @@ class MsmActionPanel extends LitElement {
     return (this.pages || []).filter((p) => (p.site || this.site) === this.site);
   }
 
-  // Direct satellites of this site as [satSite, { label, descendantCount, descendants }].
+  // Direct linked sites of this site as [linkedSite, { label, descendantCount, descendants }].
   get _targets() {
-    return Object.entries(this._roles.asBase?.satellites || {});
+    return Object.entries(this._roles.asSource?.linked || {});
   }
 
-  // The full satellite subtree as column nodes: { site, label, children }.
+  // The full linked-site subtree as column nodes: { site, label, children }.
   get _columnTree() {
     return this._targets.map(([site, info]) => ({
       site, label: info.label || site, children: info.descendants || [],
@@ -156,29 +156,29 @@ class MsmActionPanel extends LitElement {
     return findNode(this._columnTree, site);
   }
 
-  _labelFor(sat) {
-    return this._findNode(sat)?.label || sat;
+  _labelFor(targetSite) {
+    return this._findNode(targetSite)?.label || targetSite;
   }
 
   _targetLabel(view, target) {
-    return view === 'satellites' ? this._labelFor(target) : this._siteTitle(target);
+    return view === 'linked' ? this._labelFor(target) : this._siteTitle(target);
   }
 
-  // Human title for a site id, from the MSM config rows (base or satellite
+  // Human title for a site id, from the MSM config rows (source or linked-site
   // row's title). Falls back to the id when no title is configured.
   _siteTitle(site) {
     const rows = this.msmConfig?.rows || [];
-    const baseRow = rows.find((r) => r.base === site && !r.satellite);
-    if (baseRow?.title) return baseRow.title;
-    const satRow = rows.find((r) => r.satellite === site);
-    return satRow?.title || site;
+    const sourceRow = rows.find((r) => (r.base ?? r.source) === site && !(r.satellite ?? r.linked));
+    if (sourceRow?.title) return sourceRow.title;
+    const linkedRow = rows.find((r) => (r.satellite ?? r.linked) === site);
+    return linkedRow?.title || site;
   }
 
-  // The source a satellite pulls from for a given page: the nearest ancestor
-  // that holds a local copy of the page, else the base site. Resolves from
+  // The source a linked site pulls from for a given page: the nearest ancestor
+  // that holds a detached copy of the page, else the root source. Resolves from
   // already-loaded cells (ancestors load before descendants).
-  _effectiveSource(page, sat, pm) {
-    return effectiveSource(page, sat, pm, this._cells, this.site);
+  _effectiveSource(page, targetSite, pm) {
+    return effectiveSource(page, targetSite, pm, this._cells, this.site);
   }
 
   // ── Selection lifecycle ─────────────────────────────────────────────────
@@ -187,7 +187,7 @@ class MsmActionPanel extends LitElement {
   // is single-site) wipes and reloads everything. A selection change within the
   // same context keeps loaded rows and fetches only the newly-added pages;
   // removed pages just stop rendering. Column include/expand state is preserved
-  // across selection changes — it's about satellites, not pages.
+  // across selection changes — it's about linked sites, not pages.
   _resetForSelection() {
     const contextKey = `${this.org}|${this.site}`;
     const selKey = this._pages.map((p) => p.path).sort().join(',');
@@ -199,8 +199,8 @@ class MsmActionPanel extends LitElement {
       pages: this._pages,
       loadedDownPaths: this._loadedDownPaths,
       loadedUpPaths: this._loadedUpPaths,
-      hasBase: !!this._roles.asBase,
-      hasSatellite: !!this._roles.asSatellite,
+      hasSource: !!this._roles.asSource,
+      hasLinked: !!this._roles.asLinked,
     });
     if (plan.kind === 'noop') return;
     this._contextKey = contextKey;
@@ -214,7 +214,7 @@ class MsmActionPanel extends LitElement {
       this._loadedUpPaths = new Set();
       this._includedTargets = new Set(this._allColumns.map((c) => c.site));
       this._expandedCols = new Set();
-      this._tab = 'satellites';
+      this._tab = 'linked';
       this._taskStatus = new Map();
       this._confirm = null;
       this._success = null;
@@ -241,19 +241,19 @@ class MsmActionPanel extends LitElement {
     const tasks = [];
     pages.forEach((page) => {
       const ext = page.ext || 'html';
-      sites.forEach((sat) => {
+      sites.forEach((targetSite) => {
         tasks.push(async () => {
           if (gen !== this._loadGen) return;
           try {
-            const ts = await getPageTimestamp(this.org, sat, page.path, ext);
-            const hasOverride = ts.exists;
-            const src = this._effectiveSource(page, sat, pm);
-            const editLM = hasOverride ? ts.lastModified : src.lm;
-            const status = await getPageStatus(this.org, sat, page.path, editLM, ext);
-            const outOfSync = hasOverride && isOutOfSync(src.lm, ts.lastModified, PUBLISH_LAG_MS);
+            const ts = await getPageTimestamp(this.org, targetSite, page.path, ext);
+            const isDetached = ts.exists;
+            const src = this._effectiveSource(page, targetSite, pm);
+            const editLM = isDetached ? ts.lastModified : src.lm;
+            const status = await getPageStatus(this.org, targetSite, page.path, editLM, ext);
+            const outOfSync = isDetached && isOutOfSync(src.lm, ts.lastModified, PUBLISH_LAG_MS);
             if (gen !== this._loadGen) return;
-            this._setCell(cellKey(page.path, sat), {
-              hasOverride,
+            this._setCell(cellKey(page.path, targetSite), {
+              isDetached,
               outOfSync,
               previewState: status.previewState,
               liveState: status.liveState,
@@ -262,11 +262,11 @@ class MsmActionPanel extends LitElement {
             });
           } catch {
             if (gen !== this._loadGen) return;
-            this._setCell(cellKey(page.path, sat), {
-              hasOverride: false,
+            this._setCell(cellKey(page.path, targetSite), {
+              isDetached: false,
               outOfSync: false,
-              previewState: 'not-rolled-out',
-              liveState: 'not-rolled-out',
+              previewState: 'not-published',
+              liveState: 'not-published',
               lastModified: null,
               sourceSite: this.site,
             });
@@ -293,7 +293,7 @@ class MsmActionPanel extends LitElement {
     /* eslint-enable no-restricted-syntax, no-await-in-loop */
   }
 
-  // ── Upward (satellite) row data ───────────────────────────────────────────
+  // ── Upward (source) row data ──────────────────────────────────────────────
 
   _setRow(path, data) {
     const next = new Map(this._rows);
@@ -301,10 +301,10 @@ class MsmActionPanel extends LitElement {
     this._rows = next;
   }
 
-  // Nearest ancestor (incl. base) that actually holds the page — the site to
-  // pull from / copy from. Probes the inheritance chain in parallel.
+  // Nearest ancestor (incl. root source) that actually holds the page — the site
+  // to pull from / copy from. Probes the source chain in parallel.
   async _resolveUpwardSource(page) {
-    const chain = this._roles.asSatellite?.chain || [];
+    const chain = this._roles.asLinked?.chain || [];
     const nearestFirst = [...chain].reverse();
     const ext = page.ext || 'html';
     const probes = await Promise.all(
@@ -314,7 +314,7 @@ class MsmActionPanel extends LitElement {
     );
     const hit = probes.find((r) => r.ts.exists);
     if (hit) return { site: hit.node.site, lm: hit.ts.lastModified, exists: true };
-    return { site: this._roles.asSatellite?.base, lm: null, exists: false };
+    return { site: this._roles.asLinked?.source, lm: null, exists: false };
   }
 
   async _loadRows(pages = this._pages) {
@@ -328,16 +328,16 @@ class MsmActionPanel extends LitElement {
           getPageTimestamp(this.org, this.site, page.path, ext),
           this._resolveUpwardSource(page),
         ]);
-        const hasOverride = selfTs.exists;
-        const category = deriveCategory({ hasOverride, sourceExists: src.exists });
-        const editLM = hasOverride ? selfTs.lastModified : src.lm;
+        const isDetached = selfTs.exists;
+        const category = deriveCategory({ isDetached, sourceExists: src.exists });
+        const editLM = isDetached ? selfTs.lastModified : src.lm;
         const status = await getPageStatus(this.org, this.site, page.path, editLM, ext);
-        const outOfSync = category === 'override'
+        const outOfSync = category === 'detached'
           && isOutOfSync(src.lm, selfTs.lastModified, PUBLISH_LAG_MS);
         if (gen !== this._loadGen) return;
         this._setRow(page.path, {
           category,
-          hasOverride,
+          isDetached,
           outOfSync,
           previewState: status.previewState,
           liveState: status.liveState,
@@ -346,12 +346,12 @@ class MsmActionPanel extends LitElement {
       } catch {
         if (gen !== this._loadGen) return;
         this._setRow(page.path, {
-          category: 'inherited',
-          hasOverride: false,
+          category: 'linked',
+          isDetached: false,
           outOfSync: false,
-          previewState: 'not-rolled-out',
-          liveState: 'not-rolled-out',
-          source: this._roles.asSatellite?.base,
+          previewState: 'not-published',
+          liveState: 'not-published',
+          source: this._roles.asLinked?.source,
         });
       }
     });
@@ -367,35 +367,50 @@ class MsmActionPanel extends LitElement {
   }
 
   // Expansion is display-only — all subtree data is already loaded.
-  _toggleColumnExpand(sat) {
+  _toggleColumnExpand(targetSite) {
     const next = new Set(this._expandedCols);
-    if (next.has(sat)) next.delete(sat); else next.add(sat);
+    if (next.has(targetSite)) next.delete(targetSite); else next.add(targetSite);
     this._expandedCols = next;
   }
 
   // ── Scope ─────────────────────────────────────────────────────────────────
 
-  // Included (page, satellite) downward cells matching a scope.
-  // scope: 'inherited' (rollout / cancel) | 'custom' (sync / re-enable)
+  // Included (page, linked-site) downward cells matching a scope.
+  // scope: 'linked' (publish / detach) | 'detached' (sync / reconnect)
   _scopedCells(scope) {
     return scopedCells(this._allColumns, this._pages, this._includedTargets, this._cells, scope);
   }
 
-  // Source-view (upward) pages matching a scope, by inheritance category.
-  // scope: 'inherited' (roll out / cancel) | 'override' (sync / re-enable)
+  // Source-view (upward) pages matching a scope, by link category.
+  // scope: 'linked' (publish / detach) | 'detached' (sync / reconnect)
   _scopedPagesUp(scope) {
     return scopedPagesUp(this._pages, this._rows, scope);
   }
 
   _countFor(view, scope) {
-    if (view === 'satellites') return this._scopedCells(scope).length;
+    if (view === 'linked') return this._scopedCells(scope).length;
     return this._scopedPagesUp(scope).length;
   }
 
   // ── Execution ─────────────────────────────────────────────────────────────
 
+  // Confirm detail: distinct page count and (for the linked-sites view) the
+  // target site names, so the confirm can name where the action lands.
+  _confirmDetail(view, scope) {
+    if (view === 'linked') {
+      const cells = this._scopedCells(scope);
+      const pages = new Set(cells.map((c) => c.page.path));
+      const sites = [...new Set(cells.map((c) => c.targetSite))];
+      return {
+        count: cells.length, pageCount: pages.size, siteNames: sites.map((s) => this._labelFor(s)),
+      };
+    }
+    const pages = this._scopedPagesUp(scope);
+    return { count: pages.length, pageCount: pages.length, siteNames: [] };
+  }
+
   _requestAction(def) {
-    this._confirm = { ...def, count: this._countFor(def.view, def.scope) };
+    this._confirm = { ...def, ...this._confirmDetail(def.view, def.scope) };
     this._success = null;
   }
 
@@ -404,8 +419,8 @@ class MsmActionPanel extends LitElement {
   }
 
   // Group in-scope work into valid executeBulkAction calls — one target per
-  // call, the pages that share its source — so sync / cancel pull from the
-  // right base at any tree depth (source can differ per page).
+  // call, the pages that share its source — so sync / detach pull from the
+  // right source at any tree depth (source can differ per page).
   _downGroups(scope) {
     return downGroups({
       tree: this._columnTree,
@@ -425,7 +440,7 @@ class MsmActionPanel extends LitElement {
       pages: this._pages,
       rows: this._rows,
       scope,
-      base: this._roles.asSatellite?.base,
+      base: this._roles.asLinked?.source,
       target: this.site,
     });
   }
@@ -445,7 +460,7 @@ class MsmActionPanel extends LitElement {
       this._taskStatus = next;
     };
 
-    const groups = view === 'satellites' ? this._downGroups(scope) : this._upGroups(scope);
+    const groups = view === 'linked' ? this._downGroups(scope) : this._upGroups(scope);
     this._busyTotal = groups.reduce((n, g) => n + g.pages.length, 0);
     const succeeded = [];
     const errors = [];
@@ -453,9 +468,9 @@ class MsmActionPanel extends LitElement {
     for (const g of groups) {
       const results = await executeBulkAction({
         org: this.org,
-        baseSite: g.source,
+        sourceSite: g.source,
         pages: g.pages,
-        satellites: { [g.target]: { label: this._targetLabel(view, g.target) } },
+        targets: { [g.target]: { label: this._targetLabel(view, g.target) } },
         action: exec,
         syncMode,
         onPageStatus,
@@ -473,10 +488,10 @@ class MsmActionPanel extends LitElement {
 
     // Recompute only the pages we acted on. Reloading them across the whole
     // column tree (depth-ordered) also captures descendants whose effective
-    // source shifted — e.g. a new local copy becomes the source for its subtree.
+    // source shifted — e.g. a new detached copy becomes the source for its subtree.
     const actedPaths = new Set(groups.flatMap((g) => g.pages.map((p) => p.path)));
     const actedPages = this._pages.filter((p) => actedPaths.has(p.path));
-    if (view === 'satellites') await this._loadAll(actedPages);
+    if (view === 'linked') await this._loadAll(actedPages);
     else await this._loadRows(actedPages);
     this._taskStatus = new Map();
     this._busy = false;
@@ -486,7 +501,7 @@ class MsmActionPanel extends LitElement {
   }
 
   // Re-select the same pages at another site (an ancestor via the breadcrumb,
-  // or a satellite via a column header) so the panel re-renders in that site's
+  // or a linked site via a column header) so the panel re-renders in that site's
   // context. The column browser resolves which of the paths exist there.
   _navigateTo(site, paths) {
     if (!site || !paths.length) return;
@@ -521,24 +536,24 @@ class MsmActionPanel extends LitElement {
 
   // ── Render: downward matrix ───────────────────────────────────────────────
 
-  renderCell(page, satSite) {
-    const overlay = this._taskOverlay(cellKey(page.path, satSite));
+  renderCell(page, targetSite) {
+    const overlay = this._taskOverlay(cellKey(page.path, targetSite));
     if (overlay) return overlay;
-    const cell = this._cells.get(cellKey(page.path, satSite));
+    const cell = this._cells.get(cellKey(page.path, targetSite));
     if (!cell) return html`<span class="cell-icon cell-loading"></span>`;
-    const inh = cell.hasOverride
-      ? { name: 'S2_Icon_UnLink_20_N', tip: 'Local copy (inheritance broken)' }
-      : { name: 'S2_Icon_LinkApplied_20_N', tip: `Inheriting from ${this._siteTitle(cell.sourceSite)}` };
+    const inh = cell.isDetached
+      ? { name: 'S2_Icon_UnLink_20_N', tip: 'Detached (independent copy)' }
+      : { name: 'S2_Icon_LinkApplied_20_N', tip: `Linked to ${this._siteTitle(cell.sourceSite)}` };
     const body = html`
       <span class="cell-pair">
         <span class="cell-inherit" title=${inh.tip}>${icon(inh.name, '0 0 20 20', 13, 13)}</span>
         ${this._statusIcon(cell)}
       </span>`;
-    // A local copy is editable on that satellite — link the cell to its doc.
-    if (cell.hasOverride && (page.ext || 'html') === 'html') {
-      return html`<a class="cell-link" href=${this._editUrl(satSite, page.path)}
+    // A detached copy is editable on that site — link the cell to its doc.
+    if (cell.isDetached && (page.ext || 'html') === 'html') {
+      return html`<a class="cell-link" href=${this._editUrl(targetSite, page.path)}
         target="_blank" rel="noopener"
-        title="Open ${this._siteTitle(satSite)} copy of ${page.path} in editor">${body}</a>`;
+        title="Open ${this._siteTitle(targetSite)} copy of ${page.path} in editor">${body}</a>`;
     }
     return body;
   }
@@ -601,12 +616,12 @@ class MsmActionPanel extends LitElement {
   renderInheritChip(row) {
     if (!row) return html`<span class="cell-icon cell-loading"></span>`;
     let name = 'S2_Icon_UnLink_20_N';
-    let text = 'Local only — no base';
-    if (row.category === 'inherited') {
+    let text = 'Local only (no source)';
+    if (row.category === 'linked') {
       name = 'S2_Icon_LinkApplied_20_N';
-      text = `Inheriting from ${this._siteTitle(row.source)}`;
-    } else if (row.category === 'override') {
-      text = 'Local copy';
+      text = `Linked to ${this._siteTitle(row.source)}`;
+    } else if (row.category === 'detached') {
+      text = 'Detached';
     }
     return html`<span class="inherit-chip">
       <span class="cell-inherit">${icon(name, '0 0 20 20', 13, 13)}</span>${text}</span>`;
@@ -634,7 +649,7 @@ class MsmActionPanel extends LitElement {
           <thead>
             <tr>
               <th class="corner" id="up-page-hdr">Page</th>
-              <th class="up-col" id="up-inherit-hdr">Inheritance</th>
+              <th class="up-col" id="up-inherit-hdr">Link Status</th>
               <th class="up-col" id="up-status-hdr">Status</th>
             </tr>
           </thead>
@@ -650,8 +665,17 @@ class MsmActionPanel extends LitElement {
   renderConfirm() {
     const c = this._confirm;
     if (!c) return nothing;
-    const unit = c.view === 'satellites' ? 'cell' : 'page';
-    const msg = `${c.label}: ${c.count} ${unit}${c.count === 1 ? '' : 's'}. Continue?`;
+    const p = `${c.pageCount} page${c.pageCount === 1 ? '' : 's'}`;
+    let msg;
+    if (c.view === 'linked' && c.siteNames.length) {
+      const shown = c.siteNames.slice(0, 4);
+      const extra = c.siteNames.length - shown.length;
+      const names = shown.join(', ') + (extra > 0 ? `, +${extra} more` : '');
+      const n = c.siteNames.length;
+      msg = `${c.label} ${p} to ${n} linked site${n === 1 ? '' : 's'}: ${names}?`;
+    } else {
+      msg = `${c.label} ${p}?`;
+    }
     return html`
       <div class="confirm-row ${c.destructive ? 'destructive' : ''}">
         <div class="confirm-msg">${msg}</div>
@@ -662,63 +686,61 @@ class MsmActionPanel extends LitElement {
       </div>`;
   }
 
-  // One bar, scoped to the active view. Satellites view acts on matrix cells
-  // (inherited vs local-copy); Source view acts on this site's pages vs base.
+  // One bar, scoped to the active view. Buttons stand alone (no group labels);
+  // the view title + the target-naming confirm carry the destination. Linked
+  // view acts on matrix cells (linked vs detached); Source view acts on this
+  // site's pages vs its source.
   renderActionBar(view) {
-    const down = view === 'satellites';
-    const localScope = down ? 'custom' : 'override';
-    const rollout = this._countFor(view, 'inherited');
-    const local = this._countFor(view, localScope);
+    const publishable = this._countFor(view, 'linked');
+    const detached = this._countFor(view, 'detached');
+    const down = view === 'linked';
     const off = this._busy || (down && this._includedTargets.size === 0);
 
     return html`
       <div class="action-bar">
         <div class="action-group">
-          <span class="action-label">Roll out</span>
-          <sl-button ?disabled=${off || rollout === 0}
+          <sl-button ?disabled=${off || publishable === 0}
             @click=${() => this._requestAction({
-    view, exec: 'publish', scope: 'inherited', label: 'Roll out to live',
-  })}>Live</sl-button>
-          <sl-button class="primary outline" ?disabled=${off || rollout === 0}
+    view, exec: 'publish', scope: 'linked', label: 'Publish',
+  })}>Publish</sl-button>
+          <sl-button class="primary outline" ?disabled=${off || publishable === 0}
             @click=${() => this._requestAction({
-    view, exec: 'preview', scope: 'inherited', label: 'Roll out to preview',
+    view, exec: 'preview', scope: 'linked', label: 'Preview',
   })}>Preview</sl-button>
         </div>
         <div class="action-group">
-          <span class="action-label">Sync</span>
-          <sl-button ?disabled=${off || local === 0}
+          <sl-button ?disabled=${off || detached === 0}
             @click=${() => this._requestAction({
-    view, exec: 'sync', scope: localScope, syncMode: 'merge', label: 'Sync (merge)',
+    view, exec: 'sync', scope: 'detached', syncMode: 'merge', label: 'Merge',
   })}>Merge</sl-button>
-          <sl-button class="primary outline" ?disabled=${off || local === 0}
+          <sl-button class="primary outline" ?disabled=${off || detached === 0}
             @click=${() => this._requestAction({
-    view, exec: 'sync', scope: localScope, syncMode: 'override', label: 'Sync (override)', destructive: true,
-  })}>Override</sl-button>
+    view, exec: 'sync', scope: 'detached', syncMode: 'replace', label: 'Replace', destructive: true,
+  })}>Replace</sl-button>
         </div>
         <div class="action-group">
-          <span class="action-label">Inheritance</span>
-          <sl-button ?disabled=${off || local === 0}
+          <sl-button ?disabled=${off || detached === 0}
             @click=${() => this._requestAction({
-    view, exec: 'resume-inheritance', scope: localScope, label: 'Re-enable inheritance (remove local copy)', destructive: true,
-  })}>Re-enable</sl-button>
-          <sl-button class="primary outline" ?disabled=${off || rollout === 0}
+    view, exec: 'reconnect', scope: 'detached', label: 'Reconnect (remove independent copy)', destructive: true,
+  })}>Reconnect</sl-button>
+          <sl-button class="primary outline" ?disabled=${off || publishable === 0}
             @click=${() => this._requestAction({
-    view, exec: 'cancel-inheritance', scope: 'inherited', label: 'Cancel inheritance (create local copy)', destructive: true,
-  })}>Cancel</sl-button>
+    view, exec: 'detach', scope: 'linked', label: 'Detach (create independent copy)', destructive: true,
+  })}>Detach</sl-button>
         </div>
       </div>`;
   }
 
-  // Where to open a succeeded (page, satellite) result. Rollouts open the
-  // published page (preview → aem.page, live → aem.live); sync/cancel open the
-  // editor for the now-local copy. Re-enable removed the copy, so no link.
+  // Where to open a succeeded (page, site) result. Publish/preview open the
+  // published page (preview → aem.page, live → aem.live); sync/detach open the
+  // editor for the now-detached copy. Reconnect removed the copy, so no link.
   _resultUrl(action, pagePath, site) {
     const clean = pagePath.replace(/\.html$/, '');
     if (action === 'preview' || action === 'publish') {
       const host = action === 'publish' ? 'aem.live' : 'aem.page';
       return `https://main--${site}--${this.org}.${host}${clean}`;
     }
-    if (action === 'resume-inheritance') return null;
+    if (action === 'reconnect') return null;
     return `https://da.live/edit#/${this.org}/${site}${clean}`;
   }
 
@@ -726,13 +748,13 @@ class MsmActionPanel extends LitElement {
     return `https://da.live/edit#/${this.org}/${site}${pagePath.replace(/\.html$/, '')}`;
   }
 
-  // Editor URL for a page's actual content doc: this site when it has a local
-  // copy (or is the base), else the ancestor it inherits from. Only docs (html)
+  // Editor URL for a page's actual content doc: this site when it has a detached
+  // copy (or is the source), else the ancestor it links to. Only docs (html)
   // have an editor; assets return null.
   _editUrlForPage(page) {
     if ((page.ext || 'html') !== 'html') return null;
     const row = this._rows.get(page.path);
-    const site = row && row.category === 'inherited' ? row.source : this.site;
+    const site = row && row.category === 'linked' ? row.source : this.site;
     if (!site) return null;
     return this._editUrl(site, page.path);
   }
@@ -823,29 +845,29 @@ class MsmActionPanel extends LitElement {
   renderDownSection(tabbed) {
     return html`
       <div class="section">
-        ${tabbed ? nothing : html`<div class="section-head"><span class="section-label">Satellites for ${this._siteTitle(this.site)}</span></div>`}
+        ${tabbed ? nothing : html`<div class="section-head"><span class="section-label">Linked sites — ${this._siteTitle(this.site)}</span></div>`}
         ${this._targets.length
     ? html`
             ${this.renderMatrix()}
             ${this.renderConfirm()}
-            ${this.renderActionBar('satellites')}`
-    : html`<div class="panel-empty">No satellites configured for this site.</div>`}
+            ${this.renderActionBar('linked')}`
+    : html`<div class="panel-empty">No linked sites configured for this site.</div>`}
       </div>`;
   }
 
-  // Breadcrumb of the inheritance chain (root → current). Ancestor segments are
-  // clickable: each re-selects the same pages at that base so its matrix can act
-  // on them. The current site isn't a link. Local-only pages (no base
+  // Breadcrumb of the source chain (root → current). Ancestor segments are
+  // clickable: each re-selects the same pages at that source so its matrix can
+  // act on them. The current site isn't a link. Local-only pages (no source
   // counterpart) are left out of the hand-off.
   renderChain() {
-    const ancestors = (this._roles.asSatellite?.chain || [])
+    const ancestors = (this._roles.asLinked?.chain || [])
       .map((c) => ({ site: c.site, label: this._siteTitle(c.site) }));
     const current = { site: this.site, label: this._siteTitle(this.site), current: true };
     const nodes = [...ancestors, current];
     const paths = this._pages
       .filter((p) => this._rows.get(p.path)?.category !== 'local')
       .map((p) => p.path);
-    return html`<span class="chain" aria-label="Inheritance chain">
+    return html`<span class="chain" aria-label="Source chain">
       ${nodes.map((node, i) => html`
         ${i > 0 ? html`<span class="chain-sep" aria-hidden="true">›</span>` : nothing}
         ${node.current
@@ -870,9 +892,9 @@ class MsmActionPanel extends LitElement {
   // The view in effect: a dual site picks via tabs; otherwise it's forced.
   get _activeView() {
     const roles = this._roles;
-    if (roles.asBase && roles.asSatellite) return this._tab;
-    if (roles.asBase) return 'satellites';
-    if (roles.asSatellite) return 'source';
+    if (roles.asSource && roles.asLinked) return this._tab;
+    if (roles.asSource) return 'linked';
+    if (roles.asLinked) return 'source';
     return null;
   }
 
@@ -886,9 +908,9 @@ class MsmActionPanel extends LitElement {
     const tab = this._tab;
     return html`
       <div class="tabs" role="tablist">
-        <button class="tab ${tab === 'satellites' ? 'active' : ''}" role="tab"
-          aria-selected=${tab === 'satellites' ? 'true' : 'false'}
-          @click=${() => this._setTab('satellites')}>Satellites</button>
+        <button class="tab ${tab === 'linked' ? 'active' : ''}" role="tab"
+          aria-selected=${tab === 'linked' ? 'true' : 'false'}
+          @click=${() => this._setTab('linked')}>Linked sites</button>
         <button class="tab ${tab === 'source' ? 'active' : ''}" role="tab"
           aria-selected=${tab === 'source' ? 'true' : 'false'}
           @click=${() => this._setTab('source')}>Source</button>
@@ -899,7 +921,7 @@ class MsmActionPanel extends LitElement {
     if (!this._pages.length) {
       return html`<div class="panel-empty">Select pages in the browser to act on them.</div>`;
     }
-    const dual = !!(this._roles.asBase && this._roles.asSatellite);
+    const dual = !!(this._roles.asSource && this._roles.asLinked);
     const view = this._activeView;
 
     return html`
@@ -910,7 +932,7 @@ class MsmActionPanel extends LitElement {
         </div>
         ${this._busy ? this.renderBusy() : this.renderSuccess()}
         ${dual ? this.renderTabs() : nothing}
-        ${view === 'satellites' ? this.renderDownSection(dual) : nothing}
+        ${view === 'linked' ? this.renderDownSection(dual) : nothing}
         ${view === 'source' ? this.renderUpSection(dual) : nothing}
         ${!view ? html`<div class="panel-empty">No MSM relationships configured for this site.</div>` : nothing}
       </div>`;

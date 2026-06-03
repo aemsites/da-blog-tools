@@ -26,7 +26,7 @@ export const DA_ORIGIN = 'https://admin.da.live';
 export const AEM_ADMIN = 'https://admin.hlx.page';
 
 // Publishing bumps a page's lastModified after its publish timestamp is
-// recorded, producing a spurious "out of sync" signal. This absorbs that lag.
+// recorded, producing a spurious "behind source" signal. This absorbs that lag.
 export const PUBLISH_LAG_MS = 5000;
 
 // Normalize a page path for use in API URLs: add leading slash, strip the

@@ -7,10 +7,10 @@
 export { setDaFetch as setSdkFetch } from '../../apps/msm/core/fetch.js';
 export {
   getSiteConfig,
-  getSatelliteTree,
-  getSubtreeSatellites,
-  getSatellites,
-  getBaseSite,
+  getLinkedTree,
+  getSubtreeLinked,
+  getLinkedSites,
+  getSourceSite,
   clearMsmCache,
 } from '../../apps/msm/core/config.js';
 export { getPageTimestamp } from '../../apps/msm/core/status.js';

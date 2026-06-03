@@ -5,13 +5,13 @@
 // browsing, bulk execution) that the dialog doesn't need.
 
 import { daFetch, DA_ORIGIN } from '../core/fetch.js';
-import { getInheritanceChain } from '../core/config.js';
+import { getSourceChain } from '../core/config.js';
 import {
-  previewSatellite,
-  publishSatellite,
-  createOverride,
-  deleteOverride,
-  mergeFromBase,
+  previewPage,
+  publishPage,
+  copyFromSource,
+  deleteCopy,
+  mergeFromSource,
 } from '../core/operations.js';
 import { getPageStatus } from '../core/status.js';
 
@@ -21,11 +21,11 @@ export {
   getSiteRoles,
 } from '../core/config.js';
 export {
-  previewSatellite,
-  publishSatellite,
-  createOverride,
-  deleteOverride,
-  mergeFromBase,
+  previewPage,
+  publishPage,
+  copyFromSource,
+  deleteCopy,
+  mergeFromSource,
 } from '../core/operations.js';
 export { getPageStatus, getStatusConfig, getPageTimestamp } from '../core/status.js';
 export { PUBLISH_LAG_MS } from '../core/fetch.js';
@@ -89,20 +89,20 @@ export async function listFolder(org, site, path = '/') {
   });
 }
 
-// Lists a folder for a satellite and merges in inherited entries from the
-// ancestor chain. Adds these fields to every item:
-//   - sourceSite       : where the file actually lives (current site or ancestor)
-//   - inheritedFrom    : null when local, ancestor site name when inherited
-//   - hasLocalOverride : true iff the path exists locally AND in an ancestor
-//   - baseLastModified : nearest ancestor's lastModified (when overridden), so
-//                        callers can compute out-of-sync without extra requests
+// Lists a folder for a linked site and merges in inherited entries from the
+// source chain. Adds these fields to every item:
+//   - sourceSite         : where the file actually lives (current site or ancestor)
+//   - linkedFrom         : null when it's a local copy, ancestor site name when linked
+//   - shadowsSource      : true iff the path exists locally AND in an ancestor
+//   - sourceLastModified : nearest ancestor's lastModified (when it shadows one), so
+//                          callers can compute behind-source without extra requests
 // Closest-source-wins: the level nearest the current site decides the source.
 export async function listFolderWithInheritance(org, site, path, msmConfig) {
-  const chain = msmConfig ? getInheritanceChain(msmConfig, site) : [];
+  const chain = msmConfig ? getSourceChain(msmConfig, site) : [];
   if (!chain.length) {
     const items = await listFolder(org, site, path);
     return items.map((i) => ({
-      ...i, sourceSite: site, inheritedFrom: null, hasLocalOverride: false, baseLastModified: null,
+      ...i, sourceSite: site, linkedFrom: null, shadowsSource: false, sourceLastModified: null,
     }));
   }
 
@@ -126,15 +126,15 @@ export async function listFolderWithInheritance(org, site, path, msmConfig) {
     const isLocal = idx === 0;
     items.forEach((item) => {
       if (seen.has(item.path)) return;
-      const hasLocalOverride = isLocal
+      const shadowsSource = isLocal
         && lists.slice(1).some((arr) => arr.some((i) => i.path === item.path));
       seen.set(item.path, {
         ...item,
         site,
         sourceSite: node.site,
-        inheritedFrom: isLocal ? null : node.site,
-        hasLocalOverride,
-        baseLastModified: hasLocalOverride ? ancestorLM(item.path) : null,
+        linkedFrom: isLocal ? null : node.site,
+        shadowsSource,
+        sourceLastModified: shadowsSource ? ancestorLM(item.path) : null,
       });
     });
   });
@@ -147,51 +147,48 @@ export async function listFolderWithInheritance(org, site, path, msmConfig) {
 // ──────────────────────────────────────────────
 
 export async function executeBulkAction({
-  org, baseSite, pages, satellites, action, syncMode, onPageStatus,
+  org, sourceSite, pages, targets, action, syncMode, onPageStatus,
 }) {
-  const satEntries = Object.entries(satellites);
+  const targetEntries = Object.entries(targets);
 
   const tasks = pages.flatMap((page) => {
     const ext = getExtension(page.path) || 'html';
     const pagePath = stripExtension(page.path);
 
-    satEntries.forEach(([satSite]) => onPageStatus?.(`${page.path}:${satSite}`, 'queued'));
+    targetEntries.forEach(([targetSite]) => onPageStatus?.(`${page.path}:${targetSite}`, 'queued'));
 
-    return satEntries.map(([satSite]) => async () => {
-      const key = `${page.path}:${satSite}`;
+    return targetEntries.map(([targetSite]) => async () => {
+      const key = `${page.path}:${targetSite}`;
       onPageStatus?.(key, 'pending');
       try {
         let result;
         switch (action) {
           case 'preview':
-            result = await previewSatellite(org, satSite, pagePath, ext);
+            result = await previewPage(org, targetSite, pagePath, ext);
             break;
           case 'publish': {
             // AEM requires a current preview before publishing to live.
-            const pv = await previewSatellite(org, satSite, pagePath, ext);
-            result = pv?.error ? pv : await publishSatellite(org, satSite, pagePath, ext);
+            const pv = await previewPage(org, targetSite, pagePath, ext);
+            result = pv?.error ? pv : await publishPage(org, targetSite, pagePath, ext);
             break;
           }
-          case 'break':
-          case 'cancel-inheritance':
-            result = await createOverride(org, baseSite, satSite, pagePath, ext);
+          case 'detach':
+            result = await copyFromSource(org, sourceSite, targetSite, pagePath, ext);
             break;
           case 'sync':
-          case 'sync-from-base':
             result = syncMode === 'merge'
-              ? await mergeFromBase(org, baseSite, satSite, pagePath, ext)
-              : await createOverride(org, baseSite, satSite, pagePath, ext);
+              ? await mergeFromSource(org, sourceSite, targetSite, pagePath, ext)
+              : await copyFromSource(org, sourceSite, targetSite, pagePath, ext);
             break;
-          case 'reset':
-          case 'resume-inheritance': {
-            const status = await getPageStatus(org, satSite, pagePath, null, ext);
-            result = await deleteOverride(org, satSite, pagePath, ext);
+          case 'reconnect': {
+            const status = await getPageStatus(org, targetSite, pagePath, null, ext);
+            result = await deleteCopy(org, targetSite, pagePath, ext);
             if (!result?.error) {
-              if (status.liveState !== 'not-rolled-out') {
-                await previewSatellite(org, satSite, pagePath, ext);
-                await publishSatellite(org, satSite, pagePath, ext);
-              } else if (status.previewState !== 'not-rolled-out') {
-                await previewSatellite(org, satSite, pagePath, ext);
+              if (status.liveState !== 'not-published') {
+                await previewPage(org, targetSite, pagePath, ext);
+                await publishPage(org, targetSite, pagePath, ext);
+              } else if (status.previewState !== 'not-published') {
+                await previewPage(org, targetSite, pagePath, ext);
               }
             }
             break;
