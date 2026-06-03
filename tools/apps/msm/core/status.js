@@ -1,13 +1,7 @@
 /* eslint-disable import/no-unresolved */
 import {
-  daFetch, DA_ORIGIN, AEM_ADMIN, PUBLISH_LAG_MS,
+  daFetch, DA_ORIGIN, AEM_ADMIN, PUBLISH_LAG_MS, cleanPath,
 } from './fetch.js';
-
-// Normalize to a leading-slash, extension-less page path (e.g. "/a/b").
-function cleanPath(pagePath, ext) {
-  const withSlash = pagePath.startsWith('/') ? pagePath : `/${pagePath}`;
-  return withSlash.replace(new RegExp(`\\.${ext}$`), '');
-}
 
 // HEAD a source file to learn whether it exists and its last-modified time.
 export async function getPageTimestamp(org, site, pagePath, ext = 'html') {

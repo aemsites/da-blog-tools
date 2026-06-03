@@ -157,10 +157,11 @@ class MsmApp extends LitElement {
             autocomplete="off"
             spellcheck="false"
             required
+            ?disabled=${this._state === 'loading'}
             value=${this._inputValue}
             .error=${this._initError || nothing}
           ></sl-input>
-          <sl-button @click=${this.handleSubmit}>Load</sl-button>
+          <sl-button ?disabled=${this._state === 'loading'} @click=${this.handleSubmit}>Load</sl-button>
         </form>
       </div>
     `;

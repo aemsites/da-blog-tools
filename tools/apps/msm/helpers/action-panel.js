@@ -27,7 +27,6 @@ try {
 const CELL_CONCURRENCY = 6;
 
 const cellKey = (pagePath, satSite) => `${pagePath}:${satSite}`;
-const cleanPath = (p) => p.replace(/\.[^/.]+$/, '');
 const sanitizeId = (s) => s.replace(/[^a-zA-Z0-9]/g, '-');
 
 /* eslint-disable no-restricted-syntax, no-await-in-loop */
@@ -242,16 +241,15 @@ class MsmActionPanel extends LitElement {
     const tasks = [];
     this._pages.forEach((page) => {
       const ext = page.ext || 'html';
-      const path = cleanPath(page.path);
       sites.forEach((sat) => {
         tasks.push(async () => {
           if (gen !== this._loadGen) return;
           try {
-            const ts = await getPageTimestamp(this.org, sat, path, ext);
+            const ts = await getPageTimestamp(this.org, sat, page.path, ext);
             const hasOverride = ts.exists;
             const src = this._effectiveSource(page, sat, parentMap);
             const editLM = hasOverride ? ts.lastModified : src.lm;
-            const status = await getPageStatus(this.org, sat, path, editLM, ext);
+            const status = await getPageStatus(this.org, sat, page.path, editLM, ext);
             const outOfSync = !!(hasOverride && src.lm && ts.lastModified
               && new Date(src.lm).getTime()
                 > new Date(ts.lastModified).getTime() + PUBLISH_LAG_MS);
@@ -309,9 +307,8 @@ class MsmActionPanel extends LitElement {
     const chain = this._roles.asSatellite?.chain || [];
     const nearestFirst = [...chain].reverse();
     const ext = page.ext || 'html';
-    const path = cleanPath(page.path);
     const probes = await Promise.all(
-      nearestFirst.map((node) => getPageTimestamp(this.org, node.site, path, ext)
+      nearestFirst.map((node) => getPageTimestamp(this.org, node.site, page.path, ext)
         .then((ts) => ({ node, ts }))
         .catch(() => ({ node, ts: { exists: false } }))),
     );
@@ -325,17 +322,16 @@ class MsmActionPanel extends LitElement {
     const tasks = this._pages.map((page) => async () => {
       if (gen !== this._loadGen) return;
       const ext = page.ext || 'html';
-      const path = cleanPath(page.path);
       try {
         const [selfTs, src] = await Promise.all([
-          getPageTimestamp(this.org, this.site, path, ext),
+          getPageTimestamp(this.org, this.site, page.path, ext),
           this._resolveUpwardSource(page),
         ]);
         const hasOverride = selfTs.exists;
         let category = 'inherited';
         if (hasOverride) category = src.exists ? 'override' : 'local';
         const editLM = hasOverride ? selfTs.lastModified : src.lm;
-        const status = await getPageStatus(this.org, this.site, path, editLM, ext);
+        const status = await getPageStatus(this.org, this.site, page.path, editLM, ext);
         const outOfSync = !!(category === 'override' && src.lm && selfTs.lastModified
           && new Date(src.lm).getTime()
             > new Date(selfTs.lastModified).getTime() + PUBLISH_LAG_MS);

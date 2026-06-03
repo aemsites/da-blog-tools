@@ -86,11 +86,12 @@ export function buildDescendantTree(rows, rootSite, visited = new Set()) {
   }));
 }
 
-function buildTree(rows, siteId) {
+// Dialog-facing tree shape: uses `siteId` field (matches plugin/msm/msm.js usage).
+function buildDialogTree(rows, siteId) {
   return getDirectChildren(rows, siteId).map((child) => ({
     siteId: child.site,
     label: child.label,
-    children: buildTree(rows, child.site),
+    children: buildDialogTree(rows, child.site),
   }));
 }
 
@@ -284,7 +285,7 @@ export async function getSiteConfig(org, site) {
 export async function getSatelliteTree(org, site) {
   const entry = await fetchSiteConfig(org, site);
   if (!entry) return [];
-  return buildTree(entry.rows, site);
+  return buildDialogTree(entry.rows, site);
 }
 
 export async function getSubtreeSatellites(org, baseSite) {

@@ -1,5 +1,7 @@
 /* eslint-disable import/no-unresolved */
-import { daFetch, DA_ORIGIN, AEM_ADMIN } from './fetch.js';
+import {
+  daFetch, DA_ORIGIN, AEM_ADMIN, cleanPath,
+} from './fetch.js';
 
 const NX = 'https://da.live/nx';
 
@@ -14,11 +16,6 @@ const EXT_MIME_TYPES = {
   webp: 'image/webp',
   pdf: 'application/pdf',
 };
-
-function cleanPath(pagePath, ext) {
-  const withSlash = pagePath.startsWith('/') ? pagePath : `/${pagePath}`;
-  return withSlash.replace(new RegExp(`\\.${ext}$`), '');
-}
 
 // `editUrlOrigin` builds the in-editor deep link returned to the UI. The dialog
 // runs in a cross-origin iframe, so its init sets this to the real da.live host.
