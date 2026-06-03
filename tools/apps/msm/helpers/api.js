@@ -19,11 +19,6 @@ export {
   fetchMsmConfig,
   getAllMsmSites,
   getSiteRoles,
-  getInheritanceChain,
-  getSubtreeSites,
-  getDescendantCount,
-  buildDescendantTree,
-  expandSatellitesWithSubtree,
 } from '../core/config.js';
 export {
   previewSatellite,
@@ -148,49 +143,21 @@ export async function listFolderWithInheritance(org, site, path, msmConfig) {
 }
 
 // ──────────────────────────────────────────────
-// Override checking across satellites
-// ──────────────────────────────────────────────
-
-export async function checkPageOverrides(org, satellites, pagePath, ext = 'html') {
-  const entries = Object.entries(satellites);
-  return Promise.all(entries.map(async ([site, info]) => {
-    const url = `${DA_ORIGIN}/source/${org}/${site}${pagePath}.${ext}`;
-    const resp = await daFetch(url, { method: 'HEAD' });
-    return { site, label: info.label, hasOverride: resp.ok };
-  }));
-}
-
-// ──────────────────────────────────────────────
 // Bulk action executor
 // ──────────────────────────────────────────────
 
 export async function executeBulkAction({
-  org, baseSite, pages, satellites, action, syncMode, scope, overrides, onPageStatus, onSkipped,
+  org, baseSite, pages, satellites, action, syncMode, onPageStatus,
 }) {
   const satEntries = Object.entries(satellites);
 
   const tasks = pages.flatMap((page) => {
     const ext = getExtension(page.path) || 'html';
     const pagePath = stripExtension(page.path);
-    const pageOverrides = overrides?.get(page.path) || [];
 
-    const applicableSats = scope
-      ? satEntries.filter(([satSite]) => {
-        const ov = pageOverrides.find((o) => o.site === satSite);
-        const hasOverride = ov?.hasOverride ?? false;
-        return scope === 'custom' ? hasOverride : !hasOverride;
-      })
-      : satEntries;
+    satEntries.forEach(([satSite]) => onPageStatus?.(`${page.path}:${satSite}`, 'queued'));
 
-    if (applicableSats.length < satEntries.length) {
-      satEntries
-        .filter(([s]) => !applicableSats.some(([a]) => a === s))
-        .forEach(([s]) => onSkipped?.(page, s, scope));
-    }
-
-    applicableSats.forEach(([satSite]) => onPageStatus?.(`${page.path}:${satSite}`, 'queued'));
-
-    return applicableSats.map(([satSite]) => async () => {
+    return satEntries.map(([satSite]) => async () => {
       const key = `${page.path}:${satSite}`;
       onPageStatus?.(key, 'pending');
       try {

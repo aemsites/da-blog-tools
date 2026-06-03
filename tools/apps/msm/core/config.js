@@ -99,14 +99,6 @@ export function getInheritanceChain(config, site) {
   return walkChain(config?.rows || [], site);
 }
 
-export function getSubtreeSites(config, rootSite) {
-  return walkSubtree(config?.rows || [], rootSite);
-}
-
-export function getDescendantCount(config, site) {
-  return getSubtreeSites(config, site).length;
-}
-
 export function getSiteRoles(config, site) {
   const rows = config?.rows || [];
   const children = getDirectChildren(rows, site);
@@ -131,17 +123,6 @@ export function getSiteRoles(config, site) {
     };
   }
   return result;
-}
-
-export function expandSatellitesWithSubtree(config, directSatellites) {
-  if (!config || !directSatellites) return directSatellites || {};
-  const expanded = { ...directSatellites };
-  Object.keys(directSatellites).forEach((siteName) => {
-    getSubtreeSites(config, siteName).forEach((node) => {
-      if (!expanded[node.site]) expanded[node.site] = { label: node.label };
-    });
-  });
-  return expanded;
 }
 
 // ──────────────────────────────────────────────
