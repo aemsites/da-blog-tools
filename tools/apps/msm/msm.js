@@ -123,7 +123,7 @@ class MsmApp extends LitElement {
     this._currentSite = site;
   }
 
-  handleManageInBase(e) {
+  handleNavigatePages(e) {
     const { site, paths } = e.detail || {};
     const browser = this.shadowRoot.querySelector('msm-column-browser');
     browser?.selectPaths(site, paths);
@@ -193,7 +193,7 @@ class MsmApp extends LitElement {
           .site=${this._currentSite}
           .msmConfig=${this._msmConfig}
           .pages=${this._selectedItems}
-          @manage-in-base=${this.handleManageInBase}
+          @navigate-pages=${this.handleNavigatePages}
         ></msm-action-panel>
       </div>
     `;

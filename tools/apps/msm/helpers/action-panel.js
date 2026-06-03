@@ -506,11 +506,12 @@ class MsmActionPanel extends LitElement {
     };
   }
 
-  // Hand the satellite's selected pages off to its base, where the matrix can
-  // act on them. Local-only pages have no base counterpart and are excluded.
-  _emitManageInBase(site, paths) {
+  // Re-select the same pages at another site (an ancestor via the breadcrumb,
+  // or a satellite via a column header) so the panel re-renders in that site's
+  // context. The column browser resolves which of the paths exist there.
+  _navigateTo(site, paths) {
     if (!site || !paths.length) return;
-    this.dispatchEvent(new CustomEvent('manage-in-base', {
+    this.dispatchEvent(new CustomEvent('navigate-pages', {
       detail: { site, paths }, bubbles: true, composed: true,
     }));
   }
@@ -579,8 +580,10 @@ class MsmActionPanel extends LitElement {
           <label class="cb">
             <input type="checkbox" .checked=${state === 'checked'} .indeterminate=${state === 'indeterminate'}
               ?disabled=${this._busy} @change=${() => this._toggleTarget(col.site)} />
-            <span class="target-label" title=${col.site}>${col.label}</span>
           </label>
+          <button class="target-label target-jump" ?disabled=${this._busy}
+            title="Manage ${col.label}'s pages here"
+            @click=${() => this._navigateTo(col.site, this._pages.map((p) => p.path))}>${col.label}</button>
         </div>
       </th>`;
   }
@@ -849,7 +852,7 @@ class MsmActionPanel extends LitElement {
     ? html`<span class="chain-node current">${node.label}</span>`
     : html`<button class="chain-node chain-link" ?disabled=${this._busy || !paths.length}
               title="Manage these pages in ${node.label}"
-              @click=${() => this._emitManageInBase(node.site, paths)}>${node.label}</button>`}
+              @click=${() => this._navigateTo(node.site, paths)}>${node.label}</button>`}
       `)}
     </span>`;
   }
