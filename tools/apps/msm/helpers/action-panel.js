@@ -25,6 +25,9 @@ import {
   scopedPagesUp,
   downGroups,
   upGroups,
+  ancestorsToExpand,
+  matrixComplete,
+  sourceComplete,
   planSelectionLoad,
 } from './action-panel.model.js';
 
@@ -95,6 +98,9 @@ class MsmActionPanel extends LitElement {
     this._loadedDownPaths = new Set();
     this._loadedUpPaths = new Set();
     this._busyTotal = 0;
+    // Expansion snapshot taken when a confirm auto-reveals affected columns, so
+    // it can be restored when the confirm is dismissed or completes.
+    this._preConfirmExpanded = null;
   }
 
   updated(changed) {
@@ -214,6 +220,7 @@ class MsmActionPanel extends LitElement {
       this._loadedUpPaths = new Set();
       this._includedTargets = new Set(this._allColumns.map((c) => c.site));
       this._expandedCols = new Set();
+      this._preConfirmExpanded = null;
       this._tab = 'linked';
       this._taskStatus = new Map();
       this._confirm = null;
@@ -221,6 +228,7 @@ class MsmActionPanel extends LitElement {
     } else {
       // Selection changed within the context: a pending confirm's scope is stale.
       this._confirm = null;
+      this._restoreExpanded();
     }
 
     if (plan.downPages.length) this._loadAll(plan.downPages);
@@ -364,6 +372,10 @@ class MsmActionPanel extends LitElement {
   // its whole subtree; checking it adds the subtree and re-enables ancestors.
   _toggleTarget(site) {
     this._includedTargets = toggleTarget(this._columnTree, this._includedTargets, site, this.site);
+    // Changing what's in scope invalidates a pending confirm (its count, named
+    // sites and auto-revealed columns were computed for the old scope). Dismiss
+    // it — same as a page-selection or tab change — so the user re-confirms.
+    if (this._confirm) this._dismissConfirm();
   }
 
   // Expansion is display-only — all subtree data is already loaded.
@@ -412,10 +424,30 @@ class MsmActionPanel extends LitElement {
   _requestAction(def) {
     this._confirm = { ...def, ...this._confirmDetail(def.view, def.scope) };
     this._success = null;
+    if (def.view === 'linked') this._revealAffected(def.scope);
+  }
+
+  // Expand the ancestor columns needed to show every affected cell, snapshotting
+  // the prior expansion so `_restoreExpanded` can put it back. No-op (and no
+  // snapshot) when nothing collapsed is in scope.
+  _revealAffected(scope) {
+    const sites = new Set(this._scopedCells(scope).map((c) => c.targetSite));
+    const needed = ancestorsToExpand(this._columnTree, this.site, sites);
+    const missing = [...needed].filter((s) => !this._expandedCols.has(s));
+    if (!missing.length) return;
+    this._preConfirmExpanded = new Set(this._expandedCols);
+    this._expandedCols = new Set([...this._expandedCols, ...missing]);
+  }
+
+  _restoreExpanded() {
+    if (!this._preConfirmExpanded) return;
+    this._expandedCols = this._preConfirmExpanded;
+    this._preConfirmExpanded = null;
   }
 
   _dismissConfirm() {
     this._confirm = null;
+    this._restoreExpanded();
   }
 
   // Group in-scope work into valid executeBulkAction calls — one target per
@@ -495,6 +527,7 @@ class MsmActionPanel extends LitElement {
     else await this._loadRows(actedPages);
     this._taskStatus = new Map();
     this._busy = false;
+    this._restoreExpanded();
     this._success = {
       label, action: exec, ok: succeeded.length, failed: errors.length, results: succeeded, errors,
     };
@@ -537,6 +570,16 @@ class MsmActionPanel extends LitElement {
     return html`<span class="cell-icon" style="color:${cfg.color}" title=${cfg.tip}>${icon(cfg.name)}</span>`;
   }
 
+  // The two-icon cell shared by the matrix and the source table: link state
+  // (linked / detached) followed by publish status.
+  _linkStatusPair(linkInfo, statusData) {
+    return html`
+      <span class="cell-pair">
+        <span class="cell-inherit" title=${linkInfo.tip}>${icon(linkInfo.name, '0 0 20 20', 13, 13)}</span>
+        ${this._statusIcon(statusData)}
+      </span>`;
+  }
+
   // ── Render: downward matrix ───────────────────────────────────────────────
 
   renderCell(page, targetSite) {
@@ -547,11 +590,7 @@ class MsmActionPanel extends LitElement {
     const inh = cell.isDetached
       ? { name: 'S2_Icon_UnLink_20_N', tip: 'Detached (independent copy)' }
       : { name: 'S2_Icon_LinkApplied_20_N', tip: `Linked to ${this._siteTitle(cell.sourceSite)}` };
-    const body = html`
-      <span class="cell-pair">
-        <span class="cell-inherit" title=${inh.tip}>${icon(inh.name, '0 0 20 20', 13, 13)}</span>
-        ${this._statusIcon(cell)}
-      </span>`;
+    const body = this._linkStatusPair(inh, cell);
     // A detached copy is editable on that site — link the cell to its doc.
     if (cell.isDetached && (page.ext || 'html') === 'html') {
       return html`<a class="cell-link" href=${this._editUrl(targetSite, page.path)}
@@ -586,8 +625,35 @@ class MsmActionPanel extends LitElement {
       </th>`;
   }
 
+  // Cells the pending confirm will act on, so they can be highlighted. Returns
+  // { cells: Set(cellKey), rows: Set(path), destructive } or null when no
+  // linked-view confirm is open.
+  _affectedDown() {
+    const c = this._confirm;
+    if (!c || c.view !== 'linked') return null;
+    const scoped = this._scopedCells(c.scope);
+    return {
+      cells: new Set(scoped.map((x) => cellKey(x.page.path, x.targetSite))),
+      rows: new Set(scoped.map((x) => x.page.path)),
+      destructive: !!c.destructive,
+    };
+  }
+
+  // Confirm class for a matrix cell: highlight if in scope; de-emphasize if it's
+  // an un-applied cell inside an affected row (so the highlighted ones stand
+  // out). Cells in an unaffected row are left alone — the row's `row-deemph`
+  // already dims them, and stacking would compound the opacity.
+  _cellHl(hl, mod, path, site) {
+    if (!hl) return '';
+    if (hl.cells.has(cellKey(path, site))) return mod;
+    if (hl.rows.has(path)) return 'cell-deemph';
+    return '';
+  }
+
   renderMatrix() {
     const columns = this._columns;
+    const hl = this._affectedDown();
+    const mod = hl?.destructive ? 'affected destructive' : 'affected';
     return html`
       <div class="matrix-scroll">
         <table class="matrix">
@@ -599,12 +665,12 @@ class MsmActionPanel extends LitElement {
           </thead>
           <tbody>
             ${this._pages.map((page) => html`
-              <tr>
-                <th class="page" scope="row" id="mat-row-${sanitizeId(page.path)}">
+              <tr class="${hl && !hl.rows.has(page.path) ? 'row-deemph' : ''}">
+                <th class="page ${hl?.rows.has(page.path) ? mod : ''}" scope="row" id="mat-row-${sanitizeId(page.path)}">
                   ${this.renderPageCell(page)}
                 </th>
                 ${columns.map((col) => html`
-                  <td class="cell ${col.depth > 0 ? 'nested' : ''} ${this._includedTargets.has(col.site) ? '' : 'dim'}"
+                  <td class="cell ${col.depth > 0 ? 'nested' : ''} ${this._includedTargets.has(col.site) ? '' : 'dim'} ${this._cellHl(hl, mod, page.path, col.site)}"
                       headers="mat-row-${sanitizeId(page.path)} mat-col-${sanitizeId(col.site)}">
                     ${this.renderCell(page, col.site)}
                   </td>`)}
@@ -616,48 +682,58 @@ class MsmActionPanel extends LitElement {
 
   // ── Render: upward table ──────────────────────────────────────────────────
 
-  renderInheritChip(row) {
-    if (!row) return html`<span class="cell-icon cell-loading"></span>`;
-    let name = 'S2_Icon_UnLink_20_N';
-    let text = 'Local only (no source)';
+  // Link state of a source-view row as an icon + tooltip (no inline text — the
+  // source table now mirrors the matrix's two-icon status cell).
+  _upLinkInfo(row) {
     if (row.category === 'linked') {
-      name = 'S2_Icon_LinkApplied_20_N';
-      text = `Linked to ${this._siteTitle(row.source)}`;
-    } else if (row.category === 'detached') {
-      text = 'Detached';
+      return { name: 'S2_Icon_LinkApplied_20_N', tip: `Linked to ${this._siteTitle(row.source)}` };
     }
-    return html`<span class="inherit-chip">
-      <span class="cell-inherit">${icon(name, '0 0 20 20', 13, 13)}</span>${text}</span>`;
+    if (row.category === 'detached') {
+      return { name: 'S2_Icon_UnLink_20_N', tip: 'Detached' };
+    }
+    return { name: 'S2_Icon_UnLink_20_N', tip: 'Local only (no source)' };
   }
 
-  renderUpRow(page) {
+  renderUpRow(page, hl) {
     const row = this._rows.get(page.path);
     const rid = `up-row-${sanitizeId(page.path)}`;
+    const mod = hl?.destructive ? 'affected destructive' : 'affected';
+    const affected = hl?.paths.has(page.path) ? mod : '';
+    const deemph = hl && !hl.paths.has(page.path) ? 'row-deemph' : '';
     return html`
-      <tr>
-        <th class="page" scope="row" id=${rid}>
+      <tr class="${deemph}">
+        <th class="page ${affected}" scope="row" id=${rid}>
           ${this.renderPageCell(page)}
         </th>
-        <td class="up-state" headers="${rid} up-inherit-hdr">${this.renderInheritChip(row)}</td>
-        <td class="cell" headers="${rid} up-status-hdr">
-          ${row ? this._statusIcon(row) : html`<span class="cell-icon cell-loading"></span>`}
+        <td class="cell ${affected}" headers="${rid} up-status-hdr">
+          ${row ? this._linkStatusPair(this._upLinkInfo(row), row) : html`<span class="cell-icon cell-loading"></span>`}
         </td>
       </tr>`;
   }
 
+  // Pages the pending confirm will act on (source view), or null.
+  _affectedUp() {
+    const c = this._confirm;
+    if (!c || c.view !== 'source') return null;
+    return {
+      paths: new Set(this._scopedPagesUp(c.scope).map((p) => p.path)),
+      destructive: !!c.destructive,
+    };
+  }
+
   renderUpTable() {
+    const hl = this._affectedUp();
     return html`
       <div class="matrix-scroll">
         <table class="matrix up-table">
           <thead>
             <tr>
               <th class="corner" id="up-page-hdr">Page</th>
-              <th class="up-col" id="up-inherit-hdr">Link Status</th>
               <th class="up-col" id="up-status-hdr">Status</th>
             </tr>
           </thead>
           <tbody>
-            ${this._pages.map((page) => this.renderUpRow(page))}
+            ${this._pages.map((page) => this.renderUpRow(page, hl))}
           </tbody>
         </table>
       </div>`;
@@ -671,11 +747,8 @@ class MsmActionPanel extends LitElement {
     const p = `${c.pageCount} page${c.pageCount === 1 ? '' : 's'}`;
     let msg;
     if (c.view === 'linked' && c.siteNames.length) {
-      const shown = c.siteNames.slice(0, 4);
-      const extra = c.siteNames.length - shown.length;
-      const names = shown.join(', ') + (extra > 0 ? `, +${extra} more` : '');
       const n = c.siteNames.length;
-      msg = `${c.label} ${p} to ${n} linked site${n === 1 ? '' : 's'}: ${names}?`;
+      msg = `${c.label} ${p} to ${n} linked site${n === 1 ? '' : 's'}: ${c.siteNames.join(', ')}?`;
     } else {
       msg = `${c.label} ${p}?`;
     }
@@ -693,13 +766,23 @@ class MsmActionPanel extends LitElement {
   // the view title + the target-naming confirm carry the destination. Linked
   // view acts on matrix cells (linked vs detached); Source view acts on this
   // site's pages vs its source.
+  // True while the active view's cells/rows are still resolving. Actions stay
+  // disabled until then so a click can't act on only the loaded subset.
+  _viewLoading(view) {
+    return view === 'linked'
+      ? !matrixComplete(this._pages, this._allColumns, this._cells)
+      : !sourceComplete(this._pages, this._rows);
+  }
+
   renderActionBar(view) {
     const publishable = this._countFor(view, 'linked');
     const detached = this._countFor(view, 'detached');
     const down = view === 'linked';
-    const off = this._busy || (down && this._includedTargets.size === 0);
+    const loading = this._viewLoading(view);
+    const off = this._busy || loading || (down && this._includedTargets.size === 0);
 
     return html`
+      ${loading ? html`<div class="action-calc"><span class="busy-spinner"></span>Calculating status…</div>` : nothing}
       <div class="action-bar">
         <div class="action-group">
           <sl-button ?disabled=${off || publishable === 0}
@@ -905,6 +988,7 @@ class MsmActionPanel extends LitElement {
     if (this._tab === tab) return;
     this._tab = tab;
     this._confirm = null;
+    this._restoreExpanded();
   }
 
   renderTabs() {

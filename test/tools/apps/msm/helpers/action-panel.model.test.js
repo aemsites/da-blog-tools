@@ -16,6 +16,9 @@ import {
   scopedPagesUp,
   downGroups,
   upGroups,
+  ancestorsToExpand,
+  matrixComplete,
+  sourceComplete,
   planSelectionLoad,
 } from '../../../../../tools/apps/msm/helpers/action-panel.model.js';
 
@@ -116,6 +119,12 @@ describe('toggleTarget', () => {
     const next = toggleTarget(tree, new Set(['eu', 'france']), 'india', ROOT);
     assert.deepEqual(sorted(next), ['apac', 'eu', 'france', 'india']);
   });
+  it('checks the whole subtree when toggling an indeterminate parent', () => {
+    // apac is indeterminate: india included, japan not. Clicking apac fills it
+    // in (checks all) rather than wiping it out.
+    const next = toggleTarget(tree, new Set(['apac', 'india', 'eu', 'france']), 'apac', ROOT);
+    assert.deepEqual(sorted(next), ['apac', 'eu', 'france', 'india', 'japan']);
+  });
 });
 
 describe('effectiveSource', () => {
@@ -136,6 +145,21 @@ describe('effectiveSource', () => {
   it('skips ancestors without a detached copy', () => {
     const src = effectiveSource(page, 'france', pm, new Map(), ROOT);
     assert.equal(src.site, 'global');
+  });
+});
+
+describe('ancestorsToExpand', () => {
+  it('returns the ancestors needed to reveal a nested site, excluding it and root', () => {
+    assert.deepEqual(sorted(ancestorsToExpand(tree, ROOT, ['india'])), ['apac']);
+  });
+  it('needs no expansion for a top-level site', () => {
+    assert.deepEqual([...ancestorsToExpand(tree, ROOT, ['apac'])], []);
+  });
+  it('unions ancestors across several affected sites', () => {
+    assert.deepEqual(sorted(ancestorsToExpand(tree, ROOT, ['india', 'france'])), ['apac', 'eu']);
+  });
+  it('is empty for no affected sites', () => {
+    assert.deepEqual([...ancestorsToExpand(tree, ROOT, [])], []);
   });
 });
 
@@ -247,6 +271,38 @@ describe('upGroups', () => {
     assert.equal(bySource.global.pages.length, 2); // /a + /c (fallback)
     assert.equal(bySource.na.pages.length, 1);
     groups.forEach((g) => assert.equal(g.target, 'apac'));
+  });
+});
+
+describe('matrixComplete', () => {
+  const allColumns = flattenAll(tree, ROOT); // apac, india, japan, eu, france
+  const pages = [{ path: '/a' }, { path: '/b' }];
+  const full = () => {
+    const m = new Map();
+    pages.forEach((p) => allColumns.forEach((c) => m.set(cellKey(p.path, c.site), {})));
+    return m;
+  };
+
+  it('is true when every page has a cell for every column', () => {
+    assert.equal(matrixComplete(pages, allColumns, full()), true);
+  });
+  it('is false when any cell is missing', () => {
+    const cells = full();
+    cells.delete(cellKey('/b', 'france'));
+    assert.equal(matrixComplete(pages, allColumns, cells), false);
+  });
+  it('is vacuously true with no pages', () => {
+    assert.equal(matrixComplete([], allColumns, new Map()), true);
+  });
+});
+
+describe('sourceComplete', () => {
+  const pages = [{ path: '/a' }, { path: '/b' }];
+  it('is true when every page has a row', () => {
+    assert.equal(sourceComplete(pages, new Map([['/a', {}], ['/b', {}]])), true);
+  });
+  it('is false when a row is missing', () => {
+    assert.equal(sourceComplete(pages, new Map([['/a', {}]])), false);
   });
 });
 

@@ -315,6 +315,40 @@ a.page-link:hover {
   opacity: 0.25;
 }
 
+/* Cells / page rows the pending confirm will act on — tinted to match the
+   confirm row (blue, or red when the action is destructive). */
+.matrix .cell.affected {
+  background: var(--s2-blue-100, #e0ecff);
+  box-shadow: inset 0 0 0 2px var(--s2-blue-400, #66a3ff);
+}
+
+.matrix .page.affected {
+  background: var(--s2-blue-100, #e0ecff);
+}
+
+.matrix .cell.affected.destructive {
+  background: var(--s2-red-100, #ffefed);
+  box-shadow: inset 0 0 0 2px var(--s2-red-400, #ffaaa0);
+}
+
+.matrix .page.affected.destructive {
+  background: var(--s2-red-100, #ffefed);
+}
+
+/* Rows with nothing in scope for the pending confirm are de-emphasized (not
+   hidden) so the affected rows stand out while the full selection stays in view.
+   Distinct from `.dim`, which marks excluded target columns. */
+.matrix tr.row-deemph {
+  opacity: 0.4;
+}
+
+/* Un-applied cells inside an affected row — dimmed so the highlighted cells in
+   the same row stand out. Only applied where the row is not already deemphasized
+   (see `_cellHl`), so opacities never compound. */
+.matrix .cell.cell-deemph {
+  opacity: 0.35;
+}
+
 .cell-pair {
   display: inline-flex;
   align-items: center;
@@ -344,18 +378,6 @@ a.page-link:hover {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--s2-gray-500);
-}
-
-.up-state {
-  padding: 6px 12px;
-}
-
-.inherit-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--s2-gray-700);
 }
 
 .up-table .cell {
@@ -460,6 +482,21 @@ a.page-link:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Shown above the action bar while cells are still resolving — explains why the
+   buttons are disabled. */
+.action-calc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 16px 0;
+  padding: 8px 14px;
+  border: 1px solid var(--s2-gray-200);
+  background: var(--s2-gray-75, #f8f8f8);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--s2-gray-600);
 }
 
 .action-label {

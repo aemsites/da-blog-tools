@@ -89,13 +89,16 @@ export function columnState(tree, site, included) {
   return 'indeterminate';
 }
 
-// Cascade like the dialog's scope chips: unchecking a column removes its whole
-// subtree; checking it adds the subtree and re-enables ancestors. Returns a new
-// Set (does not mutate `included`).
+// Cascade like the dialog's scope chips: a fully-checked column unchecks its
+// whole subtree; a partially-checked (indeterminate) or unchecked column checks
+// the subtree and re-enables ancestors. Keying off full-checkedness — not mere
+// parent membership — is what makes an indeterminate parent fill in (check all)
+// rather than wipe out. Returns a new Set (does not mutate `included`).
 export function toggleTarget(tree, included, site, rootSite) {
   const next = new Set(included);
   const sub = subtreeSites(tree, site);
-  if (next.has(site)) {
+  const fullyChecked = sub.every((s) => next.has(s));
+  if (fullyChecked) {
     sub.forEach((s) => next.delete(s));
   } else {
     sub.forEach((s) => next.add(s));
@@ -104,6 +107,19 @@ export function toggleTarget(tree, included, site, rootSite) {
     while (p && p !== rootSite) { next.add(p); p = pm.get(p); }
   }
   return next;
+}
+
+// Columns that must be expanded to reveal cells at the given target sites: each
+// site's ancestors up to (but excluding) the root. The sites themselves need no
+// expansion — only their ancestor columns must be open for them to show.
+export function ancestorsToExpand(tree, rootSite, sites) {
+  const pm = parentMap(tree, rootSite);
+  const out = new Set();
+  sites.forEach((site) => {
+    let p = pm.get(site);
+    while (p && p !== rootSite) { out.add(p); p = pm.get(p); }
+  });
+  return out;
 }
 
 // The source a linked site pulls from for a page: the nearest ancestor holding
@@ -185,6 +201,18 @@ export function upGroups({
     groups.get(key).pages.push(page);
   });
   return [...groups.values()];
+}
+
+// Whether every (page, column) matrix cell has loaded — actions must wait for
+// this so a click can't act on only the subset resolved so far (an unloaded
+// cell is silently skipped, and source resolution walks loaded ancestor cells).
+export function matrixComplete(pages, allColumns, cells) {
+  return pages.every((p) => allColumns.every((c) => cells.has(cellKey(p.path, c.site))));
+}
+
+// Whether every source-view row has loaded — the upward-view counterpart.
+export function sourceComplete(pages, rows) {
+  return pages.every((p) => rows.has(p.path));
 }
 
 // Decide what the action panel should load when its selection changes. The
