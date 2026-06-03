@@ -241,13 +241,16 @@
 
 /* Page row headers */
 .matrix .page {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   text-align: left;
   padding: 6px 16px 6px 4px;
   font-weight: 400;
   max-width: 320px;
+}
+
+.page-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .page-name {

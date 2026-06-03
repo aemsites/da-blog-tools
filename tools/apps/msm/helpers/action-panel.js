@@ -603,8 +603,7 @@ class MsmActionPanel extends LitElement {
             ${this._pages.map((page) => html`
               <tr>
                 <th class="page" scope="row">
-                  ${this.renderPageName(page)}
-                  ${this.renderRemove(page)}
+                  ${this.renderPageCell(page)}
                 </th>
                 ${columns.map((col) => html`
                   <td class="cell ${col.depth > 0 ? 'nested' : ''} ${this._includedTargets.has(col.site) ? '' : 'dim'}">
@@ -637,8 +636,7 @@ class MsmActionPanel extends LitElement {
     return html`
       <tr>
         <th class="page" scope="row">
-          ${this.renderPageName(page)}
-          ${this.renderRemove(page)}
+          ${this.renderPageCell(page)}
         </th>
         <td class="up-state">${this.renderInheritChip(row)}</td>
         <td class="cell">
@@ -775,6 +773,11 @@ class MsmActionPanel extends LitElement {
     return html`<button class="row-remove" aria-label="Remove ${page.path} from selection"
       title="Remove from selection" ?disabled=${this._busy}
       @click=${() => this._emitDeselect(page)}>×</button>`;
+  }
+
+  // Flex wrapper kept inside the <th> so the cell still lays out as a table cell.
+  renderPageCell(page) {
+    return html`<div class="page-cell">${this.renderPageName(page)}${this.renderRemove(page)}</div>`;
   }
 
   // Short "{site} · {page}" label for a `${path}:${site}` result key.
