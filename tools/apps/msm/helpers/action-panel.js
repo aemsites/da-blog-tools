@@ -1,1522 +1,935 @@
 /* eslint-disable no-underscore-dangle, import/no-unresolved, no-console, class-methods-use-this */
 import { LitElement, html, nothing } from 'da-lit';
-import { executeBulkAction, expandSatellitesWithSubtree } from './api.js';
+import {
+  getSiteRoles,
+  getPageTimestamp,
+  getPageStatus,
+  getStatusConfig,
+  executeBulkAction,
+} from './api.js';
+import { icon } from '../core/icons.js';
 
 const NX = 'https://da.live/nx';
 let sl;
 let sheet;
-let buttons;
 try {
   const { default: getStyle } = await import(`${NX}/utils/styles.js`);
-  [sl, sheet, buttons] = await Promise.all([
+  [sl, sheet] = await Promise.all([
     getStyle(`${NX}/public/sl/styles.css`),
     getStyle(import.meta.url),
-    getStyle(`${NX}/styles/buttons.css`),
   ]);
 } catch (e) {
   console.warn('Failed to load action-panel styles:', e);
 }
 
-const CHEVRON = html`<svg class="picker-chevron" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="2,3 5,7 8,3"/></svg>`;
-const CHECK_ICON = html`<svg class="picker-checkmark" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="2,6 5,9 10,3"/></svg>`;
-const QUEUED_ICON = html`<svg class="result-icon queued" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" opacity="0.4"><circle cx="8" cy="8" r="6"/></svg>`;
-const SPINNER_ICON = html`<svg class="result-icon pending" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 1a7 7 0 1 0 7 7" stroke-linecap="round"/></svg>`;
-const SUCCESS_ICON = html`<svg class="result-icon success" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,8 7,12 13,4"/></svg>`;
-const ERROR_ICON = html`<svg class="result-icon error" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`;
-const EDIT_ICON = html`<svg viewBox="0 0 20 20"><path fill="currentColor" d="M18.16 15.62V4.12c0-1.24-1.01-2.25-2.25-2.25H4.41c-1.24 0-2.25 1.01-2.25 2.25v3.72c0 .41.34.75.75.75s.75-.34.75-.75v-3.72c0-.41.34-.75.75-.75h11.5c.41 0 .75.34.75.75v11.5c0 .41-.34.75-.75.75h-3.81c-.41 0-.75.34-.75.75s.34.75.75.75h3.81c1.24 0 2.25-1.01 2.25-2.25z"/><path fill="currentColor" d="M11.16 9.62v4.24c0 .41-.34.75-.75.75s-.75-.34-.75-.75v-2.43l-6.47 6.47c-.15.15-.34.22-.53.22s-.38-.07-.53-.22a.754.754 0 010-1.06l6.47-6.47H6.17c-.41 0-.75-.34-.75-.75s.34-.75.75-.75h4.24c.41 0 .75.34.75.75z"/></svg>`;
+// Publishing bumps lastModified slightly after the publish timestamp is
+// recorded, producing a spurious "out of sync" signal. This absorbs the lag.
+const PUBLISH_LAG_MS = 5000;
 
-const DOWNWARD_ACTIONS = [
-  {
-    heading: 'Following base',
-    items: [
-      { value: 'preview', label: 'Roll out to preview' },
-      { value: 'publish', label: 'Roll out to live' },
-      { value: 'break', label: 'Make a local copy on selected sites' },
-    ],
-  },
-  {
-    heading: 'With local copy',
-    items: [
-      { value: 'sync', label: 'Push update to customized sites' },
-      { value: 'reset', label: 'Discard local copy on customized sites' },
-    ],
-  },
-];
+// How many status probes to run at once when filling the matrix / table.
+const CELL_CONCURRENCY = 6;
 
-const UPWARD_ACTIONS_INHERITED = [
-  {
-    heading: 'From parent',
-    items: [
-      { value: 'cancel-inheritance', label: 'Pull latest from base' },
-    ],
-  },
-];
+const cellKey = (pagePath, satSite) => `${pagePath}:${satSite}`;
+const cleanPath = (p) => p.replace(/\.[^/.]+$/, '');
 
-const UPWARD_ACTIONS_OVERRIDDEN = [
-  {
-    heading: 'From parent',
-    items: [
-      { value: 'sync-from-base', label: 'Pull latest from base' },
-      { value: 'resume-inheritance', label: 'Revert to base' },
-    ],
-  },
-];
-
-const UPWARD_ACTIONS_LOCAL = [
-  {
-    heading: 'From parent',
-    items: [],
-  },
-];
-
-const SYNC_OPTIONS = [
-  { value: 'merge', label: 'Keep local edits (merge)' },
-  { value: 'override', label: 'Replace with base (override)' },
-];
-
-const SCOPE_DISPLAY = {
-  inherited: 'following base',
-  custom: 'with local copy',
-};
-
-const ACTION_SCOPE = {
-  preview: 'inherited',
-  publish: 'inherited',
-  break: 'inherited',
-  sync: 'custom',
-  reset: 'custom',
-};
-
-const UPWARD_VALUES = new Set([
-  'sync-from-base',
-  'resume-inheritance',
-  'cancel-inheritance',
-]);
-const RECURSIVE_ACTIONS = new Set(['preview', 'publish']);
-const SYNC_ACTIONS = new Set(['sync', 'sync-from-base']);
-
-const ALL_ACTION_ITEMS = [
-  ...DOWNWARD_ACTIONS.flatMap((g) => g.items || [g]),
-  ...UPWARD_ACTIONS_INHERITED.flatMap((g) => g.items || [g]),
-  ...UPWARD_ACTIONS_OVERRIDDEN.flatMap((g) => g.items || [g]),
-];
-
-function getActionLabel(value) {
-  return ALL_ACTION_ITEMS.find((i) => i.value === value)?.label || value;
+/* eslint-disable no-restricted-syntax, no-await-in-loop */
+async function runPool(makeTasks, limit) {
+  const executing = new Set();
+  for (const task of makeTasks) {
+    const p = task().then(() => executing.delete(p));
+    executing.add(p);
+    if (executing.size >= limit) await Promise.race(executing);
+  }
+  await Promise.all(executing);
 }
-
-function defaultActionForRole(role) {
-  return role === 'satellite' ? 'sync-from-base' : 'preview';
-}
+/* eslint-enable no-restricted-syntax, no-await-in-loop */
 
 class MsmActionPanel extends LitElement {
   static properties = {
     org: { type: String },
-    role: { type: String },
     site: { type: String },
-    parentBase: { type: String },
-    parentChain: { attribute: false },
-    pages: { attribute: false },
-    satellites: { attribute: false },
-    overrides: { attribute: false },
-    isSinglePage: { type: Boolean },
-    hasDescendants: { type: Boolean },
     msmConfig: { attribute: false },
-    _globalAction: { state: true },
-    _globalSyncMode: { state: true },
-    _pageActions: { state: true },
-    _pageSyncModes: { state: true },
-    _selectedSats: { state: true },
-    _singleSelectedSats: { state: true },
-    _openPicker: { state: true },
-    _expandedRows: { state: true },
-    _confirmAction: { state: true },
-    _executing: { state: true },
-    _taskStatuses: { state: true },
+    pages: { attribute: false },
+    _cells: { state: true },
+    _rows: { state: true },
+    _includedTargets: { state: true },
+    _expandedCols: { state: true },
+    _tab: { state: true },
+    _confirm: { state: true },
     _busy: { state: true },
-    _includedPages: { state: true },
-    _includeDescendants: { state: true },
-    _expandedNested: { state: true },
+    _taskStatus: { state: true },
+    _success: { state: true },
   };
 
   connectedCallback() {
     super.connectedCallback();
-    this.shadowRoot.adoptedStyleSheets = [sl, sheet, buttons].filter(Boolean);
-    this._globalAction = defaultActionForRole(this.role);
-    this._globalSyncMode = 'merge';
-    this._pageActions = new Map();
-    this._pageSyncModes = new Map();
-    this._selectedSats = new Set(Object.keys(this.satellites || {}));
-    this._singleSelectedSats = new Set(Object.keys(this.satellites || {}));
-    this._openPicker = null;
-    this._expandedRows = new Set();
-    this._confirmAction = null;
-    this._executing = false;
-    this._taskStatuses = new Map();
+    this.shadowRoot.adoptedStyleSheets = [sl, sheet].filter(Boolean);
+    this._cells = new Map();
+    this._rows = new Map();
+    this._includedTargets = new Set();
+    this._expandedCols = new Set();
+    this._tab = 'satellites';
+    this._confirm = null;
     this._busy = false;
-    this._includedPages = new Set(this.pages?.map((p) => p.path) || []);
-    this._includeDescendants = true;
-    this._expandedNested = new Set();
-    this._lastPageKey = '';
-    this._handleOutsideClick = this._handleOutsideClick.bind(this);
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    document.removeEventListener('pointerdown', this._handleOutsideClick);
+    this._taskStatus = new Map();
+    this._success = null;
+    this._loadGen = 0;
+    this._lastKey = '';
+    this._busyTotal = 0;
   }
 
   updated(changed) {
-    if (changed.has('satellites') && this.satellites) {
-      this._selectedSats = new Set(Object.keys(this.satellites));
-      this._singleSelectedSats = new Set(Object.keys(this.satellites));
-    }
-    if (changed.has('role')) {
-      this._globalAction = defaultActionForRole(this.role);
-      this._pageActions = new Map();
-      this._resetExecution();
-    }
-    if (changed.has('pages') || changed.has('isSinglePage')) {
-      this._executing = false;
-      this._taskStatuses = new Map();
-      this._pageActions = new Map();
-      this._pageSyncModes = new Map();
-      this._expandedRows = new Set();
-
-      const newKey = this.pages?.map((p) => p.path).sort().join(',') || '';
-      if (newKey !== this._lastPageKey) {
-        this._lastPageKey = newKey;
-        this._includedPages = new Set(this.pages?.map((p) => p.path) || []);
-      }
-    }
-    if (changed.has('pages') || changed.has('overrides')) {
-      this._applySyncModeDefault();
-      this._validateActionForCategory();
+    if (changed.has('pages') || changed.has('site') || changed.has('msmConfig')) {
+      this._resetForSelection();
     }
   }
 
-  _applySyncModeDefault() {
-    if (!this.pages?.length) return;
-    const allInherited = this.pages.every((p) => {
-      const ov = this.overrides?.get?.(p.path)?.find((o) => o.site === this.site);
-      return ov && ov.hasOverride === false;
-    });
-    if (allInherited && this._globalSyncMode === 'merge') {
-      this._globalSyncMode = 'override';
-    }
+  // ── Derived shape ─────────────────────────────────────────────────────────
+
+  get _roles() {
+    if (!this.msmConfig || !this.site) return {};
+    return getSiteRoles(this.msmConfig, this.site);
   }
 
-  _validateActionForCategory() {
-    if (!this._isUpwardMode) return;
-    const options = this._upwardActionsForCategory(this._selectionCategory);
-    const allowed = options.flatMap((g) => g.items || [g]).map((o) => o.value);
-    if (allowed.length === 0) return;
-    if (allowed.includes(this._globalAction)) return;
-    [this._globalAction] = allowed;
-    this._pageActions = new Map();
-    this._resetExecution();
-  }
-
-  _handleOutsideClick(e) {
-    if (!e.composedPath().includes(this)) {
-      this._openPicker = null;
-      document.removeEventListener('pointerdown', this._handleOutsideClick);
-    }
-  }
-
-  togglePicker(name) {
-    if (this._openPicker === name) {
-      this._openPicker = null;
-      document.removeEventListener('pointerdown', this._handleOutsideClick);
-    } else {
-      this._openPicker = name;
-      document.addEventListener('pointerdown', this._handleOutsideClick);
-    }
-  }
-
-  selectPickerOption(name, value, setter) {
-    setter(value);
-    this._openPicker = null;
-    document.removeEventListener('pointerdown', this._handleOutsideClick);
-  }
-
-  get _isSatellite() {
-    return this.role === 'satellite';
-  }
-
-  get _hasDualRole() {
-    return this.role === 'dual';
-  }
-
-  get _isUpwardMode() {
-    return UPWARD_VALUES.has(this._globalAction);
-  }
-
-  get _hasDownwardActions() {
-    return this.role === 'base' || this.role === 'dual';
-  }
-
-  get _hasUpwardActions() {
-    return this.role === 'satellite' || this.role === 'dual';
-  }
-
-  get _actionOptions() {
-    if (!this._isUpwardMode) return DOWNWARD_ACTIONS;
-    return this._upwardActionsForCategory(this._selectionCategory);
-  }
-
-  _upwardActionsForCategory(category) {
-    if (category === 'inherited') return UPWARD_ACTIONS_INHERITED;
-    if (category === 'overridden') return UPWARD_ACTIONS_OVERRIDDEN;
-    if (category === 'local') return UPWARD_ACTIONS_LOCAL;
-
-    return UPWARD_ACTIONS_OVERRIDDEN;
-  }
-
-  _categorizePage(page) {
-    const self = this.getPageOverrides(page.path).find((o) => o.site === this.site);
-    if (!self) return 'local';
-    if (self.inheritedFrom) return 'inherited';
-    if (self.hasOverride === true) return 'overridden';
-    return 'local';
-  }
-
-  get _selectionCategory() {
-    if (!this.pages?.length) return null;
-    const cats = new Set(this.pages.map((p) => this._categorizePage(p)));
-    if (cats.size === 1) return [...cats][0];
-    return 'mixed';
-  }
-
-  _shouldShowSyncPicker(action) {
-    if (!SYNC_ACTIONS.has(action)) return false;
-    if (this._isUpwardMode && this._selectionCategory === 'inherited') return false;
-    return true;
-  }
-
-  get _isLocalUpwardEmpty() {
-    return this._isUpwardMode && this._selectionCategory === 'local';
-  }
-
-  renderLocalUpwardEmpty() {
-    return html`
-      <div class="local-upward-empty">
-        These pages exist only on <strong>${this.site}</strong> and have no base counterpart.
-        No upward MSM actions are available for this selection.
-      </div>
-    `;
-  }
-
-  _resetExecution() {
-    if (this._executing) {
-      this._executing = false;
-      this._taskStatuses = new Map();
-    }
-  }
-
-  // ── Satellite filter ──
-
-  toggleSatFilter(satSite) {
-    const next = new Set(this._selectedSats);
-    if (next.has(satSite)) next.delete(satSite);
-    else next.add(satSite);
-    this._selectedSats = next;
-    this._resetExecution();
-  }
-
-  toggleSingleSat(satSite) {
-    const next = new Set(this._singleSelectedSats);
-    if (next.has(satSite)) next.delete(satSite);
-    else next.add(satSite);
-    this._singleSelectedSats = next;
-    this._resetExecution();
-  }
-
-  _toggleNestedExpand(satSite) {
-    const next = new Set(this._expandedNested);
-    if (next.has(satSite)) next.delete(satSite);
-    else next.add(satSite);
-    this._expandedNested = next;
-  }
-
-  // ── Per-page action ──
-
-  getPageAction(pagePath) {
-    return this._pageActions.get(pagePath) || this._globalAction;
-  }
-
-  setPageAction(pagePath, value) {
-    const next = new Map(this._pageActions);
-    if (value === this._globalAction) {
-      next.delete(pagePath);
-    } else {
-      next.set(pagePath, value);
-    }
-    this._pageActions = next;
-    this._resetExecution();
-  }
-
-  getPageSyncMode(pagePath) {
-    return this._pageSyncModes.get(pagePath) || this._globalSyncMode;
-  }
-
-  setPageSyncMode(pagePath, value) {
-    const next = new Map(this._pageSyncModes);
-    if (value === this._globalSyncMode) {
-      next.delete(pagePath);
-    } else {
-      next.set(pagePath, value);
-    }
-    this._pageSyncModes = next;
-  }
-
-  // ── Expand/collapse rows ──
-
-  toggleRow(pagePath) {
-    const next = new Set(this._expandedRows);
-    if (next.has(pagePath)) next.delete(pagePath);
-    else next.add(pagePath);
-    this._expandedRows = next;
-  }
-
-  // ── Page include/exclude ──
-
-  togglePageInclude(pagePath) {
-    const next = new Set(this._includedPages);
-    if (next.has(pagePath)) next.delete(pagePath);
-    else next.add(pagePath);
-    this._includedPages = next;
-  }
-
-  toggleAllPages() {
-    if (this._includedPages.size === this.pages.length) {
-      this._includedPages = new Set();
-    } else {
-      this._includedPages = new Set(this.pages.map((p) => p.path));
-    }
+  // Selected pages confined to the active site (selection is single-site, but
+  // guard anyway so a stale multi-site set never renders against this site).
+  get _pages() {
+    return (this.pages || []).filter((p) => (p.site || this.site) === this.site);
   }
 
   get _activePages() {
-    return this.pages.filter((p) => this._includedPages.has(p.path));
+    return this._pages;
   }
 
-  // ── Override helpers ──
-
-  getPageOverrides(pagePath) {
-    return this.overrides?.get(pagePath) || [];
+  // Direct satellites of this site as [satSite, { label, descendantCount, descendants }].
+  get _targets() {
+    return Object.entries(this._roles.asBase?.satellites || {});
   }
 
-  getOverrideSummary(pagePath) {
-    const ov = this.getPageOverrides(pagePath)
-      .filter((o) => this._selectedSats.has(o.site));
-    if (!ov.length) return { inherited: 0, custom: 0 };
-    const custom = ov.filter((o) => o.hasOverride).length;
-    return { inherited: ov.length - custom, custom };
-  }
-
-  hasApplicableSats(pagePath, action) {
-    if (this._isSatellite) return true;
-    const scope = ACTION_SCOPE[action];
-    if (!scope) return true;
-    const ov = this.getPageOverrides(pagePath);
-    const sats = this.isSinglePage ? this._singleSelectedSats : this._selectedSats;
-    return ov
-      .filter((o) => sats.has(o.site))
-      .some((o) => (scope === 'custom' ? o.hasOverride : !o.hasOverride));
-  }
-
-  get _hasAnyApplicablePages() {
-    return this._activePages.some((page) => this.hasApplicableSats(
-      page.path,
-      this.getPageAction(page.path),
-    ));
-  }
-
-  getFilteredSatellites() {
-    return Object.entries(this.satellites || {}).filter(([satSite]) => (
-      this._selectedSats.has(satSite)
-    )).reduce((acc, [s, info]) => { acc[s] = info; return acc; }, {});
-  }
-
-  get _activeSelectedSats() {
-    return this.isSinglePage ? this._singleSelectedSats : this._selectedSats;
-  }
-
-  /**
-   * Nested sites that would receive rollout for currently selected
-   * **inherited** (following-base) satellites only. Custom satellites
-   * already have a local copy and are not part of recursive rollout.
-   */
-  get _selectedCascadeDescendantCount() {
-    const selectedSats = this._activeSelectedSats;
-    const overrides = this.isSinglePage
-      ? this.getPageOverrides(this.pages[0]?.path)
-      : [];
-    return Object.entries(this.satellites || {})
-      .filter(([site]) => {
-        if (!selectedSats.has(site)) return false;
-        const ov = overrides.find((o) => o.site === site);
-        return !ov || !ov.hasOverride;
-      })
-      .reduce((acc, [, info]) => acc + (info.descendantCount || 0), 0);
-  }
-
-  _cascadeAppliesToSelection() {
-    return RECURSIVE_ACTIONS.has(this._globalAction)
-      && this._includeDescendants
-      && this._selectedCascadeDescendantCount > 0;
-  }
-
-  _cascadeToggleHint() {
-    const count = this._selectedCascadeDescendantCount;
-    const selectedSats = this._activeSelectedSats;
-    const noneSelected = selectedSats.size === 0
-      && Object.keys(this.satellites || {}).length > 0;
-    if (noneSelected) return 'Select sites above to include their nested satellites';
-    if (count === 0) return 'Selected sites have no nested satellites';
-    return `Also roll out to ${count} nested site${count === 1 ? '' : 's'}`;
-  }
-
-  get _showDescendantsToggle() {
-    return !this._isUpwardMode
-      && this._hasDownwardActions
-      && this.hasDescendants
-      && RECURSIVE_ACTIONS.has(this._globalAction);
-  }
-
-  resolveSatellitesForAction(directSatellites, action, pageOverrides) {
-    if (!this._includeDescendants || !RECURSIVE_ACTIONS.has(action)) {
-      return directSatellites;
-    }
-    if (!this.msmConfig) return directSatellites;
-    const scope = ACTION_SCOPE[action];
-    const inScopeSats = scope
-      ? Object.entries(directSatellites).reduce((acc, [site, info]) => {
-        const ov = pageOverrides?.find((o) => o.site === site);
-        const hasOverride = ov?.hasOverride ?? false;
-        const matches = scope === 'custom' ? hasOverride : !hasOverride;
-        if (matches) acc[site] = info;
-        return acc;
-      }, {})
-      : directSatellites;
-    const expanded = expandSatellitesWithSubtree(this.msmConfig, inScopeSats);
-    return { ...directSatellites, ...expanded };
-  }
-
-  // ── Execution ──
-
-  async executeAll() {
-    if (this._busy) return;
-
-    const summary = this.buildExecutionSummary();
-    this._confirmAction = {
-      message: summary,
-      onConfirm: () => this.doExecuteAll(),
-    };
-  }
-
-  buildExecutionSummary() {
-    const counts = this._activePages.reduce((acc, page) => {
-      const action = this.getPageAction(page.path);
-      acc[action] = (acc[action] || 0) + 1;
-      return acc;
-    }, {});
-
-    if (this._isUpwardMode) {
-      const parts = Object.entries(counts).map(([a, c]) => (
-        `${getActionLabel(a)} ${c} page${c > 1 ? 's' : ''}`
-      ));
-      return `${parts.join(', ')} on ${this.site} from ${this.parentBase}. Continue?`;
-    }
-
-    const parts = Object.entries(counts).map(([a, c]) => {
-      const label = `${getActionLabel(a)} ${c} page${c > 1 ? 's' : ''}`;
-      const scope = ACTION_SCOPE[a];
-      const scopeLabel = scope ? SCOPE_DISPLAY[scope] : null;
-      return scopeLabel ? `${label} (${scopeLabel} sites only)` : label;
-    });
-    const satCount = this._selectedSats.size;
-    const satSuffix = `across ${satCount} direct satellite${satCount !== 1 ? 's' : ''}`;
-    const skipNote = ' Sites that don\'t match the action scope will be skipped.';
-    const recursiveActive = this._includeDescendants
-      && Object.keys(counts).some((a) => RECURSIVE_ACTIONS.has(a));
-    const nestedCount = this._selectedCascadeDescendantCount;
-    const recursiveNote = recursiveActive && nestedCount > 0
-      ? ` Also roll out to ${nestedCount} nested site${nestedCount !== 1 ? 's' : ''}.`
-      : '';
-    return `${parts.join(', ')} ${satSuffix}.${skipNote}${recursiveNote} Continue?`;
-  }
-
-  cancelConfirm() {
-    this._confirmAction = null;
-  }
-
-  async doExecuteAll() {
-    this._confirmAction = null;
-    this._executing = true;
-    this._busy = true;
-    this._taskStatuses = new Map();
-
-    // Group pages by (action, syncMode, sourceSite) so each batch can target
-    // the right base. For multi-level inheritance, different pages can
-    // legitimately have different sources (e.g. some inherited from the
-    // immediate parent, others from a deeper ancestor).
-    const actionGroups = this._activePages.reduce((acc, page) => {
-      const action = this.getPageAction(page.path);
-      const isUpward = UPWARD_VALUES.has(action);
-      const syncMode = this._effectiveSyncMode(page, action);
-      const sourceSite = isUpward ? this._resolveSourceSite(page) : null;
-      const key = [action, syncMode || '', sourceSite || ''].join('::');
-      if (!acc.has(key)) {
-        acc.set(key, {
-          action, syncMode, sourceSite, pages: [],
-        });
-      }
-      acc.get(key).pages.push(page);
-      return acc;
-    }, new Map());
-
-    const statusCallback = (key, status, error) => {
-      const next = new Map(this._taskStatuses);
-      next.set(key, { status, error });
-      this._taskStatuses = next;
-    };
-
-    const groupEntries = [...actionGroups.values()];
-
-    await groupEntries.reduce((chain, {
-      action, syncMode, sourceSite, pages,
-    }) => chain.then(() => {
-      const ctx = this._executionContext(action, sourceSite);
-      return executeBulkAction({
-        org: this.org,
-        baseSite: ctx.baseSite,
-        pages,
-        satellites: ctx.satellites,
-        action,
-        syncMode: syncMode || undefined,
-        scope: ctx.scope,
-        overrides: this.overrides,
-        onPageStatus: statusCallback,
-      });
-    }), Promise.resolve());
-
-    this._busy = false;
-    this._emitActionComplete();
-  }
-
-  // Resolves the effective base site for an upward action on `page`. Falls
-  // back to `parentBase` when the page has no recorded sourceSite (e.g. the
-  // page is local and has never been inherited).
-  _resolveSourceSite(page) {
-    const ov = this.getPageOverrides(page.path).find((o) => o.site === this.site);
-    return ov?.sourceSite || this.parentBase;
-  }
-
-  // Resolves the syncMode for `page`+`action`, forcing 'override' for upward
-  // sync on an inherited page (there's nothing local to merge against).
-  _effectiveSyncMode(page, action) {
-    if (!SYNC_ACTIONS.has(action)) return '';
-    if (UPWARD_VALUES.has(action) && this._categorizePage(page) === 'inherited') {
-      return 'override';
-    }
-    return this.getPageSyncMode(page.path);
-  }
-
-  _emitActionComplete() {
-    this.dispatchEvent(new CustomEvent('action-complete', {
-      bubbles: true,
-      composed: true,
+  // The full satellite subtree as column nodes: { site, label, children }.
+  get _columnTree() {
+    return this._targets.map(([site, info]) => ({
+      site, label: info.label || site, children: info.descendants || [],
     }));
   }
 
-  // ── Execution context (downward vs upward) ──
-
-  _executionContext(action, sourceSite) {
-    if (UPWARD_VALUES.has(action)) {
-      // Upward: current site is the satellite, an ancestor is the base.
-      return {
-        baseSite: sourceSite || this.parentBase,
-        satellites: { [this.site]: { label: this.site } },
-        scope: null,
-      };
-    }
-    // Downward: current site is the base, children are the satellites.
-    const filteredSats = this.getFilteredSatellites();
-    const pageOverrides = this.pages?.length === 1
-      ? this.getPageOverrides(this.pages[0].path)
-      : [];
-    const sats = this.resolveSatellitesForAction(filteredSats, action, pageOverrides);
-    return {
-      baseSite: this.site,
-      satellites: sats,
-      scope: ACTION_SCOPE[action],
+  // Flattened, depth-first list of *visible* columns (children shown only when
+  // the parent is expanded).
+  get _columns() {
+    const out = [];
+    const walk = (nodes, depth, parentSite) => {
+      nodes.forEach((n) => {
+        const childCount = n.children?.length || 0;
+        out.push({
+          site: n.site, label: n.label, depth, parentSite, childCount,
+        });
+        if (childCount && this._expandedCols.has(n.site)) walk(n.children, depth + 1, n.site);
+      });
     };
+    walk(this._columnTree, 0, this.site);
+    return out;
   }
 
-  _executionContextForSet(action, satSet, sourceSite) {
-    if (UPWARD_VALUES.has(action)) {
-      return {
-        baseSite: sourceSite || this.parentBase,
-        satellites: { [this.site]: { label: this.site } },
-        scope: null,
-      };
-    }
-    const directSats = Object.entries(this.satellites || {})
-      .filter(([s]) => satSet.has(s))
-      .reduce((acc, [s, info]) => { acc[s] = info; return acc; }, {});
-    const pageOverrides = this.pages?.length === 1
-      ? this.getPageOverrides(this.pages[0].path)
-      : [];
-    const sats = this.resolveSatellitesForAction(directSats, action, pageOverrides);
-    return {
-      baseSite: this.site,
-      satellites: sats,
-      scope: ACTION_SCOPE[action],
-    };
+  // Every column in the subtree regardless of expansion — the basis for data
+  // loading, target inclusion, and action scope (collapsed levels still count).
+  get _allColumns() {
+    const out = [];
+    const walk = (nodes, depth, parentSite) => nodes.forEach((n) => {
+      out.push({
+        site: n.site, label: n.label, depth, parentSite, childCount: n.children?.length || 0,
+      });
+      if (n.children?.length) walk(n.children, depth + 1, n.site);
+    });
+    walk(this._columnTree, 0, this.site);
+    return out;
   }
 
-  async executeSinglePage() {
-    if (this._busy) return;
-
-    const page = this.pages[0];
-    const action = this._globalAction;
-
-    if (action === 'reset') {
-      this._confirmAction = {
-        message: 'Discard local copy on customized sites? Removes the satellite override.',
-        onConfirm: () => this.doExecuteSingle(page, action),
-      };
-      return;
-    }
-    if (action === 'resume-inheritance') {
-      this._confirmAction = {
-        message: 'Revert to base? This deletes the local copy on this satellite.',
-        onConfirm: () => this.doExecuteSingle(page, action),
-      };
-      return;
-    }
-    if (action === 'cancel-inheritance') {
-      const src = this._resolveSourceSite(page);
-      this._confirmAction = {
-        message: `Copy ${page.name} from ${src} to ${this.site}? This creates a local copy on your site.`,
-        onConfirm: () => this.doExecuteSingle(page, action),
-      };
-      return;
-    }
-    if (action === 'resume-inheritance') {
-      this._confirmAction = {
-        message: `Resume inheritance for ${this.site}? This deletes the local override of ${page.name} so it inherits from ${this.parentBase}.`,
-        onConfirm: () => this.doExecuteSingle(page, action),
-      };
-      return;
-    }
-    if (action === 'cancel-inheritance') {
-      const src = this._resolveSourceSite(page);
-      this._confirmAction = {
-        message: `Cancel inheritance for ${page.name} on ${this.site}? This creates a local copy from ${src}, breaking the inheritance link.`,
-        onConfirm: () => this.doExecuteSingle(page, action),
-      };
-      return;
-    }
-
-    this.doExecuteSingle(page, action);
+  _subtreeSites(site) {
+    const node = this._findNode(site);
+    if (!node) return [site];
+    const out = [];
+    const collect = (n) => { out.push(n.site); (n.children || []).forEach(collect); };
+    collect(node);
+    return out;
   }
 
-  async doExecuteSingle(page, action, satSet, syncMode) {
-    this._confirmAction = null;
-    this._executing = true;
+  _columnState(site) {
+    const sub = this._subtreeSites(site);
+    const inc = sub.filter((s) => this._includedTargets.has(s)).length;
+    if (inc === 0) return 'unchecked';
+    if (inc === sub.length) return 'checked';
+    return 'indeterminate';
+  }
+
+  _parentMap() {
+    const m = new Map();
+    const walk = (nodes, parent) => nodes.forEach((n) => {
+      m.set(n.site, parent);
+      if (n.children?.length) walk(n.children, n.site);
+    });
+    walk(this._columnTree, this.site);
+    return m;
+  }
+
+  _findNode(site) {
+    const find = (nodes) => nodes.reduce((acc, n) => {
+      if (acc) return acc;
+      if (n.site === site) return n;
+      return find(n.children || []);
+    }, null);
+    return find(this._columnTree);
+  }
+
+  _labelFor(sat) {
+    return this._findNode(sat)?.label || sat;
+  }
+
+  _targetLabel(view, target) {
+    return view === 'satellites' ? this._labelFor(target) : this._siteTitle(target);
+  }
+
+  // Human title for a site id, from the MSM config rows (base or satellite
+  // row's title). Falls back to the id when no title is configured.
+  _siteTitle(site) {
+    const rows = this.msmConfig?.rows || [];
+    const baseRow = rows.find((r) => r.base === site && !r.satellite);
+    if (baseRow?.title) return baseRow.title;
+    const satRow = rows.find((r) => r.satellite === site);
+    return satRow?.title || site;
+  }
+
+  // The source a satellite pulls from for a given page: the nearest ancestor
+  // that holds a local copy of the page, else the base site. Resolves from
+  // already-loaded cells (ancestors load before descendants).
+  _effectiveSource(page, sat, parentMap) {
+    let cur = parentMap.get(sat);
+    while (cur && cur !== this.site) {
+      const cell = this._cells.get(cellKey(page.path, cur));
+      if (cell?.hasOverride) return { site: cur, lm: cell.lastModified };
+      cur = parentMap.get(cur);
+    }
+    return { site: this.site, lm: page.lastModified };
+  }
+
+  // ── Selection lifecycle ─────────────────────────────────────────────────
+
+  _resetForSelection() {
+    const key = `${this.org}|${this.site}|${this._pages.map((p) => p.path).sort().join(',')}`;
+    if (key === this._lastKey) return;
+    this._lastKey = key;
+    this._loadGen += 1;
+    this._cells = new Map();
+    this._rows = new Map();
+    this._includedTargets = new Set(this._allColumns.map((c) => c.site));
+    this._expandedCols = new Set();
+    this._tab = 'satellites';
+    this._taskStatus = new Map();
+    this._confirm = null;
+    this._success = null;
+    if (this._roles.asBase) this._loadAll();
+    if (this._roles.asSatellite) this._loadRows();
+  }
+
+  // ── Downward matrix data ──────────────────────────────────────────────────
+
+  _setCell(key, data) {
+    const next = new Map(this._cells);
+    next.set(key, data);
+    this._cells = next;
+  }
+
+  async _loadCellsFor(sites) {
+    const gen = this._loadGen;
+    const parentMap = this._parentMap();
+    const tasks = [];
+    this._pages.forEach((page) => {
+      const ext = page.ext || 'html';
+      const path = cleanPath(page.path);
+      sites.forEach((sat) => {
+        tasks.push(async () => {
+          if (gen !== this._loadGen) return;
+          try {
+            const ts = await getPageTimestamp(this.org, sat, path, ext);
+            const hasOverride = ts.exists;
+            const src = this._effectiveSource(page, sat, parentMap);
+            const editLM = hasOverride ? ts.lastModified : src.lm;
+            const status = await getPageStatus(this.org, sat, path, editLM, ext);
+            const outOfSync = !!(hasOverride && src.lm && ts.lastModified
+              && new Date(src.lm).getTime()
+                > new Date(ts.lastModified).getTime() + PUBLISH_LAG_MS);
+            if (gen !== this._loadGen) return;
+            this._setCell(cellKey(page.path, sat), {
+              hasOverride,
+              outOfSync,
+              previewState: status.previewState,
+              liveState: status.liveState,
+              lastModified: ts.lastModified,
+              sourceSite: src.site,
+            });
+          } catch {
+            if (gen !== this._loadGen) return;
+            this._setCell(cellKey(page.path, sat), {
+              hasOverride: false,
+              outOfSync: false,
+              previewState: 'not-rolled-out',
+              liveState: 'not-rolled-out',
+              lastModified: null,
+              sourceSite: this.site,
+            });
+          }
+        });
+      });
+    });
+    await runPool(tasks, CELL_CONCURRENCY);
+  }
+
+  // Probe the entire subtree, shallow→deep so each level's source resolves
+  // against freshly-loaded ancestors.
+  async _loadAll() {
+    const byDepth = new Map();
+    this._allColumns.forEach((c) => {
+      if (!byDepth.has(c.depth)) byDepth.set(c.depth, []);
+      byDepth.get(c.depth).push(c.site);
+    });
+    const depths = [...byDepth.keys()].sort((a, b) => a - b);
+    await depths.reduce(
+      (chain, d) => chain.then(() => this._loadCellsFor(byDepth.get(d))),
+      Promise.resolve(),
+    );
+  }
+
+  // ── Upward (satellite) row data ───────────────────────────────────────────
+
+  _setRow(path, data) {
+    const next = new Map(this._rows);
+    next.set(path, data);
+    this._rows = next;
+  }
+
+  // Nearest ancestor (incl. base) that actually holds the page — the site to
+  // pull from / copy from. Probes the inheritance chain in parallel.
+  async _resolveUpwardSource(page) {
+    const chain = this._roles.asSatellite?.chain || [];
+    const nearestFirst = [...chain].reverse();
+    const ext = page.ext || 'html';
+    const path = cleanPath(page.path);
+    const probes = await Promise.all(
+      nearestFirst.map((node) => getPageTimestamp(this.org, node.site, path, ext)
+        .then((ts) => ({ node, ts }))
+        .catch(() => ({ node, ts: { exists: false } }))),
+    );
+    const hit = probes.find((r) => r.ts.exists);
+    if (hit) return { site: hit.node.site, lm: hit.ts.lastModified, exists: true };
+    return { site: this._roles.asSatellite?.base, lm: null, exists: false };
+  }
+
+  async _loadRows() {
+    const gen = this._loadGen;
+    const tasks = this._pages.map((page) => async () => {
+      if (gen !== this._loadGen) return;
+      const ext = page.ext || 'html';
+      const path = cleanPath(page.path);
+      try {
+        const [selfTs, src] = await Promise.all([
+          getPageTimestamp(this.org, this.site, path, ext),
+          this._resolveUpwardSource(page),
+        ]);
+        const hasOverride = selfTs.exists;
+        let category = 'inherited';
+        if (hasOverride) category = src.exists ? 'override' : 'local';
+        const editLM = hasOverride ? selfTs.lastModified : src.lm;
+        const status = await getPageStatus(this.org, this.site, path, editLM, ext);
+        const outOfSync = !!(category === 'override' && src.lm && selfTs.lastModified
+          && new Date(src.lm).getTime()
+            > new Date(selfTs.lastModified).getTime() + PUBLISH_LAG_MS);
+        if (gen !== this._loadGen) return;
+        this._setRow(page.path, {
+          category,
+          hasOverride,
+          outOfSync,
+          previewState: status.previewState,
+          liveState: status.liveState,
+          source: src.site,
+        });
+      } catch {
+        if (gen !== this._loadGen) return;
+        this._setRow(page.path, {
+          category: 'inherited',
+          hasOverride: false,
+          outOfSync: false,
+          previewState: 'not-rolled-out',
+          liveState: 'not-rolled-out',
+          source: this._roles.asSatellite?.base,
+        });
+      }
+    });
+    await runPool(tasks, CELL_CONCURRENCY);
+  }
+
+  // ── Include / expand toggles ──────────────────────────────────────────────
+
+  // Cascades like the dialog's scope chips: unchecking a column removes it and
+  // its whole subtree; checking it adds the subtree and re-enables ancestors.
+  _toggleTarget(site) {
+    const next = new Set(this._includedTargets);
+    const sub = this._subtreeSites(site);
+    if (next.has(site)) {
+      sub.forEach((s) => next.delete(s));
+    } else {
+      sub.forEach((s) => next.add(s));
+      const parentMap = this._parentMap();
+      let p = parentMap.get(site);
+      while (p && p !== this.site) { next.add(p); p = parentMap.get(p); }
+    }
+    this._includedTargets = next;
+  }
+
+  // Expansion is display-only — all subtree data is already loaded.
+  _toggleColumnExpand(sat) {
+    const next = new Set(this._expandedCols);
+    if (next.has(sat)) next.delete(sat); else next.add(sat);
+    this._expandedCols = next;
+  }
+
+  // ── Scope ─────────────────────────────────────────────────────────────────
+
+  // Included (page, satellite) downward cells matching a scope.
+  // scope: 'inherited' (rollout / cancel) | 'custom' (sync / re-enable)
+  _scopedCells(scope) {
+    const out = [];
+    const targets = this._allColumns.filter((c) => this._includedTargets.has(c.site));
+    this._activePages.forEach((page) => {
+      targets.forEach((col) => {
+        const cell = this._cells.get(cellKey(page.path, col.site));
+        if (!cell) return;
+        const match = scope === 'custom' ? cell.hasOverride : !cell.hasOverride;
+        if (match) out.push({ page, satSite: col.site });
+      });
+    });
+    return out;
+  }
+
+  // Source-view (upward) pages matching a scope, by inheritance category.
+  // scope: 'inherited' (roll out / cancel) | 'override' (sync / re-enable)
+  _scopedPagesUp(scope) {
+    return this._pages.filter((p) => this._rows.get(p.path)?.category === scope);
+  }
+
+  _countFor(view, scope) {
+    if (view === 'satellites') return this._scopedCells(scope).length;
+    return this._scopedPagesUp(scope).length;
+  }
+
+  // ── Execution ─────────────────────────────────────────────────────────────
+
+  _requestAction(def) {
+    this._confirm = { ...def, count: this._countFor(def.view, def.scope) };
+    this._success = null;
+  }
+
+  _dismissConfirm() {
+    this._confirm = null;
+  }
+
+  // Group in-scope work into valid executeBulkAction calls — one target per
+  // call, the pages that share its source — so sync / cancel pull from the
+  // right base at any tree depth (source can differ per page).
+  _downGroups(scope) {
+    const parentMap = this._parentMap();
+    const groups = new Map();
+    this._scopedCells(scope).forEach(({ page, satSite }) => {
+      const source = this._effectiveSource(page, satSite, parentMap).site;
+      const key = `${satSite}|${source}`;
+      if (!groups.has(key)) groups.set(key, { target: satSite, source, pages: [] });
+      groups.get(key).pages.push(page);
+    });
+    return [...groups.values()];
+  }
+
+  // Source view: target is always this site; source is each page's resolved
+  // nearest ancestor with content (already computed in `_rows`).
+  _upGroups(scope) {
+    const groups = new Map();
+    this._scopedPagesUp(scope).forEach((page) => {
+      const source = this._rows.get(page.path)?.source || this._roles.asSatellite?.base;
+      const key = source || '_';
+      if (!groups.has(key)) groups.set(key, { target: this.site, source, pages: [] });
+      groups.get(key).pages.push(page);
+    });
+    return [...groups.values()];
+  }
+
+  async _execute() {
+    if (this._busy || !this._confirm) return;
+    const {
+      view, exec, scope, syncMode, label,
+    } = this._confirm;
+    this._confirm = null;
     this._busy = true;
-    this._taskStatuses = new Map();
+    this._taskStatus = new Map();
 
-    const activeSats = satSet || this._singleSelectedSats;
-    const sourceSite = UPWARD_VALUES.has(action) ? this._resolveSourceSite(page) : null;
-    const ctx = this._executionContextForSet(action, activeSats, sourceSite);
-    // For upward sync-from-base on an inherited page, force override (no
-    // local content to merge against). Otherwise honor the chosen mode.
-    let resolvedSyncMode = syncMode || this._globalSyncMode;
-    if (UPWARD_VALUES.has(action) && this._categorizePage(page) === 'inherited') {
-      resolvedSyncMode = 'override';
-    }
-
-    await executeBulkAction({
-      org: this.org,
-      baseSite: ctx.baseSite,
-      pages: [page],
-      satellites: ctx.satellites,
-      action,
-      syncMode: SYNC_ACTIONS.has(action) ? resolvedSyncMode : undefined,
-      scope: ctx.scope,
-      overrides: this.overrides,
-      onPageStatus: (key, status, error) => {
-        const next = new Map(this._taskStatuses);
-        next.set(key, { status, error });
-        this._taskStatuses = next;
-      },
-    });
-
-    this._busy = false;
-    this._emitActionComplete();
-  }
-
-  async executeRow(page) {
-    if (this._busy) return;
-
-    const action = this.getPageAction(page.path);
-    const syncMode = this.getPageSyncMode(page.path);
-    if (action === 'reset') {
-      this._confirmAction = {
-        message: `Discard local copy on customized sites for ${page.name}? Removes the satellite override.`,
-        onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
-      };
-      return;
-    }
-    if (action === 'resume-inheritance') {
-      this._confirmAction = {
-        message: 'Revert to base? This deletes the local copy on this satellite.',
-        onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
-      };
-      return;
-    }
-    if (action === 'cancel-inheritance') {
-      const src = this._resolveSourceSite(page);
-      this._confirmAction = {
-        message: `Copy ${page.name} from ${src} to ${this.site}? This creates a local copy on your site.`,
-        onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
-      };
-      return;
-    }
-    if (action === 'resume-inheritance') {
-      this._confirmAction = {
-        message: `Resume inheritance for ${page.name} on ${this.site}? This deletes the local override so it inherits from ${this.parentBase}.`,
-        onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
-      };
-      return;
-    }
-    if (action === 'cancel-inheritance') {
-      const src = this._resolveSourceSite(page);
-      this._confirmAction = {
-        message: `Cancel inheritance for ${page.name} on ${this.site}? This creates a local copy from ${src}, breaking the inheritance link.`,
-        onConfirm: () => this.doExecuteSingle(page, action, this._selectedSats, syncMode),
-      };
-      return;
-    }
-    this.doExecuteSingle(page, action, this._selectedSats, syncMode);
-  }
-
-  // ── Status icon helper ──
-
-  statusIcon(status) {
-    if (status === 'queued') return QUEUED_ICON;
-    if (status === 'pending') return SPINNER_ICON;
-    if (status === 'success') return SUCCESS_ICON;
-    if (status === 'error') return ERROR_ICON;
-    return nothing;
-  }
-
-  // ── Progress stats ──
-
-  get _progressStats() {
-    return [...this._taskStatuses.values()].reduce((acc, { status }) => {
-      acc.total += 1;
-      if (status === 'success') { acc.done += 1; acc.success += 1; } else if (status === 'error') { acc.done += 1; acc.error += 1; }
-      return acc;
-    }, {
-      total: 0, done: 0, success: 0, error: 0,
-    });
-  }
-
-  // ──────────────────────────────────────
-  // Render: Picker (reusable)
-  // ──────────────────────────────────────
-
-  renderPicker(name, label, value, options, setter) {
-    const isOpen = this._openPicker === name;
-    const selectedLabel = options
-      .flatMap((o) => o.items || [o])
-      .find((o) => o.value === value)?.label || '';
-
-    const renderOption = (opt) => {
-      const isDisabled = !!opt.disabled;
-      const handler = isDisabled
-        ? null
-        : () => this.selectPickerOption(name, opt.value, setter);
-      return html`
-        <li class="picker-item ${opt.value === value ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}"
-          title=${opt.disabledReason || nothing}
-          @click=${handler || nothing}>
-          ${CHECK_ICON}
-          ${opt.label}
-        </li>
-      `;
+    const onPageStatus = (key, status, error) => {
+      const next = new Map(this._taskStatus);
+      next.set(key, { status, error });
+      this._taskStatus = next;
     };
 
-    return html`
-      <div class="form-row">
-        ${label ? html`<label>${label}</label>` : nothing}
-        <div class="picker-wrapper">
-          <button class="picker-trigger ${isOpen ? 'open' : ''}"
-            @click=${() => this.togglePicker(name)}
-            ?disabled=${this._busy}>
-            <span class="picker-label">${selectedLabel}</span>
-            ${CHEVRON}
-          </button>
-          ${isOpen ? html`
-            <ul class="picker-menu">
-              ${options.map((group) => {
-    if (group.items) {
-      return html`
-                    <li class="picker-group-header">${group.heading}</li>
-                    ${group.items.map(renderOption)}
-                  `;
+    const groups = view === 'satellites' ? this._downGroups(scope) : this._upGroups(scope);
+    this._busyTotal = groups.reduce((n, g) => n + g.pages.length, 0);
+    const succeeded = [];
+    const errors = [];
+    await groups.reduce((chain, g) => chain.then(async () => {
+      const results = await executeBulkAction({
+        org: this.org,
+        baseSite: g.source,
+        pages: g.pages,
+        satellites: { [g.target]: { label: this._targetLabel(view, g.target) } },
+        action: exec,
+        syncMode,
+        onPageStatus,
+      });
+      results.forEach((r) => {
+        if (r.status === 'fulfilled' && r.value?.status === 'success') {
+          succeeded.push(r.value.key);
+        } else {
+          const v = r.status === 'fulfilled' ? r.value : null;
+          errors.push({ key: v?.key || null, error: v?.error || r.reason?.message || 'Failed' });
+        }
+      });
+    }), Promise.resolve());
+
+    if (view === 'satellites') await this._loadAll(); else await this._loadRows();
+    this._taskStatus = new Map();
+    this._busy = false;
+    this._success = {
+      label, action: exec, ok: succeeded.length, failed: errors.length, results: succeeded, errors,
+    };
+  }
+
+  // Re-select the same pages at another site (an ancestor via the breadcrumb,
+  // or a satellite via a column header) so the panel re-renders in that site's
+  // context. The column browser resolves which of the paths exist there.
+  _navigateTo(site, paths) {
+    if (!site || !paths.length) return;
+    this.dispatchEvent(new CustomEvent('navigate-pages', {
+      detail: { site, paths }, bubbles: true, composed: true,
+    }));
+  }
+
+  // ── Shared status rendering ─────────────────────────────────────────────
+
+  _taskOverlay(key) {
+    const task = this._taskStatus.get(key);
+    if (!task) return null;
+    if (task.status === 'pending' || task.status === 'queued') {
+      return html`<span class="cell-icon cell-loading"></span>`;
     }
-    return renderOption(group);
-  })}
-            </ul>
-          ` : nothing}
-        </div>
-      </div>
-    `;
-  }
-
-  // Returns the per-row action options for `page`. Because the column-browser
-  // enforces a single-category selection, the per-row options here mirror the
-  // category that the panel is already in. We still resolve per-page so each
-  // row reflects its own data if the mutex is ever bypassed.
-  _actionOptionsForPage(page) {
-    if (!page || !this._isUpwardMode) return this._actionOptions;
-    return this._upwardActionsForCategory(this._categorizePage(page));
-  }
-
-  // ──────────────────────────────────────
-  // Render: Breadcrumb (multi-level inheritance chain)
-  // ──────────────────────────────────────
-
-  renderBreadcrumb() {
-    if (!this._hasUpwardActions) return nothing;
-    const nodes = [
-      ...(this.parentChain || []),
-      { site: this.site, label: this.site, current: true },
-    ];
-    if (nodes.length <= 1) return nothing;
-    return html`
-      <div class="crumb-row" aria-label="Inheritance chain">
-        <span class="crumb-label">Inherits from</span>
-        ${nodes.map((node, idx) => html`
-          ${idx > 0 ? html`<span class="crumb-sep" aria-hidden="true">\u203A</span>` : nothing}
-          <span class="crumb-node ${node.current ? 'current' : ''}">${node.label}</span>
-        `)}
-      </div>
-    `;
-  }
-
-  // ──────────────────────────────────────
-  // Render: Direction switch (Spectrum 2 Switch)
-  // ──────────────────────────────────────
-
-  renderDirectionSwitch() {
-    if (!this._hasDualRole) return nothing;
-    const checked = this._isUpwardMode;
-    const baseLabel = this.parentBase || 'parent';
-    const switchLabel = checked
-      ? 'Update children instead'
-      : `Update from parent (${baseLabel}) instead`;
-    return html`
-      <label class="direction-switch">
-        <input type="checkbox"
-          role="switch"
-          aria-label=${switchLabel}
-          .checked=${checked}
-          ?disabled=${this._busy}
-          @change=${(e) => this.onDirectionToggle(e.target.checked)} />
-        <span class="switch-track" aria-hidden="true">
-          <span class="switch-knob"></span>
-        </span>
-        <span class="switch-label">${switchLabel}</span>
-      </label>
-    `;
-  }
-
-  onDirectionToggle(toUpward) {
-    this._globalAction = toUpward ? 'sync-from-base' : 'preview';
-    this._pageActions = new Map();
-    this._resetExecution();
-    // Dual-role: 'sync-from-base' isn't valid for inherited selections, so
-    // resolve to the first allowed upward action for the current category.
-    if (toUpward) this._validateActionForCategory();
-  }
-
-  // ──────────────────────────────────────
-  // Render: Upward summary (Source / Target / Local override)
-  // ──────────────────────────────────────
-
-  renderUpwardSummary() {
-    if (!this._isUpwardMode) return nothing;
-    if (!this._hasUpwardActions) return nothing;
-
-    const source = this.parentBase || '\u2014';
-    const target = this.site || '\u2014';
-
-    if (this.isSinglePage) {
-      const page = this.pages[0];
-      const pagePath = page?.path || '';
-      const overrides = this.getPageOverrides(pagePath);
-      const selfEntry = overrides.find((o) => o.site === this.site);
-      const hasOverride = selfEntry?.hasOverride === true;
-      const inheritedFrom = selfEntry?.inheritedFrom || null;
-      const effectiveSource = selfEntry?.sourceSite || this.parentBase || source;
-      let overrideText = 'None \u2014 following base';
-      if (hasOverride) overrideText = 'Yes \u2014 has local copy';
-      else if (inheritedFrom) overrideText = 'None \u2014 following base';
-      return html`
-        <div class="upward-summary">
-          <div class="summary-row"><span class="summary-label">Source</span><span class="summary-value">${effectiveSource}${pagePath}</span></div>
-          <div class="summary-row"><span class="summary-label">Target</span><span class="summary-value">${target}${pagePath}</span></div>
-          <div class="summary-row"><span class="summary-label">Local override</span><span class="summary-value">${overrideText}</span></div>
-        </div>
-      `;
+    if (task.status === 'success') {
+      return html`<span class="cell-icon" style="color:var(--s2-green-700,#0ba45d)" title="Done">
+        ${icon('S2_Icon_CheckmarkCircle_20_N')}</span>`;
     }
-
-    const overriddenCount = this.pages.reduce((acc, p) => {
-      const ov = this.getPageOverrides(p.path).find((o) => o.site === this.site);
-      return acc + (ov?.hasOverride ? 1 : 0);
-    }, 0);
-    return html`
-      <div class="upward-summary">
-        <div class="summary-row"><span class="summary-label">Source</span><span class="summary-value">${source}</span></div>
-        <div class="summary-row"><span class="summary-label">Target</span><span class="summary-value">${target}</span></div>
-        <div class="summary-row"><span class="summary-label">Pages with local override</span><span class="summary-value">${overriddenCount} of ${this.pages.length}</span></div>
-      </div>
-    `;
+    if (task.status === 'error') {
+      return html`<span class="cell-icon" style="color:var(--s2-red-700,#ff513d)" title=${task.error || 'Failed'}>
+        ${icon('S2_Icon_AlertDiamond_20_N')}</span>`;
+    }
+    return null;
   }
 
-  // ──────────────────────────────────────
-  // Render: Footer (cascade toggle + Apply)
-  // ──────────────────────────────────────
+  _statusIcon(data) {
+    const cfg = getStatusConfig(data);
+    return html`<span class="cell-icon" style="color:${cfg.color}" title=${cfg.tip}>${icon(cfg.name)}</span>`;
+  }
 
-  renderFooter(applyOnClick, applyDisabled) {
+  // ── Render: downward matrix ───────────────────────────────────────────────
+
+  renderCell(page, satSite) {
+    const overlay = this._taskOverlay(cellKey(page.path, satSite));
+    if (overlay) return overlay;
+    const cell = this._cells.get(cellKey(page.path, satSite));
+    if (!cell) return html`<span class="cell-icon cell-loading"></span>`;
+    const inh = cell.hasOverride
+      ? { name: 'S2_Icon_UnLink_20_N', tip: 'Local copy (inheritance broken)' }
+      : { name: 'S2_Icon_LinkApplied_20_N', tip: `Inheriting from ${this._siteTitle(cell.sourceSite)}` };
+    const body = html`
+      <span class="cell-pair">
+        <span class="cell-inherit" title=${inh.tip}>${icon(inh.name, '0 0 20 20', 13, 13)}</span>
+        ${this._statusIcon(cell)}
+      </span>`;
+    // A local copy is editable on that satellite — link the cell to its doc.
+    if (cell.hasOverride && (page.ext || 'html') === 'html') {
+      return html`<a class="cell-link" href=${this._editUrl(satSite, page.path)}
+        target="_blank" rel="noopener"
+        title="Open ${this._siteTitle(satSite)} copy of ${page.path} in editor">${body}</a>`;
+    }
+    return body;
+  }
+
+  renderTargetHeader(col) {
+    const state = this._columnState(col.site);
+    const expanded = this._expandedCols.has(col.site);
     return html`
-      <div class="form-actions">
-        ${this._showDescendantsToggle ? html`
-          <label class="footer-cascade ${this._selectedCascadeDescendantCount === 0 ? 'muted' : ''}">
-            <input type="checkbox"
-              .checked=${this._includeDescendants}
-              ?disabled=${this._busy || this._selectedCascadeDescendantCount === 0}
-              @change=${(e) => {
-    this._includeDescendants = e.target.checked;
-    this._resetExecution();
-  }} />
-            <span>${this._cascadeToggleHint()}</span>
+      <th class="target ${state === 'unchecked' ? 'off' : ''} ${col.depth > 0 ? 'nested' : ''}">
+        <div class="target-head">
+          ${col.childCount ? html`
+            <button class="col-toggle ${expanded ? 'open' : ''}" ?disabled=${this._busy}
+              title="${expanded ? 'Collapse' : 'Expand'} ${col.childCount} nested"
+              @click=${() => this._toggleColumnExpand(col.site)}>
+              ${icon('S2_Icon_ChevronRight_20_N', '0 0 20 20', 12, 12)}
+              ${expanded ? nothing : html`<span class="col-count">${col.childCount}</span>`}
+            </button>` : nothing}
+          <label class="cb">
+            <input type="checkbox" .checked=${state === 'checked'} .indeterminate=${state === 'indeterminate'}
+              ?disabled=${this._busy} @change=${() => this._toggleTarget(col.site)} />
           </label>
-        ` : html`<span class="footer-spacer"></span>`}
-        <sl-button variant="primary"
-          @click=${applyOnClick}
-          ?disabled=${applyDisabled}>
-          Apply
-        </sl-button>
-      </div>
-    `;
+          <button class="target-label target-jump" ?disabled=${this._busy}
+            title="Manage ${col.label}'s pages here"
+            @click=${() => this._navigateTo(col.site, this._pages.map((p) => p.path))}>${col.label}</button>
+        </div>
+      </th>`;
   }
 
-  // ──────────────────────────────────────
-  // Render: Confirm dialog
-  // ──────────────────────────────────────
-
-  renderConfirm() {
-    if (!this._confirmAction) return nothing;
+  renderMatrix() {
+    const columns = this._columns;
     return html`
-      <div class="alert-dialog caution" role="alertdialog">
-        <h2 class="alert-dialog-heading">
-          <svg class="caution-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-            <path d="M8 2 L14.5 13 H1.5 Z" />
-            <line x1="8" y1="6" x2="8" y2="9.5" />
-            <circle cx="8" cy="11.5" r="0.5" fill="currentColor" stroke="none" />
-          </svg>
-          Confirm action
-        </h2>
-        <p class="alert-dialog-content">${this._confirmAction.message}</p>
-        <div class="alert-dialog-buttons">
-          <button class="s2-btn s2-btn-outline" @click=${() => this.cancelConfirm()}>Cancel</button>
-          <button class="s2-btn s2-btn-confirm" @click=${() => this._confirmAction.onConfirm()}>Confirm</button>
-        </div>
-      </div>
-    `;
+      <div class="matrix-scroll">
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th class="corner">Page</th>
+              ${columns.map((col) => this.renderTargetHeader(col))}
+            </tr>
+          </thead>
+          <tbody>
+            ${this._pages.map((page) => html`
+              <tr>
+                <th class="page" scope="row">
+                  ${this.renderPageCell(page)}
+                </th>
+                ${columns.map((col) => html`
+                  <td class="cell ${col.depth > 0 ? 'nested' : ''} ${this._includedTargets.has(col.site) ? '' : 'dim'}">
+                    ${this.renderCell(page, col.site)}
+                  </td>`)}
+              </tr>`)}
+          </tbody>
+        </table>
+      </div>`;
   }
 
-  // ──────────────────────────────────────
-  // Render: Single-page mode
-  // ──────────────────────────────────────
+  // ── Render: upward table ──────────────────────────────────────────────────
 
-  renderSinglePage() {
-    const page = this.pages[0];
-    const overrides = this.getPageOverrides(page.path);
-    // Satellite grids only show child sites; exclude the self-entry that the
-    // satellite/dual upward path injects into the same overrides map.
-    const satEntries = overrides.filter((o) => o.site !== this.site);
-    const inherited = satEntries.filter((o) => !o.hasOverride);
-    const custom = satEntries.filter((o) => o.hasOverride);
-
-    return html`
-      <div class="panel">
-        <div class="panel-header">
-          <h3 class="panel-title">${page.name}</h3>
-        </div>
-        <div class="panel-body">
-          ${this.renderBreadcrumb()}
-          ${this.renderDirectionSwitch()}
-          ${this._isLocalUpwardEmpty ? this.renderLocalUpwardEmpty() : html`
-          <div class="action-row">
-            ${this.renderPicker(
-    'action',
-    'Action',
-    this._globalAction,
-    this._isUpwardMode ? this._actionOptionsForPage(page) : this._actionOptions,
-    (v) => { this._globalAction = v; this._resetExecution(); },
-  )}
-            ${this._shouldShowSyncPicker(this._globalAction) ? this.renderPicker(
-    'syncMode',
-    'Sync mode',
-    this._globalSyncMode,
-    SYNC_OPTIONS,
-    (v) => { this._globalSyncMode = v; },
-  ) : html`<div class="action-row-spacer"></div>`}
-          </div>
-          ${this.renderUpwardSummary()}
-          `}
-          ${this._isUpwardMode ? nothing : this.renderSatelliteGrid(inherited, custom)}
-          ${this.renderConfirm()}
-          ${this._executing ? this.renderProgress() : nothing}
-          ${this.renderFooter(
-    () => this.executeSinglePage(),
-    this._busy || this._isLocalUpwardEmpty || !this._canApplySingle(page),
-  )}
-        </div>
-      </div>
-    `;
-  }
-
-  _canApplySingle(page) {
-    if (this._isUpwardMode) {
-      // Upward: target is self. Some actions only apply to specific
-      // categories; verify the row matches before allowing Apply.
-      // For bulk per-row Apply, use the row's action; otherwise the panel-wide action.
-      const action = (!this.isSinglePage && page)
-        ? this.getPageAction(page.path)
-        : this._globalAction;
-      if (action === 'resume-inheritance') {
-        const ov = this.getPageOverrides(page.path).find((o) => o.site === this.site);
-        return ov?.hasOverride === true;
-      }
-      if (action === 'cancel-inheritance') {
-        return this._categorizePage(page) === 'inherited';
-      }
-      return true;
+  renderInheritChip(row) {
+    if (!row) return html`<span class="cell-icon cell-loading"></span>`;
+    let name = 'S2_Icon_UnLink_20_N';
+    let text = 'Local only — no base';
+    if (row.category === 'inherited') {
+      name = 'S2_Icon_LinkApplied_20_N';
+      text = `Inheriting from ${this._siteTitle(row.source)}`;
+    } else if (row.category === 'override') {
+      text = 'Local copy';
     }
-    return this._singleSelectedSats.size > 0
-      && this.hasApplicableSats(page?.path, this._globalAction);
+    return html`<span class="inherit-chip">
+      <span class="cell-inherit">${icon(name, '0 0 20 20', 13, 13)}</span>${text}</span>`;
   }
 
-  renderSatelliteGrid(inherited, custom) {
-    const scope = ACTION_SCOPE[this._globalAction];
-
-    return html`
-      <div class="satellite-grid">
-        ${inherited.length ? html`
-          <div class="satellite-column">
-            <div class="column-heading">Following base</div>
-            <ul class="satellite-list">
-              ${inherited.map((sat) => this.renderSatRow(sat, scope !== 'inherited'))}
-            </ul>
-          </div>
-        ` : nothing}
-        ${custom.length ? html`
-          <div class="satellite-column">
-            <div class="column-heading">With local copy</div>
-            <ul class="satellite-list">
-              ${custom.map((sat) => this.renderSatRow(sat, scope !== 'custom', true))}
-            </ul>
-          </div>
-        ` : nothing}
-      </div>
-    `;
-  }
-
-  renderNestedTree(nodes, affected, depth = 0) {
-    if (!nodes?.length) return nothing;
-    return nodes.map((node) => {
-      const sub = node.children?.length
-        ? html`<ul class="expand-list">${this.renderNestedTree(node.children, affected, depth + 1)}</ul>`
-        : nothing;
-      return html`
-        <li class="${affected ? 'affected' : ''}" style="padding-left:${depth * 12}px">
-          ${node.label}${sub}
-        </li>`;
-    });
-  }
-
-  renderSatRowContent({
-    site,
-    label,
-    outOfScope,
-    showEdit,
-    showNested,
-    isSelected,
-    onToggle,
-    statusEntry,
-  }) {
-    const info = this.satellites?.[site] || {};
-    const dc = info.descendantCount || 0;
-    const nested = showNested ? (info.descendants || []) : [];
-    const hasNested = nested.length > 0;
-    const isExpanded = hasNested && this._expandedNested.has(site);
-    const cascades = isSelected && this._cascadeAppliesToSelection();
-    const dcSuffix = dc === 1 ? '' : 's';
-    const dcTitle = `${dc} nested site${dcSuffix} below this site`;
-    const pagePath = this.pages[0]?.path?.replace(/\.[^/.]+$/, '') || '';
-
-    return html`
-      <li class="sat-row-wrap ${outOfScope ? 'out-of-scope' : ''}">
-        <div class="sat-row ${statusEntry ? `status-${statusEntry.status}` : ''}">
-          <label>
-            <input type="checkbox"
-              .checked=${isSelected}
-              ?disabled=${outOfScope || this._busy}
-              @change=${onToggle} />
-            <span>${label}</span>
-          </label>
-          ${dc > 0 ? html`
-            <span class="descendant-badge ${hasNested ? 'sat-descendant-toggle' : ''}"
-              title=${dcTitle}
-              @click=${() => hasNested && this._toggleNestedExpand(site)}>
-              +${dc}
-              ${hasNested ? html`
-                <svg class="expand-toggle ${isExpanded ? 'expanded' : ''}"
-                  viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <polyline points="3,1 7,5 3,9"/>
-                </svg>
-              ` : nothing}
-            </span>
-          ` : nothing}
-          ${statusEntry ? this.statusIcon(statusEntry.status) : nothing}
-          ${showEdit ? html`
-            <a class="edit-link"
-              href="https://da.live/edit#/${this.org}/${site}${pagePath}"
-              target="_blank"
-              title="Open in editor"
-              aria-label="Open ${label} in editor">
-              ${EDIT_ICON}
-            </a>
-          ` : nothing}
-        </div>
-        ${isExpanded ? html`
-          <div class="sat-expand-content">
-            <ul class="expand-list">
-              ${this.renderNestedTree(nested, cascades)}
-            </ul>
-          </div>
-        ` : nothing}
-      </li>`;
-  }
-
-  renderSatRow(sat, outOfScope, showEdit = false) {
-    const statusEntry = this._taskStatuses.get(`${this.pages[0]?.path}:${sat.site}`);
-    return this.renderSatRowContent({
-      site: sat.site,
-      label: sat.label,
-      outOfScope,
-      showEdit,
-      showNested: !showEdit,
-      isSelected: this._singleSelectedSats.has(sat.site),
-      onToggle: () => this.toggleSingleSat(sat.site),
-      statusEntry,
-    });
-  }
-
-  // ──────────────────────────────────────
-  // Render: Bulk mode
-  // ──────────────────────────────────────
-
-  renderBulk() {
-    return html`
-      <div class="panel">
-        <div class="panel-header">
-          <h3 class="panel-title">${this._includedPages.size} of ${this.pages.length} pages selected</h3>
-          <span class="panel-subtitle">${this.site}</span>
-        </div>
-        <div class="panel-body">
-          ${this.renderBreadcrumb()}
-          ${this.renderDirectionSwitch()}
-          ${this._isUpwardMode ? nothing : this.renderSatelliteFilter()}
-          ${this._isLocalUpwardEmpty ? this.renderLocalUpwardEmpty() : html`
-            ${this.renderGlobalActionBar()}
-            ${this.renderUpwardSummary()}
-            ${this._executing ? this.renderProgress() : this.renderPageTable()}
-          `}
-          ${this.renderConfirm()}
-          ${this.renderFooter(
-    () => this.executeAll(),
-    this._busy
-      || this._isLocalUpwardEmpty
-      || this._includedPages.size === 0
-      || !this._canApplyBulk(),
-  )}
-        </div>
-      </div>
-    `;
-  }
-
-  _canApplyBulk() {
-    if (this._isUpwardMode) {
-      // Upward bulk: each page targets self; allowed if at least one page is applicable.
-      return this._activePages.some((p) => this._canApplySingle(p));
-    }
-    return this._selectedSats.size > 0 && this._hasAnyApplicablePages;
-  }
-
-  renderSatelliteFilter() {
-    const sats = Object.entries(this.satellites || {});
-    if (sats.length <= 1) return nothing;
-
-    return html`
-      <div class="satellite-grid satellite-filter-grid">
-        <div class="satellite-column">
-          <div class="column-heading">Satellites</div>
-          <ul class="satellite-list">
-            ${sats.map(([satSite, info]) => this.renderSatRowContent({
-    site: satSite,
-    label: info.label || satSite,
-    outOfScope: false,
-    showEdit: false,
-    showNested: true,
-    isSelected: this._selectedSats.has(satSite),
-    onToggle: () => this.toggleSatFilter(satSite),
-    statusEntry: null,
-  }))}
-          </ul>
-        </div>
-      </div>
-    `;
-  }
-
-  renderGlobalActionBar() {
-    return html`
-      <div class="action-row">
-        ${this.renderPicker(
-    'globalAction',
-    'Action for all',
-    this._globalAction,
-    this._actionOptions,
-    (v) => {
-      this._globalAction = v;
-      this._pageActions = new Map();
-      this._pageSyncModes = new Map();
-      this._resetExecution();
-    },
-  )}
-        ${this._shouldShowSyncPicker(this._globalAction) ? this.renderPicker(
-    'globalSyncMode',
-    'Sync mode',
-    this._globalSyncMode,
-    SYNC_OPTIONS,
-    (v) => { this._globalSyncMode = v; },
-  ) : html`<div class="action-row-spacer"></div>`}
-      </div>
-    `;
-  }
-
-  renderPageTable() {
-    const allChecked = this._includedPages.size === this.pages.length;
-    const someChecked = this._includedPages.size > 0 && !allChecked;
-    const showOverrides = !this._isUpwardMode && this._hasDownwardActions;
-    return html`
-      <table class="page-table">
-        <colgroup>
-          <col style="width:36px">
-          <col style="width:30%">
-          ${showOverrides ? html`<col style="width:100px">` : nothing}
-          <col>
-          <col style="width:80px">
-        </colgroup>
-        <thead>
-          <tr>
-            <th>
-              <input type="checkbox"
-                .checked=${allChecked}
-                .indeterminate=${someChecked}
-                @change=${() => this.toggleAllPages()} />
-            </th>
-            <th>Page</th>
-            ${showOverrides ? html`<th>Overrides</th>` : nothing}
-            <th>Action</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${this.pages.map((page) => this.renderPageRow(page, showOverrides))}
-        </tbody>
-      </table>
-    `;
-  }
-
-  renderPageRow(page, showOverrides) {
-    const isExpanded = this._expandedRows.has(page.path);
-    const summary = this.getOverrideSummary(page.path);
-    const action = this.getPageAction(page.path);
-
+  renderUpRow(page) {
+    const row = this._rows.get(page.path);
     return html`
       <tr>
-        <td class="cell-check">
-          <input type="checkbox"
-            .checked=${this._includedPages.has(page.path)}
-            @change=${() => this.togglePageInclude(page.path)} />
+        <th class="page" scope="row">
+          ${this.renderPageCell(page)}
+        </th>
+        <td class="up-state">${this.renderInheritChip(row)}</td>
+        <td class="cell">
+          ${row ? this._statusIcon(row) : html`<span class="cell-icon cell-loading"></span>`}
         </td>
-        <td class="cell-name">
-          <div class="page-name-cell"
-            @click=${() => this.toggleRow(page.path)}>
-            <span class="page-name">${page.name}</span>
-            ${showOverrides ? html`
-              <svg class="expand-toggle ${isExpanded ? 'expanded' : ''}"
-                viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
-                <polyline points="3,1 7,5 3,9"/>
-              </svg>
-            ` : nothing}
-          </div>
-        </td>
-        ${showOverrides ? html`
-          <td class="cell-overrides">
-            <span class="override-badge">
-              ${summary.inherited} following base
-            </span>
-            ${summary.custom > 0 ? html`
-              <span class="override-badge">
-                ${summary.custom} with local copy
-              </span>
-            ` : nothing}
-          </td>
-        ` : nothing}
-        <td class="cell-action">
-          <div class="page-action-pickers">
-            ${this.renderPicker(
-    `page-${page.path}`,
-    '',
-    action,
-    this._actionOptionsForPage(page),
-    (v) => this.setPageAction(page.path, v),
-  )}
-            <div class="sync-picker-slot ${this._shouldShowSyncPicker(action) ? '' : 'hidden'}">
-              ${this.renderPicker(
-    `page-sync-${page.path}`,
-    '',
-    this.getPageSyncMode(page.path),
-    SYNC_OPTIONS,
-    (v) => this.setPageSyncMode(page.path, v),
-  )}
-            </div>
-          </div>
-        </td>
-        <td class="cell-apply">
-          <div class="row-actions">
-            <sl-button @click=${() => this.executeRow(page)}
-              ?disabled=${this._busy || !this._canApplySingle(page)}>Apply</sl-button>
-          </div>
-        </td>
-      </tr>
-      ${isExpanded && !this._isUpwardMode ? this.renderExpandedRow(page) : nothing}
-    `;
+      </tr>`;
   }
 
-  renderExpandedRow(page) {
-    const overrides = this.getPageOverrides(page.path)
-      .filter((o) => this._selectedSats.has(o.site));
-    const inherited = overrides.filter((o) => !o.hasOverride);
-    const custom = overrides.filter((o) => o.hasOverride);
-    const colCount = (!this._isUpwardMode && this._hasDownwardActions) ? 5 : 4;
-
+  renderUpTable() {
     return html`
-      <tr class="expand-row">
-        <td colspan="${colCount}">
-          <div class="expand-content">
-            ${inherited.length ? html`
-              <div class="expand-column">
-                <div class="expand-heading">Following base</div>
-                <ul class="expand-list">
-                  ${inherited.map((sat) => html`
-                    <li>
-                      ${this.statusIcon(this._taskStatuses.get(`${page.path}:${sat.site}`)?.status)}
-                      ${sat.label}
-                    </li>
-                  `)}
-                </ul>
-              </div>
-            ` : nothing}
-            ${custom.length ? html`
-              <div class="expand-column">
-                <div class="expand-heading">With local copy</div>
-                <ul class="expand-list">
-                  ${custom.map((sat) => html`
-                    <li>
-                      ${this.statusIcon(this._taskStatuses.get(`${page.path}:${sat.site}`)?.status)}
-                      ${sat.label}
-                      <a class="edit-link" href="https://da.live/edit#/${this.org}/${sat.site}${page.path.replace(/\.[^/.]+$/, '')}" target="_blank" title="Open in editor">
-                        ${EDIT_ICON}
-                      </a>
-                    </li>
-                  `)}
-                </ul>
-              </div>
-            ` : nothing}
-          </div>
-        </td>
-      </tr>
-    `;
+      <div class="matrix-scroll">
+        <table class="matrix up-table">
+          <thead>
+            <tr>
+              <th class="corner">Page</th>
+              <th class="up-col">Inheritance</th>
+              <th class="up-col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${this._pages.map((page) => this.renderUpRow(page))}
+          </tbody>
+        </table>
+      </div>`;
   }
 
-  // ──────────────────────────────────────
-  // Render: Progress view
-  // ──────────────────────────────────────
+  // ── Render: action bar + confirm + success ────────────────────────────────
 
-  renderProgress() {
-    const stats = this._progressStats;
-    const pct = stats.total ? Math.round((stats.done / stats.total) * 100) : 0;
-
+  renderConfirm() {
+    const c = this._confirm;
+    if (!c) return nothing;
+    const unit = c.view === 'satellites' ? 'cell' : 'page';
+    const msg = `${c.label}: ${c.count} ${unit}${c.count === 1 ? '' : 's'}. Continue?`;
     return html`
-      <div class="progress-view">
-        <div class="progress-bar-container">
-          <div class="progress-bar" style="width:${pct}%"></div>
+      <div class="confirm-row ${c.destructive ? 'destructive' : ''}">
+        <div class="confirm-msg">${msg}</div>
+        <div class="confirm-actions">
+          <button class="s2-btn s2-btn-confirm" ?disabled=${c.count === 0} @click=${() => this._execute()}>Confirm</button>
+          <button class="s2-btn s2-btn-outline" @click=${() => this._dismissConfirm()}>Cancel</button>
         </div>
-        <div class="progress-summary">
-          <span>${stats.done} / ${stats.total} complete</span>
-          ${stats.success > 0 ? html`<span class="count-success">${stats.success} succeeded</span>` : nothing}
-          ${stats.error > 0 ? html`<span class="count-error">${stats.error} failed</span>` : nothing}
-        </div>
-        <ul class="progress-list">
-          ${[...this._taskStatuses.entries()].map(([key, { status, error }]) => {
-    const [pagePath, satSite] = key.split(':');
-    const pageName = pagePath.split('/').pop().replace(/\.[^/.]+$/, '');
-    const satLabel = this.satellites?.[satSite]?.label || satSite;
-    return html`
-              <li class="progress-item">
-                ${this.statusIcon(status)}
-                <span class="page-label">${pageName}</span>
-                <span class="sat-label">${satLabel}</span>
-                ${error ? html`<span class="error-msg">${error}</span>` : nothing}
-              </li>
-            `;
-  })}
-        </ul>
-      </div>
-    `;
+      </div>`;
   }
 
-  // ──────────────────────────────────────
-  // Main render
-  // ──────────────────────────────────────
+  // One bar, scoped to the active view. Satellites view acts on matrix cells
+  // (inherited vs local-copy); Source view acts on this site's pages vs base.
+  renderActionBar(view) {
+    const down = view === 'satellites';
+    const localScope = down ? 'custom' : 'override';
+    const rollout = this._countFor(view, 'inherited');
+    const local = this._countFor(view, localScope);
+    const off = this._busy || (down && this._includedTargets.size === 0);
+
+    return html`
+      <div class="action-bar">
+        <div class="action-group">
+          <span class="action-label">Roll out</span>
+          <sl-button ?disabled=${off || rollout === 0}
+            @click=${() => this._requestAction({
+    view, exec: 'publish', scope: 'inherited', label: 'Roll out to live',
+  })}>Live</sl-button>
+          <sl-button class="primary outline" ?disabled=${off || rollout === 0}
+            @click=${() => this._requestAction({
+    view, exec: 'preview', scope: 'inherited', label: 'Roll out to preview',
+  })}>Preview</sl-button>
+        </div>
+        <div class="action-group">
+          <span class="action-label">Sync</span>
+          <sl-button ?disabled=${off || local === 0}
+            @click=${() => this._requestAction({
+    view, exec: 'sync', scope: localScope, syncMode: 'merge', label: 'Sync (merge)',
+  })}>Merge</sl-button>
+          <sl-button class="primary outline" ?disabled=${off || local === 0}
+            @click=${() => this._requestAction({
+    view, exec: 'sync', scope: localScope, syncMode: 'override', label: 'Sync (override)', destructive: true,
+  })}>Override</sl-button>
+        </div>
+        <div class="action-group">
+          <span class="action-label">Inheritance</span>
+          <sl-button ?disabled=${off || local === 0}
+            @click=${() => this._requestAction({
+    view, exec: 'resume-inheritance', scope: localScope, label: 'Re-enable inheritance (remove local copy)', destructive: true,
+  })}>Re-enable</sl-button>
+          <sl-button class="primary outline" ?disabled=${off || rollout === 0}
+            @click=${() => this._requestAction({
+    view, exec: 'cancel-inheritance', scope: 'inherited', label: 'Cancel inheritance (create local copy)', destructive: true,
+  })}>Cancel</sl-button>
+        </div>
+      </div>`;
+  }
+
+  // Where to open a succeeded (page, satellite) result. Rollouts open the
+  // published page (preview → aem.page, live → aem.live); sync/cancel open the
+  // editor for the now-local copy. Re-enable removed the copy, so no link.
+  _resultUrl(action, pagePath, site) {
+    const clean = pagePath.replace(/\.html$/, '');
+    if (action === 'preview' || action === 'publish') {
+      const host = action === 'publish' ? 'aem.live' : 'aem.page';
+      return `https://main--${site}--${this.org}.${host}${clean}`;
+    }
+    if (action === 'resume-inheritance') return null;
+    return `https://da.live/edit#/${this.org}/${site}${clean}`;
+  }
+
+  _editUrl(site, pagePath) {
+    return `https://da.live/edit#/${this.org}/${site}${pagePath.replace(/\.html$/, '')}`;
+  }
+
+  // Editor URL for a page's actual content doc: this site when it has a local
+  // copy (or is the base), else the ancestor it inherits from. Only docs (html)
+  // have an editor; assets return null.
+  _editUrlForPage(page) {
+    if ((page.ext || 'html') !== 'html') return null;
+    const row = this._rows.get(page.path);
+    const site = row && row.category === 'inherited' ? row.source : this.site;
+    if (!site) return null;
+    return this._editUrl(site, page.path);
+  }
+
+  renderPageName(page) {
+    const url = this._editUrlForPage(page);
+    if (!url) return html`<span class="page-name" title=${page.path}>${page.path}</span>`;
+    return html`<a class="page-name page-link" href=${url} target="_blank" rel="noopener"
+      title="Open ${page.path} in editor">${page.path}</a>`;
+  }
+
+  // Drop a page from the selection (the column browser owns it).
+  _emitDeselect(page) {
+    this.dispatchEvent(new CustomEvent('deselect-page', {
+      detail: { site: this.site, path: page.path }, bubbles: true, composed: true,
+    }));
+  }
+
+  renderRemove(page) {
+    return html`<button class="row-remove" aria-label="Remove ${page.path} from selection"
+      title="Remove from selection" ?disabled=${this._busy}
+      @click=${() => this._emitDeselect(page)}>×</button>`;
+  }
+
+  // Flex wrapper kept inside the <th> so the cell still lays out as a table cell.
+  renderPageCell(page) {
+    return html`<div class="page-cell">${this.renderPageName(page)}${this.renderRemove(page)}</div>`;
+  }
+
+  // Short "{site} · {page}" label for a `${path}:${site}` result key.
+  _resultLabel(key) {
+    const ci = key.lastIndexOf(':');
+    const leaf = key.slice(0, ci).split('/').pop().replace(/\.[^/.]+$/, '');
+    return `${this._siteTitle(key.slice(ci + 1))} · ${leaf}`;
+  }
+
+  renderBusy() {
+    const done = [...this._taskStatus.values()]
+      .filter((t) => t.status === 'success' || t.status === 'error').length;
+    const total = this._busyTotal || this._taskStatus.size;
+    const progress = total ? ` ${done}/${total}` : '';
+    return html`
+      <div class="busy-banner">
+        <span class="busy-spinner"></span>
+        <span>Working…${progress}</span>
+      </div>`;
+  }
+
+  renderSuccess() {
+    const s = this._success;
+    if (!s) return nothing;
+    const links = (s.results || []).map((key) => {
+      const ci = key.lastIndexOf(':');
+      const url = this._resultUrl(s.action, key.slice(0, ci), key.slice(ci + 1));
+      return url ? { url, label: this._resultLabel(key) } : null;
+    }).filter(Boolean);
+    const shown = links.slice(0, 10);
+    const extra = links.length - shown.length;
+
+    const errs = (s.errors || []).slice(0, 8).map((e) => (
+      e.key ? `${this._resultLabel(e.key)}: ${e.error}` : e.error
+    ));
+    const moreErr = (s.errors?.length || 0) - errs.length;
+    const allFailed = s.failed > 0 && s.ok === 0;
+
+    return html`
+      <div class="success-banner ${s.failed ? 'has-errors' : ''}">
+        <div class="success-head">
+          <span class="success-title">${icon(allFailed ? 'S2_Icon_AlertDiamond_20_N' : 'S2_Icon_CheckmarkCircle_20_N')}
+            ${s.label} — ${s.ok} succeeded${s.failed ? `, ${s.failed} failed` : ''}</span>
+          <button class="success-dismiss" @click=${() => { this._success = null; }}>Dismiss</button>
+        </div>
+        ${shown.length ? html`
+          <div class="success-links">
+            ${shown.map((l) => html`<a class="success-link" href=${l.url} target="_blank" rel="noopener">${l.label} ↗</a>`)}
+            ${extra > 0 ? html`<span class="success-more">+${extra} more</span>` : nothing}
+          </div>` : nothing}
+        ${errs.length ? html`
+          <ul class="error-list">
+            ${errs.map((m) => html`<li>${m}</li>`)}
+            ${moreErr > 0 ? html`<li>+${moreErr} more</li>` : nothing}
+          </ul>` : nothing}
+      </div>`;
+  }
+
+  // ── Render: sections ────────────────────────────────────────────────────
+
+  renderDownSection(tabbed) {
+    return html`
+      <div class="section">
+        ${tabbed ? nothing : html`<div class="section-head"><span class="section-label">Satellites for ${this._siteTitle(this.site)}</span></div>`}
+        ${this._targets.length
+    ? html`
+            ${this.renderMatrix()}
+            ${this.renderConfirm()}
+            ${this.renderActionBar('satellites')}`
+    : html`<div class="panel-empty">No satellites configured for this site.</div>`}
+      </div>`;
+  }
+
+  // Breadcrumb of the inheritance chain (root → current). Ancestor segments are
+  // clickable: each re-selects the same pages at that base so its matrix can act
+  // on them. The current site isn't a link. Local-only pages (no base
+  // counterpart) are left out of the hand-off.
+  renderChain() {
+    const ancestors = (this._roles.asSatellite?.chain || [])
+      .map((c) => ({ site: c.site, label: this._siteTitle(c.site) }));
+    const current = { site: this.site, label: this._siteTitle(this.site), current: true };
+    const nodes = [...ancestors, current];
+    const paths = this._pages
+      .filter((p) => this._rows.get(p.path)?.category !== 'local')
+      .map((p) => p.path);
+    return html`<span class="chain" aria-label="Inheritance chain">
+      ${nodes.map((node, i) => html`
+        ${i > 0 ? html`<span class="chain-sep" aria-hidden="true">›</span>` : nothing}
+        ${node.current
+    ? html`<span class="chain-node current">${node.label}</span>`
+    : html`<button class="chain-node chain-link" ?disabled=${this._busy || !paths.length}
+              title="Manage these pages in ${node.label}"
+              @click=${() => this._navigateTo(node.site, paths)}>${node.label}</button>`}
+      `)}
+    </span>`;
+  }
+
+  renderUpSection(tabbed) {
+    return html`
+      <div class="section">
+        ${tabbed ? nothing : html`<div class="section-head"><span class="section-label">Source</span></div>`}
+        ${this.renderUpTable()}
+        ${this.renderConfirm()}
+        ${this.renderActionBar('source')}
+      </div>`;
+  }
+
+  // The view in effect: a dual site picks via tabs; otherwise it's forced.
+  get _activeView() {
+    const roles = this._roles;
+    if (roles.asBase && roles.asSatellite) return this._tab;
+    if (roles.asBase) return 'satellites';
+    if (roles.asSatellite) return 'source';
+    return null;
+  }
+
+  _setTab(tab) {
+    if (this._tab === tab) return;
+    this._tab = tab;
+    this._confirm = null;
+  }
+
+  renderTabs() {
+    const tab = this._tab;
+    return html`
+      <div class="tabs" role="tablist">
+        <button class="tab ${tab === 'satellites' ? 'active' : ''}" role="tab"
+          @click=${() => this._setTab('satellites')}>Satellites</button>
+        <button class="tab ${tab === 'source' ? 'active' : ''}" role="tab"
+          @click=${() => this._setTab('source')}>Source</button>
+      </div>`;
+  }
 
   render() {
-    if (!this.pages?.length) return nothing;
+    if (!this._pages.length) {
+      return html`<div class="panel-empty">Select pages in the browser to act on them.</div>`;
+    }
+    const dual = !!(this._roles.asBase && this._roles.asSatellite);
+    const view = this._activeView;
 
-    if (this.isSinglePage) return this.renderSinglePage();
-    return this.renderBulk();
+    return html`
+      <div class="panel">
+        <div class="panel-header">
+          ${this.renderChain()}
+          <span class="panel-sub">${this._pages.length} page${this._pages.length === 1 ? '' : 's'} selected</span>
+        </div>
+        ${this._busy ? this.renderBusy() : this.renderSuccess()}
+        ${dual ? this.renderTabs() : nothing}
+        ${view === 'satellites' ? this.renderDownSection(dual) : nothing}
+        ${view === 'source' ? this.renderUpSection(dual) : nothing}
+        ${!view ? html`<div class="panel-empty">No MSM relationships configured for this site.</div>` : nothing}
+      </div>`;
   }
 }
 
