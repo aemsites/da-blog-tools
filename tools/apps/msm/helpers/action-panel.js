@@ -9,6 +9,23 @@ import {
   PUBLISH_LAG_MS,
 } from './api.js';
 import { icon } from '../core/icons.js';
+import {
+  cellKey,
+  findNode,
+  subtreeSites,
+  parentMap,
+  flattenAll,
+  flattenVisible,
+  columnState,
+  toggleTarget,
+  effectiveSource,
+  deriveCategory,
+  isOutOfSync,
+  scopedCells,
+  scopedPagesUp,
+  downGroups,
+  upGroups,
+} from './action-panel.model.js';
 
 const NX = 'https://da.live/nx';
 let sl;
@@ -26,7 +43,6 @@ try {
 // How many status probes to run at once when filling the matrix / table.
 const CELL_CONCURRENCY = 6;
 
-const cellKey = (pagePath, satSite) => `${pagePath}:${satSite}`;
 const sanitizeId = (s) => s.replace(/[^a-zA-Z0-9]/g, '-');
 
 /* eslint-disable no-restricted-syntax, no-await-in-loop */
@@ -109,72 +125,29 @@ class MsmActionPanel extends LitElement {
   // Flattened, depth-first list of *visible* columns (children shown only when
   // the parent is expanded).
   get _columns() {
-    const out = [];
-    const walk = (nodes, depth, parentSite) => {
-      nodes.forEach((n) => {
-        const childCount = n.children?.length || 0;
-        out.push({
-          site: n.site, label: n.label, depth, parentSite, childCount,
-        });
-        if (childCount && this._expandedCols.has(n.site)) walk(n.children, depth + 1, n.site);
-      });
-    };
-    walk(this._columnTree, 0, this.site);
-    return out;
+    return flattenVisible(this._columnTree, this.site, this._expandedCols);
   }
 
   // Every column in the subtree regardless of expansion — the basis for data
   // loading, target inclusion, and action scope (collapsed levels still count).
   get _allColumns() {
-    const out = [];
-    const walk = (nodes, depth, parentSite) => nodes.forEach((n) => {
-      out.push({
-        site: n.site, label: n.label, depth, parentSite, childCount: n.children?.length || 0,
-      });
-      if (n.children?.length) walk(n.children, depth + 1, n.site);
-    });
-    walk(this._columnTree, 0, this.site);
-    return out;
+    return flattenAll(this._columnTree, this.site);
   }
 
   _subtreeSites(site) {
-    const node = this._findNode(site);
-    if (!node) return [site];
-    const out = [];
-    const collect = (n) => { out.push(n.site); (n.children || []).forEach(collect); };
-    collect(node);
-    return out;
+    return subtreeSites(this._columnTree, site);
   }
 
   _columnState(site) {
-    const sub = this._subtreeSites(site);
-    const inc = sub.filter((s) => this._includedTargets.has(s)).length;
-    if (inc === 0) return 'unchecked';
-    if (inc === sub.length) return 'checked';
-    return 'indeterminate';
+    return columnState(this._columnTree, site, this._includedTargets);
   }
 
   _parentMap() {
-    const m = new Map();
-    const walk = (nodes, parent) => nodes.forEach((n) => {
-      m.set(n.site, parent);
-      if (n.children?.length) walk(n.children, n.site);
-    });
-    walk(this._columnTree, this.site);
-    return m;
+    return parentMap(this._columnTree, this.site);
   }
 
   _findNode(site) {
-    const find = (nodes) => {
-      let result = null;
-      nodes.some((n) => {
-        if (n.site === site) { result = n; return true; }
-        result = find(n.children || []);
-        return result !== null;
-      });
-      return result;
-    };
-    return find(this._columnTree);
+    return findNode(this._columnTree, site);
   }
 
   _labelFor(sat) {
@@ -198,14 +171,8 @@ class MsmActionPanel extends LitElement {
   // The source a satellite pulls from for a given page: the nearest ancestor
   // that holds a local copy of the page, else the base site. Resolves from
   // already-loaded cells (ancestors load before descendants).
-  _effectiveSource(page, sat, parentMap) {
-    let cur = parentMap.get(sat);
-    while (cur && cur !== this.site) {
-      const cell = this._cells.get(cellKey(page.path, cur));
-      if (cell?.hasOverride) return { site: cur, lm: cell.lastModified };
-      cur = parentMap.get(cur);
-    }
-    return { site: this.site, lm: page.lastModified };
+  _effectiveSource(page, sat, pm) {
+    return effectiveSource(page, sat, pm, this._cells, this.site);
   }
 
   // ── Selection lifecycle ─────────────────────────────────────────────────
@@ -237,7 +204,7 @@ class MsmActionPanel extends LitElement {
 
   async _loadCellsFor(sites) {
     const gen = this._loadGen;
-    const parentMap = this._parentMap();
+    const pm = this._parentMap();
     const tasks = [];
     this._pages.forEach((page) => {
       const ext = page.ext || 'html';
@@ -247,12 +214,10 @@ class MsmActionPanel extends LitElement {
           try {
             const ts = await getPageTimestamp(this.org, sat, page.path, ext);
             const hasOverride = ts.exists;
-            const src = this._effectiveSource(page, sat, parentMap);
+            const src = this._effectiveSource(page, sat, pm);
             const editLM = hasOverride ? ts.lastModified : src.lm;
             const status = await getPageStatus(this.org, sat, page.path, editLM, ext);
-            const outOfSync = !!(hasOverride && src.lm && ts.lastModified
-              && new Date(src.lm).getTime()
-                > new Date(ts.lastModified).getTime() + PUBLISH_LAG_MS);
+            const outOfSync = hasOverride && isOutOfSync(src.lm, ts.lastModified, PUBLISH_LAG_MS);
             if (gen !== this._loadGen) return;
             this._setCell(cellKey(page.path, sat), {
               hasOverride,
@@ -328,13 +293,11 @@ class MsmActionPanel extends LitElement {
           this._resolveUpwardSource(page),
         ]);
         const hasOverride = selfTs.exists;
-        let category = 'inherited';
-        if (hasOverride) category = src.exists ? 'override' : 'local';
+        const category = deriveCategory({ hasOverride, sourceExists: src.exists });
         const editLM = hasOverride ? selfTs.lastModified : src.lm;
         const status = await getPageStatus(this.org, this.site, page.path, editLM, ext);
-        const outOfSync = !!(category === 'override' && src.lm && selfTs.lastModified
-          && new Date(src.lm).getTime()
-            > new Date(selfTs.lastModified).getTime() + PUBLISH_LAG_MS);
+        const outOfSync = category === 'override'
+          && isOutOfSync(src.lm, selfTs.lastModified, PUBLISH_LAG_MS);
         if (gen !== this._loadGen) return;
         this._setRow(page.path, {
           category,
@@ -364,17 +327,7 @@ class MsmActionPanel extends LitElement {
   // Cascades like the dialog's scope chips: unchecking a column removes it and
   // its whole subtree; checking it adds the subtree and re-enables ancestors.
   _toggleTarget(site) {
-    const next = new Set(this._includedTargets);
-    const sub = this._subtreeSites(site);
-    if (next.has(site)) {
-      sub.forEach((s) => next.delete(s));
-    } else {
-      sub.forEach((s) => next.add(s));
-      const parentMap = this._parentMap();
-      let p = parentMap.get(site);
-      while (p && p !== this.site) { next.add(p); p = parentMap.get(p); }
-    }
-    this._includedTargets = next;
+    this._includedTargets = toggleTarget(this._columnTree, this._includedTargets, site, this.site);
   }
 
   // Expansion is display-only — all subtree data is already loaded.
@@ -389,23 +342,13 @@ class MsmActionPanel extends LitElement {
   // Included (page, satellite) downward cells matching a scope.
   // scope: 'inherited' (rollout / cancel) | 'custom' (sync / re-enable)
   _scopedCells(scope) {
-    const out = [];
-    const targets = this._allColumns.filter((c) => this._includedTargets.has(c.site));
-    this._pages.forEach((page) => {
-      targets.forEach((col) => {
-        const cell = this._cells.get(cellKey(page.path, col.site));
-        if (!cell) return;
-        const match = scope === 'custom' ? cell.hasOverride : !cell.hasOverride;
-        if (match) out.push({ page, satSite: col.site });
-      });
-    });
-    return out;
+    return scopedCells(this._allColumns, this._pages, this._includedTargets, this._cells, scope);
   }
 
   // Source-view (upward) pages matching a scope, by inheritance category.
   // scope: 'inherited' (roll out / cancel) | 'override' (sync / re-enable)
   _scopedPagesUp(scope) {
-    return this._pages.filter((p) => this._rows.get(p.path)?.category === scope);
+    return scopedPagesUp(this._pages, this._rows, scope);
   }
 
   _countFor(view, scope) {
@@ -428,28 +371,27 @@ class MsmActionPanel extends LitElement {
   // call, the pages that share its source — so sync / cancel pull from the
   // right base at any tree depth (source can differ per page).
   _downGroups(scope) {
-    const parentMap = this._parentMap();
-    const groups = new Map();
-    this._scopedCells(scope).forEach(({ page, satSite }) => {
-      const source = this._effectiveSource(page, satSite, parentMap).site;
-      const key = `${satSite}|${source}`;
-      if (!groups.has(key)) groups.set(key, { target: satSite, source, pages: [] });
-      groups.get(key).pages.push(page);
+    return downGroups({
+      tree: this._columnTree,
+      pages: this._pages,
+      allColumns: this._allColumns,
+      included: this._includedTargets,
+      cells: this._cells,
+      rootSite: this.site,
+      scope,
     });
-    return [...groups.values()];
   }
 
   // Source view: target is always this site; source is each page's resolved
   // nearest ancestor with content (already computed in `_rows`).
   _upGroups(scope) {
-    const groups = new Map();
-    this._scopedPagesUp(scope).forEach((page) => {
-      const source = this._rows.get(page.path)?.source || this._roles.asSatellite?.base;
-      const key = source || '_';
-      if (!groups.has(key)) groups.set(key, { target: this.site, source, pages: [] });
-      groups.get(key).pages.push(page);
+    return upGroups({
+      pages: this._pages,
+      rows: this._rows,
+      scope,
+      base: this._roles.asSatellite?.base,
+      target: this.site,
     });
-    return [...groups.values()];
   }
 
   async _execute() {
