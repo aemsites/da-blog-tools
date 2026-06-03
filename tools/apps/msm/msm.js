@@ -129,6 +129,12 @@ class MsmApp extends LitElement {
     browser?.selectPaths(site, paths);
   }
 
+  handleDeselectPage(e) {
+    const { site, path } = e.detail || {};
+    const browser = this.shadowRoot.querySelector('msm-column-browser');
+    browser?.deselectPath(site, path);
+  }
+
   handleDeepLinkWarning(e) {
     const { requestedPath, lastResolvedPath } = e.detail || {};
     const tail = lastResolvedPath ? ` (navigated as far as ${lastResolvedPath})` : '';
@@ -194,6 +200,7 @@ class MsmApp extends LitElement {
           .msmConfig=${this._msmConfig}
           .pages=${this._selectedItems}
           @navigate-pages=${this.handleNavigatePages}
+          @deselect-page=${this.handleDeselectPage}
         ></msm-action-panel>
       </div>
     `;

@@ -604,6 +604,7 @@ class MsmActionPanel extends LitElement {
               <tr>
                 <th class="page" scope="row">
                   ${this.renderPageName(page)}
+                  ${this.renderRemove(page)}
                 </th>
                 ${columns.map((col) => html`
                   <td class="cell ${col.depth > 0 ? 'nested' : ''} ${this._includedTargets.has(col.site) ? '' : 'dim'}">
@@ -637,6 +638,7 @@ class MsmActionPanel extends LitElement {
       <tr>
         <th class="page" scope="row">
           ${this.renderPageName(page)}
+          ${this.renderRemove(page)}
         </th>
         <td class="up-state">${this.renderInheritChip(row)}</td>
         <td class="cell">
@@ -760,6 +762,19 @@ class MsmActionPanel extends LitElement {
     if (!url) return html`<span class="page-name" title=${page.path}>${page.path}</span>`;
     return html`<a class="page-name page-link" href=${url} target="_blank" rel="noopener"
       title="Open ${page.path} in editor">${page.path}</a>`;
+  }
+
+  // Drop a page from the selection (the column browser owns it).
+  _emitDeselect(page) {
+    this.dispatchEvent(new CustomEvent('deselect-page', {
+      detail: { site: this.site, path: page.path }, bubbles: true, composed: true,
+    }));
+  }
+
+  renderRemove(page) {
+    return html`<button class="row-remove" aria-label="Remove ${page.path} from selection"
+      title="Remove from selection" ?disabled=${this._busy}
+      @click=${() => this._emitDeselect(page)}>×</button>`;
   }
 
   // Short "{site} · {page}" label for a `${path}:${site}` result key.

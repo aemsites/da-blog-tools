@@ -212,6 +212,21 @@ class MsmColumnBrowser extends LitElement {
     this.emitSelection(site);
   }
 
+  // Remove a single page from the selection (used by the action panel's
+  // per-row remove control). Mirrors the deselect branch of _togglePage.
+  deselectPath(site, path) {
+    const key = `${site}:${path}`;
+    if (!this._selectedPages.has(key)) return;
+    const pages = new Map(this._selectedPages);
+    pages.delete(key);
+    const drop = new Set(this._ancestorContainerKeys(site, path));
+    const containers = new Set();
+    this._checkedContainers.forEach((k) => { if (!drop.has(k)) containers.add(k); });
+    this._selectedPages = pages;
+    this._checkedContainers = containers;
+    this.emitSelection(site);
+  }
+
   // Resolve a site-root-relative page path to its leaf item by listing the
   // folder it lives in. Returns null when the page doesn't exist on that site.
   async _resolveLeaf(site, path) {

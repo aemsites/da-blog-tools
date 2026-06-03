@@ -241,6 +241,9 @@
 
 /* Page row headers */
 .matrix .page {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   text-align: left;
   padding: 6px 16px 6px 4px;
   font-weight: 400;
@@ -248,10 +251,42 @@
 }
 
 .page-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--s2-gray-900);
+}
+
+/* Per-row remove — subtle, revealed on row hover / focus */
+.row-remove {
+  appearance: none;
+  background: none;
+  border: none;
+  flex-shrink: 0;
+  padding: 0 2px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--s2-gray-500);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.row-remove:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--s2-blue-800, #1473e6);
+  outline-offset: 1px;
+}
+
+.row-remove:hover:not(:disabled) {
+  color: var(--s2-gray-900);
+}
+
+.matrix tr:hover .row-remove,
+.matrix tr:focus-within .row-remove {
+  opacity: 1;
 }
 
 a.page-link {
