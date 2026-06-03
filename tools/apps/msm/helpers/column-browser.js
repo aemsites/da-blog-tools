@@ -195,6 +195,33 @@ class MsmColumnBrowser extends LitElement {
     this.dispatchEvent(new CustomEvent('deep-link-consumed', { bubbles: true, composed: true }));
   }
 
+  // Programmatically select a set of leaf pages at a site (used by the action
+  // panel's "manage in base" hand-off). Opens the site, resolves each path to
+  // its real leaf item, replaces the selection, and emits it.
+  async selectPaths(site, paths) {
+    if (!site || !paths?.length) return;
+    const siteItem = this._columns[0]?.items.find((it) => it.site === site);
+    if (!siteItem) return;
+    await this.navigateToFolder(0, siteItem);
+    const resolved = await Promise.all(paths.map((p) => this._resolveLeaf(site, p)));
+    this._crawlGen.forEach((v, k) => this._crawlGen.set(k, v + 1));
+    const selected = new Map();
+    resolved.forEach((leaf) => { if (leaf) selected.set(itemKey(leaf), leaf); });
+    this._selectedPages = selected;
+    this._checkedContainers = new Set();
+    this.emitSelection(site);
+  }
+
+  // Resolve a site-root-relative page path to its leaf item by listing the
+  // folder it lives in. Returns null when the page doesn't exist on that site.
+  async _resolveLeaf(site, path) {
+    const idx = path.lastIndexOf('/');
+    const parentPath = idx > 0 ? path.slice(0, idx) : '/';
+    const items = await this._loadFolderItems(site, parentPath).catch(() => []);
+    const leaf = items.find((it) => it.path === path);
+    return leaf ? { ...leaf, site: leaf.site || site } : null;
+  }
+
   // ── Navigation ────────────────────────────────────────────────────────────
 
   async navigateToFolder(colIdx, item) {
@@ -314,8 +341,22 @@ class MsmColumnBrowser extends LitElement {
     return keys;
   }
 
+  // MSM actions are defined relative to one site's position in the inheritance
+  // tree, so a selection must stay within a single site. Selecting on a new
+  // site clears whatever was selected on the previous one.
+  _clearIfOtherSite(site) {
+    const isOther = (k) => parseKey(k).site !== site;
+    const hasOther = [...this._selectedPages.keys()].some(isOther)
+      || [...this._checkedContainers].some(isOther);
+    if (!hasOther) return;
+    this._crawlGen.forEach((v, k) => this._crawlGen.set(k, v + 1));
+    this._selectedPages = new Map();
+    this._checkedContainers = new Set();
+  }
+
   _togglePage(item) {
     const key = itemKey(item);
+    if (!this._selectedPages.has(key)) this._clearIfOtherSite(item.site);
     const pages = new Map(this._selectedPages);
     if (pages.has(key)) {
       pages.delete(key);
@@ -341,6 +382,7 @@ class MsmColumnBrowser extends LitElement {
   }
 
   _selectSubtree(item) {
+    this._clearIfOtherSite(item.site);
     const rootKey = itemKey(item);
     this._checkedContainers = new Set(this._checkedContainers).add(rootKey);
     const gen = (this._crawlGen.get(rootKey) || 0) + 1;

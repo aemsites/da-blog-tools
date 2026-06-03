@@ -126,49 +126,6 @@
   gap: var(--spacing-400);
 }
 
-/* ===== Selection summary (temporary; replaced by action panel later) ===== */
-
-.msm-selection {
-  border: 1px solid var(--s2-gray-200);
-  border-radius: 8px;
-  padding: 12px 16px;
-  font-size: 14px;
-  color: var(--s2-gray-800);
-}
-
-.msm-selection.empty {
-  color: var(--s2-gray-500);
-  font-style: italic;
-}
-
-.msm-selection-header {
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-
-.msm-selection-list {
-  margin: 0;
-  padding-left: 18px;
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.msm-selection-list li {
-  padding: 2px 0;
-  font-family: var(--code-font-family, monospace);
-  font-size: 12px;
-}
-
-.sel-site {
-  display: inline-block;
-  margin-right: 8px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--s2-gray-100);
-  color: var(--s2-gray-700);
-  font-weight: 600;
-}
-
 /* ===== Responsive ===== */
 
 @media (width <= 600px) {

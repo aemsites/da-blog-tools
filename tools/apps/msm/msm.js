@@ -4,6 +4,7 @@ import { LitElement, html, nothing } from 'da-lit';
 import { fetchMsmConfig } from './helpers/api.js';
 import 'https://da.live/nx/public/sl/components.js';
 import './helpers/column-browser.js';
+import './helpers/action-panel.js';
 
 const NX = 'https://da.live/nx';
 let sl = null;
@@ -122,6 +123,12 @@ class MsmApp extends LitElement {
     this._currentSite = site;
   }
 
+  handleManageInBase(e) {
+    const { site, paths } = e.detail || {};
+    const browser = this.shadowRoot.querySelector('msm-column-browser');
+    browser?.selectPaths(site, paths);
+  }
+
   handleDeepLinkWarning(e) {
     const { requestedPath, lastResolvedPath } = e.detail || {};
     const tail = lastResolvedPath ? ` (navigated as far as ${lastResolvedPath})` : '';
@@ -149,23 +156,6 @@ class MsmApp extends LitElement {
           ></sl-input>
           <sl-button @click=${this.handleSubmit}>Load</sl-button>
         </form>
-      </div>
-    `;
-  }
-
-  renderSelectionSummary() {
-    const count = this._selectedItems.length;
-    if (!count) {
-      return html`<div class="msm-selection empty">No pages selected.</div>`;
-    }
-    return html`
-      <div class="msm-selection">
-        <div class="msm-selection-header">${count} page${count === 1 ? '' : 's'} selected</div>
-        <ul class="msm-selection-list">
-          ${this._selectedItems.map((item) => html`
-            <li><span class="sel-site">${item.site}</span>${item.path}</li>
-          `)}
-        </ul>
       </div>
     `;
   }
@@ -198,7 +188,13 @@ class MsmApp extends LitElement {
           @browse-selection=${this.handleBrowseSelection}
           @deep-link-warning=${this.handleDeepLinkWarning}
         ></msm-column-browser>
-        ${this.renderSelectionSummary()}
+        <msm-action-panel
+          .org=${this._org}
+          .site=${this._currentSite}
+          .msmConfig=${this._msmConfig}
+          .pages=${this._selectedItems}
+          @manage-in-base=${this.handleManageInBase}
+        ></msm-action-panel>
       </div>
     `;
   }
