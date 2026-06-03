@@ -745,16 +745,22 @@ class MsmActionPanel extends LitElement {
     const c = this._confirm;
     if (!c) return nothing;
     const p = `${c.pageCount} page${c.pageCount === 1 ? '' : 's'}`;
+    // Publish/preview push content TO sites; the copy-affecting actions act on
+    // copies AT sites.
+    const prep = (c.exec === 'publish' || c.exec === 'preview') ? 'to' : 'at';
     let msg;
     if (c.view === 'linked' && c.siteNames.length) {
       const n = c.siteNames.length;
-      msg = `${c.label} ${p} to ${n} linked site${n === 1 ? '' : 's'}: ${c.siteNames.join(', ')}?`;
+      msg = `${c.label} ${p} ${prep} ${n} site${n === 1 ? '' : 's'}: ${c.siteNames.join(', ')}?`;
     } else {
       msg = `${c.label} ${p}?`;
     }
     return html`
       <div class="confirm-row ${c.destructive ? 'destructive' : ''}">
-        <div class="confirm-msg">${msg}</div>
+        <div class="confirm-text">
+          <div class="confirm-msg">${msg}</div>
+          ${c.note ? html`<div class="confirm-note">${c.note}</div>` : nothing}
+        </div>
         <div class="confirm-actions">
           <button class="s2-btn s2-btn-confirm" ?disabled=${c.count === 0} @click=${() => this._execute()}>Confirm</button>
           <button class="s2-btn s2-btn-outline" @click=${() => this._dismissConfirm()}>Cancel</button>
@@ -762,10 +768,6 @@ class MsmActionPanel extends LitElement {
       </div>`;
   }
 
-  // One bar, scoped to the active view. Buttons stand alone (no group labels);
-  // the view title + the target-naming confirm carry the destination. Linked
-  // view acts on matrix cells (linked vs detached); Source view acts on this
-  // site's pages vs its source.
   // True while the active view's cells/rows are still resolving. Actions stay
   // disabled until then so a click can't act on only the loaded subset.
   _viewLoading(view) {
@@ -774,45 +776,64 @@ class MsmActionPanel extends LitElement {
       : !sourceComplete(this._pages, this._rows);
   }
 
+  // One action button. `text` is the visible label; `def` carries the confirm
+  // label + scope; `cls` is the sl-button style tier (filled / gray outline /
+  // red outline). Tier is positional, not per-action — the destructive warning
+  // rides the confirm row, not the button colour.
+  _actionBtn(text, cls, disabled, def) {
+    return html`<sl-button class=${cls} ?disabled=${disabled}
+      @click=${() => this._requestAction(def)}>${text}</sl-button>`;
+  }
+
+  // Two rows scoped to the active view, grouped by the cell state each set of
+  // actions targets: Linked (publish / preview / detach) and Detached (merge /
+  // replace / reconnect).
   renderActionBar(view) {
     const publishable = this._countFor(view, 'linked');
     const detached = this._countFor(view, 'detached');
     const down = view === 'linked';
     const loading = this._viewLoading(view);
     const off = this._busy || loading || (down && this._includedTargets.size === 0);
+    const linkedOff = off || publishable === 0;
+    const detachedOff = off || detached === 0;
+
+    const publishDef = {
+      view, exec: 'publish', scope: 'linked', label: 'Publish',
+    };
+    const previewDef = {
+      view, exec: 'preview', scope: 'linked', label: 'Preview',
+    };
+    const detachDef = {
+      view, exec: 'detach', scope: 'linked', label: 'Detach', destructive: true, note: 'Creates an independent copy, breaking the link to the source.',
+    };
+    const mergeDef = {
+      view, exec: 'sync', scope: 'detached', syncMode: 'merge', label: 'Merge', note: 'Merges source changes into the independent copy.',
+    };
+    const replaceDef = {
+      view, exec: 'sync', scope: 'detached', syncMode: 'replace', label: 'Replace', destructive: true, note: 'Replaces the independent copy with the current source content.',
+    };
+    const reconnectDef = {
+      view, exec: 'reconnect', scope: 'detached', label: 'Reconnect', destructive: true, note: 'Removes the independent copy and restores the link to the source.',
+    };
 
     return html`
       ${loading ? html`<div class="action-calc"><span class="busy-spinner"></span>Calculating status…</div>` : nothing}
       <div class="action-bar">
-        <div class="action-group">
-          <sl-button ?disabled=${off || publishable === 0}
-            @click=${() => this._requestAction({
-    view, exec: 'publish', scope: 'linked', label: 'Publish',
-  })}>Publish</sl-button>
-          <sl-button class="primary outline" ?disabled=${off || publishable === 0}
-            @click=${() => this._requestAction({
-    view, exec: 'preview', scope: 'linked', label: 'Preview',
-  })}>Preview</sl-button>
+        <div class="action-row">
+          <span class="action-row-label">Linked</span>
+          <div class="action-group">
+            ${this._actionBtn('Publish', '', linkedOff, publishDef)}
+            ${this._actionBtn('Preview', 'primary outline', linkedOff, previewDef)}
+            ${this._actionBtn('Detach', 'negative outline', linkedOff, detachDef)}
+          </div>
         </div>
-        <div class="action-group">
-          <sl-button ?disabled=${off || detached === 0}
-            @click=${() => this._requestAction({
-    view, exec: 'sync', scope: 'detached', syncMode: 'merge', label: 'Merge',
-  })}>Merge</sl-button>
-          <sl-button class="primary outline" ?disabled=${off || detached === 0}
-            @click=${() => this._requestAction({
-    view, exec: 'sync', scope: 'detached', syncMode: 'replace', label: 'Replace', destructive: true,
-  })}>Replace</sl-button>
-        </div>
-        <div class="action-group">
-          <sl-button ?disabled=${off || detached === 0}
-            @click=${() => this._requestAction({
-    view, exec: 'reconnect', scope: 'detached', label: 'Reconnect (remove independent copy)', destructive: true,
-  })}>Reconnect</sl-button>
-          <sl-button class="primary outline" ?disabled=${off || publishable === 0}
-            @click=${() => this._requestAction({
-    view, exec: 'detach', scope: 'linked', label: 'Detach (create independent copy)', destructive: true,
-  })}>Detach</sl-button>
+        <div class="action-row">
+          <span class="action-row-label">Detached</span>
+          <div class="action-group">
+            ${this._actionBtn('Merge', '', detachedOff, mergeDef)}
+            ${this._actionBtn('Replace', 'primary outline', detachedOff, replaceDef)}
+            ${this._actionBtn('Reconnect', 'negative outline', detachedOff, reconnectDef)}
+          </div>
         </div>
       </div>`;
   }
