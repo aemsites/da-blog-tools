@@ -7,6 +7,7 @@ import {
   getAllMsmSites,
   getPageStatus,
   getStatusConfig,
+  PUBLISH_LAG_MS,
 } from './api.js';
 import { icon } from '../core/icons.js';
 
@@ -28,9 +29,6 @@ const FOLDER_ICON = icon('S2_Icon_Folder_20_N');
 const PAGE_ICON = icon('S2_Icon_File_20_N');
 const ARROW_RIGHT = icon('S2_Icon_ChevronRight_20_N', '0 0 20 20', 14, 14);
 const BACK_ARROW = icon('S2_Icon_ChevronLeft_20_N', '0 0 20 20', 14, 14);
-
-// Out-of-sync tolerance: publishing bumps lastModified slightly after the fact.
-const PUBLISH_LAG_MS = 5000;
 
 const itemKey = (item) => `${item.site || ''}:${item.path}`;
 const parseKey = (key) => {
@@ -138,7 +136,6 @@ class MsmColumnBrowser extends LitElement {
     }
     await this.navigateToFolder(0, siteItem);
     if (this.initialPath) await this._walkPath(this.initialPath);
-    this._dispatchDeepLinkConsumed();
     await this.scrollToActiveColumn();
     await this.scrollSelectionIntoView({ block: 'center', behavior: 'smooth' });
   }
@@ -189,10 +186,6 @@ class MsmColumnBrowser extends LitElement {
     this.dispatchEvent(new CustomEvent('deep-link-warning', {
       detail: { requestedPath, lastResolvedPath }, bubbles: true, composed: true,
     }));
-  }
-
-  _dispatchDeepLinkConsumed() {
-    this.dispatchEvent(new CustomEvent('deep-link-consumed', { bubbles: true, composed: true }));
   }
 
   // Programmatically select a set of leaf pages at a site (used by the action

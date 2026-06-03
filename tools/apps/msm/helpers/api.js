@@ -33,6 +33,7 @@ export {
   mergeFromBase,
 } from '../core/operations.js';
 export { getPageStatus, getStatusConfig, getPageTimestamp } from '../core/status.js';
+export { PUBLISH_LAG_MS } from '../core/fetch.js';
 
 const MAX_CONCURRENT = 5;
 

@@ -6,6 +6,7 @@ import {
   getPageStatus,
   getStatusConfig,
   executeBulkAction,
+  PUBLISH_LAG_MS,
 } from './api.js';
 import { icon } from '../core/icons.js';
 
@@ -22,15 +23,12 @@ try {
   console.warn('Failed to load action-panel styles:', e);
 }
 
-// Publishing bumps lastModified slightly after the publish timestamp is
-// recorded, producing a spurious "out of sync" signal. This absorbs the lag.
-const PUBLISH_LAG_MS = 5000;
-
 // How many status probes to run at once when filling the matrix / table.
 const CELL_CONCURRENCY = 6;
 
 const cellKey = (pagePath, satSite) => `${pagePath}:${satSite}`;
 const cleanPath = (p) => p.replace(/\.[^/.]+$/, '');
+const sanitizeId = (s) => s.replace(/[^a-zA-Z0-9]/g, '-');
 
 /* eslint-disable no-restricted-syntax, no-await-in-loop */
 async function runPool(makeTasks, limit) {
@@ -172,11 +170,15 @@ class MsmActionPanel extends LitElement {
   }
 
   _findNode(site) {
-    const find = (nodes) => nodes.reduce((acc, n) => {
-      if (acc) return acc;
-      if (n.site === site) return n;
-      return find(n.children || []);
-    }, null);
+    const find = (nodes) => {
+      let result = null;
+      nodes.some((n) => {
+        if (n.site === site) { result = n; return true; }
+        result = find(n.children || []);
+        return result !== null;
+      });
+      return result;
+    };
     return find(this._columnTree);
   }
 
@@ -568,7 +570,8 @@ class MsmActionPanel extends LitElement {
     const state = this._columnState(col.site);
     const expanded = this._expandedCols.has(col.site);
     return html`
-      <th class="target ${state === 'unchecked' ? 'off' : ''} ${col.depth > 0 ? 'nested' : ''}">
+      <th class="target ${state === 'unchecked' ? 'off' : ''} ${col.depth > 0 ? 'nested' : ''}"
+          id="mat-col-${sanitizeId(col.site)}">
         <div class="target-head">
           ${col.childCount ? html`
             <button class="col-toggle ${expanded ? 'open' : ''}" ?disabled=${this._busy}
@@ -595,18 +598,19 @@ class MsmActionPanel extends LitElement {
         <table class="matrix">
           <thead>
             <tr>
-              <th class="corner">Page</th>
+              <th class="corner" id="mat-page-hdr">Page</th>
               ${columns.map((col) => this.renderTargetHeader(col))}
             </tr>
           </thead>
           <tbody>
             ${this._pages.map((page) => html`
               <tr>
-                <th class="page" scope="row">
+                <th class="page" scope="row" id="mat-row-${sanitizeId(page.path)}">
                   ${this.renderPageCell(page)}
                 </th>
                 ${columns.map((col) => html`
-                  <td class="cell ${col.depth > 0 ? 'nested' : ''} ${this._includedTargets.has(col.site) ? '' : 'dim'}">
+                  <td class="cell ${col.depth > 0 ? 'nested' : ''} ${this._includedTargets.has(col.site) ? '' : 'dim'}"
+                      headers="mat-row-${sanitizeId(page.path)} mat-col-${sanitizeId(col.site)}">
                     ${this.renderCell(page, col.site)}
                   </td>`)}
               </tr>`)}
@@ -633,13 +637,14 @@ class MsmActionPanel extends LitElement {
 
   renderUpRow(page) {
     const row = this._rows.get(page.path);
+    const rid = `up-row-${sanitizeId(page.path)}`;
     return html`
       <tr>
-        <th class="page" scope="row">
+        <th class="page" scope="row" id=${rid}>
           ${this.renderPageCell(page)}
         </th>
-        <td class="up-state">${this.renderInheritChip(row)}</td>
-        <td class="cell">
+        <td class="up-state" headers="${rid} up-inherit-hdr">${this.renderInheritChip(row)}</td>
+        <td class="cell" headers="${rid} up-status-hdr">
           ${row ? this._statusIcon(row) : html`<span class="cell-icon cell-loading"></span>`}
         </td>
       </tr>`;
@@ -651,9 +656,9 @@ class MsmActionPanel extends LitElement {
         <table class="matrix up-table">
           <thead>
             <tr>
-              <th class="corner">Page</th>
-              <th class="up-col">Inheritance</th>
-              <th class="up-col">Status</th>
+              <th class="corner" id="up-page-hdr">Page</th>
+              <th class="up-col" id="up-inherit-hdr">Inheritance</th>
+              <th class="up-col" id="up-status-hdr">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -905,8 +910,10 @@ class MsmActionPanel extends LitElement {
     return html`
       <div class="tabs" role="tablist">
         <button class="tab ${tab === 'satellites' ? 'active' : ''}" role="tab"
+          aria-selected=${tab === 'satellites' ? 'true' : 'false'}
           @click=${() => this._setTab('satellites')}>Satellites</button>
         <button class="tab ${tab === 'source' ? 'active' : ''}" role="tab"
+          aria-selected=${tab === 'source' ? 'true' : 'false'}
           @click=${() => this._setTab('source')}>Source</button>
       </div>`;
   }
