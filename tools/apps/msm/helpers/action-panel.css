@@ -186,7 +186,8 @@
   color: var(--s2-gray-800);
 }
 
-/* Satellite name as a link: jumps to that site (down the tree) */
+/* Satellite name: reads as a column label, reveals its jump affordance
+   (down the tree) on hover so a row of columns isn't a wall of blue links. */
 .target-jump {
   appearance: none;
   background: none;
@@ -194,7 +195,7 @@
   padding: 0;
   font: inherit;
   font-weight: 600;
-  color: var(--s2-blue-800, #1473e6);
+  color: var(--s2-gray-800);
   cursor: pointer;
 }
 
@@ -204,6 +205,7 @@
 }
 
 .target-jump:hover:not(:disabled) {
+  color: var(--s2-blue-800, #1473e6);
   text-decoration: underline;
 }
 
