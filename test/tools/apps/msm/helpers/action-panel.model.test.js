@@ -16,6 +16,7 @@ import {
   scopedPagesUp,
   downGroups,
   upGroups,
+  planSelectionLoad,
 } from '../../../../../tools/apps/msm/helpers/action-panel.model.js';
 
 // Satellite subtree centered on root `global`:
@@ -246,5 +247,107 @@ describe('upGroups', () => {
     assert.equal(bySource.global.pages.length, 2); // /a + /c (fallback)
     assert.equal(bySource.na.pages.length, 1);
     groups.forEach((g) => assert.equal(g.target, 'apac'));
+  });
+});
+
+describe('planSelectionLoad', () => {
+  const base = {
+    prevContextKey: 'org|apac',
+    contextKey: 'org|apac',
+    loadedDownPaths: new Set(),
+    loadedUpPaths: new Set(),
+    hasBase: true,
+    hasSatellite: false,
+  };
+  const paths = (list) => list.map((p) => p.path);
+
+  it('is a noop when context and selection are unchanged', () => {
+    const plan = planSelectionLoad({
+      ...base, prevSelKey: '/a', selKey: '/a', pages: [{ path: '/a' }],
+    });
+    assert.equal(plan.kind, 'noop');
+    assert.deepEqual(plan.downPages, []);
+    assert.deepEqual(plan.upPages, []);
+  });
+
+  it('resets and loads all selected pages when the site changes', () => {
+    const plan = planSelectionLoad({
+      ...base,
+      prevContextKey: 'org|global',
+      prevSelKey: '/x',
+      selKey: '/a,/b',
+      pages: [{ path: '/a' }, { path: '/b' }],
+      // even pre-loaded paths reload on a context change
+      loadedDownPaths: new Set(['/a']),
+    });
+    assert.equal(plan.kind, 'reset');
+    assert.deepEqual(paths(plan.downPages), ['/a', '/b']);
+  });
+
+  it('loads only newly-added pages on a selection change', () => {
+    const plan = planSelectionLoad({
+      ...base,
+      prevSelKey: '/a',
+      selKey: '/a,/b',
+      pages: [{ path: '/a' }, { path: '/b' }],
+      loadedDownPaths: new Set(['/a']),
+    });
+    assert.equal(plan.kind, 'incremental');
+    assert.deepEqual(paths(plan.downPages), ['/b']);
+  });
+
+  it('loads nothing when a page is removed (kept data, no refetch)', () => {
+    const plan = planSelectionLoad({
+      ...base,
+      prevSelKey: '/a,/b',
+      selKey: '/a',
+      pages: [{ path: '/a' }],
+      loadedDownPaths: new Set(['/a', '/b']),
+    });
+    assert.equal(plan.kind, 'incremental');
+    assert.deepEqual(plan.downPages, []);
+  });
+
+  it('loads nothing when re-adding a previously-loaded page', () => {
+    const plan = planSelectionLoad({
+      ...base,
+      prevSelKey: '/a',
+      selKey: '/a,/b',
+      pages: [{ path: '/a' }, { path: '/b' }],
+      // /b was removed earlier but its data was kept
+      loadedDownPaths: new Set(['/a', '/b']),
+    });
+    assert.equal(plan.kind, 'incremental');
+    assert.deepEqual(plan.downPages, []);
+  });
+
+  it('filters down and up views independently for a dual site', () => {
+    const plan = planSelectionLoad({
+      ...base,
+      hasSatellite: true,
+      prevSelKey: '/a',
+      selKey: '/a,/b',
+      pages: [{ path: '/a' }, { path: '/b' }],
+      loadedDownPaths: new Set(['/a']),
+      loadedUpPaths: new Set(['/a', '/b']),
+    });
+    assert.equal(plan.kind, 'incremental');
+    assert.deepEqual(paths(plan.downPages), ['/b']); // /b missing downstream
+    assert.deepEqual(plan.upPages, []); // both already loaded upstream
+  });
+
+  it('skips a view whose role is absent', () => {
+    const plan = planSelectionLoad({
+      ...base,
+      hasBase: false,
+      hasSatellite: true,
+      prevContextKey: 'org|global',
+      prevSelKey: '',
+      selKey: '/a',
+      pages: [{ path: '/a' }],
+    });
+    assert.equal(plan.kind, 'reset');
+    assert.deepEqual(plan.downPages, []); // not a base → no matrix load
+    assert.deepEqual(paths(plan.upPages), ['/a']);
   });
 });

@@ -186,3 +186,32 @@ export function upGroups({
   });
   return [...groups.values()];
 }
+
+// Decide what the action panel should load when its selection changes. The
+// context key is `org|site`; a context change is always a full reset (selection
+// is single-site). Within a context, only newly-added pages load — removed
+// pages keep their already-loaded data (instant re-add, no refetch). Returns the
+// per-view page lists to load (empty when that role/view doesn't apply).
+//   - 'noop'        nothing changed
+//   - 'reset'       context changed → load all selected pages per role
+//   - 'incremental' selection changed → load only pages not already loaded
+export function planSelectionLoad({
+  prevContextKey, prevSelKey, contextKey, selKey,
+  pages, loadedDownPaths, loadedUpPaths, hasBase, hasSatellite,
+}) {
+  if (contextKey === prevContextKey && selKey === prevSelKey) {
+    return { kind: 'noop', downPages: [], upPages: [] };
+  }
+  if (contextKey !== prevContextKey) {
+    return {
+      kind: 'reset',
+      downPages: hasBase ? pages : [],
+      upPages: hasSatellite ? pages : [],
+    };
+  }
+  return {
+    kind: 'incremental',
+    downPages: hasBase ? pages.filter((p) => !loadedDownPaths.has(p.path)) : [],
+    upPages: hasSatellite ? pages.filter((p) => !loadedUpPaths.has(p.path)) : [],
+  };
+}

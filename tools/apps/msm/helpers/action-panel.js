@@ -25,6 +25,7 @@ import {
   scopedPagesUp,
   downGroups,
   upGroups,
+  planSelectionLoad,
 } from './action-panel.model.js';
 
 const NX = 'https://da.live/nx';
@@ -87,7 +88,12 @@ class MsmActionPanel extends LitElement {
     this._taskStatus = new Map();
     this._success = null;
     this._loadGen = 0;
-    this._lastKey = '';
+    this._contextKey = '';
+    this._selKey = '';
+    // Pages we've already dispatched loads for, per view — the basis for
+    // loading only newly-added pages on a selection change.
+    this._loadedDownPaths = new Set();
+    this._loadedUpPaths = new Set();
     this._busyTotal = 0;
   }
 
@@ -177,21 +183,48 @@ class MsmActionPanel extends LitElement {
 
   // ── Selection lifecycle ─────────────────────────────────────────────────
 
+  // A context change (different org/site — always a full reset, since selection
+  // is single-site) wipes and reloads everything. A selection change within the
+  // same context keeps loaded rows and fetches only the newly-added pages;
+  // removed pages just stop rendering. Column include/expand state is preserved
+  // across selection changes — it's about satellites, not pages.
   _resetForSelection() {
-    const key = `${this.org}|${this.site}|${this._pages.map((p) => p.path).sort().join(',')}`;
-    if (key === this._lastKey) return;
-    this._lastKey = key;
-    this._loadGen += 1;
-    this._cells = new Map();
-    this._rows = new Map();
-    this._includedTargets = new Set(this._allColumns.map((c) => c.site));
-    this._expandedCols = new Set();
-    this._tab = 'satellites';
-    this._taskStatus = new Map();
-    this._confirm = null;
-    this._success = null;
-    if (this._roles.asBase) this._loadAll();
-    if (this._roles.asSatellite) this._loadRows();
+    const contextKey = `${this.org}|${this.site}`;
+    const selKey = this._pages.map((p) => p.path).sort().join(',');
+    const plan = planSelectionLoad({
+      prevContextKey: this._contextKey,
+      prevSelKey: this._selKey,
+      contextKey,
+      selKey,
+      pages: this._pages,
+      loadedDownPaths: this._loadedDownPaths,
+      loadedUpPaths: this._loadedUpPaths,
+      hasBase: !!this._roles.asBase,
+      hasSatellite: !!this._roles.asSatellite,
+    });
+    if (plan.kind === 'noop') return;
+    this._contextKey = contextKey;
+    this._selKey = selKey;
+
+    if (plan.kind === 'reset') {
+      this._loadGen += 1;
+      this._cells = new Map();
+      this._rows = new Map();
+      this._loadedDownPaths = new Set();
+      this._loadedUpPaths = new Set();
+      this._includedTargets = new Set(this._allColumns.map((c) => c.site));
+      this._expandedCols = new Set();
+      this._tab = 'satellites';
+      this._taskStatus = new Map();
+      this._confirm = null;
+      this._success = null;
+    } else {
+      // Selection changed within the context: a pending confirm's scope is stale.
+      this._confirm = null;
+    }
+
+    if (plan.downPages.length) this._loadAll(plan.downPages);
+    if (plan.upPages.length) this._loadRows(plan.upPages);
   }
 
   // ── Downward matrix data ──────────────────────────────────────────────────
@@ -202,11 +235,11 @@ class MsmActionPanel extends LitElement {
     this._cells = next;
   }
 
-  async _loadCellsFor(sites) {
+  async _loadCellsFor(sites, pages = this._pages) {
     const gen = this._loadGen;
     const pm = this._parentMap();
     const tasks = [];
-    this._pages.forEach((page) => {
+    pages.forEach((page) => {
       const ext = page.ext || 'html';
       sites.forEach((sat) => {
         tasks.push(async () => {
@@ -244,9 +277,11 @@ class MsmActionPanel extends LitElement {
     await runPool(tasks, CELL_CONCURRENCY);
   }
 
-  // Probe the entire subtree, shallow→deep so each level's source resolves
-  // against freshly-loaded ancestors.
-  async _loadAll() {
+  // Probe the given pages across the entire subtree, shallow→deep so each
+  // level's source resolves against freshly-loaded ancestors. Defaults to the
+  // whole selection; callers pass a subset to load only added or acted pages.
+  async _loadAll(pages = this._pages) {
+    pages.forEach((p) => this._loadedDownPaths.add(p.path));
     const byDepth = new Map();
     this._allColumns.forEach((c) => {
       if (!byDepth.has(c.depth)) byDepth.set(c.depth, []);
@@ -254,7 +289,7 @@ class MsmActionPanel extends LitElement {
     });
     const depths = [...byDepth.keys()].sort((a, b) => a - b);
     /* eslint-disable no-restricted-syntax, no-await-in-loop */
-    for (const d of depths) await this._loadCellsFor(byDepth.get(d));
+    for (const d of depths) await this._loadCellsFor(byDepth.get(d), pages);
     /* eslint-enable no-restricted-syntax, no-await-in-loop */
   }
 
@@ -282,9 +317,10 @@ class MsmActionPanel extends LitElement {
     return { site: this._roles.asSatellite?.base, lm: null, exists: false };
   }
 
-  async _loadRows() {
+  async _loadRows(pages = this._pages) {
+    pages.forEach((p) => this._loadedUpPaths.add(p.path));
     const gen = this._loadGen;
-    const tasks = this._pages.map((page) => async () => {
+    const tasks = pages.map((page) => async () => {
       if (gen !== this._loadGen) return;
       const ext = page.ext || 'html';
       try {
@@ -435,7 +471,13 @@ class MsmActionPanel extends LitElement {
     }
     /* eslint-enable no-restricted-syntax, no-await-in-loop */
 
-    if (view === 'satellites') await this._loadAll(); else await this._loadRows();
+    // Recompute only the pages we acted on. Reloading them across the whole
+    // column tree (depth-ordered) also captures descendants whose effective
+    // source shifted — e.g. a new local copy becomes the source for its subtree.
+    const actedPaths = new Set(groups.flatMap((g) => g.pages.map((p) => p.path)));
+    const actedPages = this._pages.filter((p) => actedPaths.has(p.path));
+    if (view === 'satellites') await this._loadAll(actedPages);
+    else await this._loadRows(actedPages);
     this._taskStatus = new Map();
     this._busy = false;
     this._success = {
