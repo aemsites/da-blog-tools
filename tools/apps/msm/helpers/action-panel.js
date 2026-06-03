@@ -95,10 +95,6 @@ class MsmActionPanel extends LitElement {
     return (this.pages || []).filter((p) => (p.site || this.site) === this.site);
   }
 
-  get _activePages() {
-    return this._pages;
-  }
-
   // Direct satellites of this site as [satSite, { label, descendantCount, descendants }].
   get _targets() {
     return Object.entries(this._roles.asBase?.satellites || {});
@@ -294,10 +290,9 @@ class MsmActionPanel extends LitElement {
       byDepth.get(c.depth).push(c.site);
     });
     const depths = [...byDepth.keys()].sort((a, b) => a - b);
-    await depths.reduce(
-      (chain, d) => chain.then(() => this._loadCellsFor(byDepth.get(d))),
-      Promise.resolve(),
-    );
+    /* eslint-disable no-restricted-syntax, no-await-in-loop */
+    for (const d of depths) await this._loadCellsFor(byDepth.get(d));
+    /* eslint-enable no-restricted-syntax, no-await-in-loop */
   }
 
   // ── Upward (satellite) row data ───────────────────────────────────────────
@@ -400,7 +395,7 @@ class MsmActionPanel extends LitElement {
   _scopedCells(scope) {
     const out = [];
     const targets = this._allColumns.filter((c) => this._includedTargets.has(c.site));
-    this._activePages.forEach((page) => {
+    this._pages.forEach((page) => {
       targets.forEach((col) => {
         const cell = this._cells.get(cellKey(page.path, col.site));
         if (!cell) return;
@@ -480,7 +475,8 @@ class MsmActionPanel extends LitElement {
     this._busyTotal = groups.reduce((n, g) => n + g.pages.length, 0);
     const succeeded = [];
     const errors = [];
-    await groups.reduce((chain, g) => chain.then(async () => {
+    /* eslint-disable no-restricted-syntax, no-await-in-loop */
+    for (const g of groups) {
       const results = await executeBulkAction({
         org: this.org,
         baseSite: g.source,
@@ -498,7 +494,8 @@ class MsmActionPanel extends LitElement {
           errors.push({ key: v?.key || null, error: v?.error || r.reason?.message || 'Failed' });
         }
       });
-    }), Promise.resolve());
+    }
+    /* eslint-enable no-restricted-syntax, no-await-in-loop */
 
     if (view === 'satellites') await this._loadAll(); else await this._loadRows();
     this._taskStatus = new Map();
