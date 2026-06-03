@@ -371,10 +371,22 @@
   background: #fff8f7;
 }
 
+.confirm-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 9px;
+}
+
 .confirm-msg {
   font-size: 13px;
   color: var(--s2-gray-900, #292929);
-  margin-bottom: 9px;
+  line-height: 1.4;
+}
+
+.confirm-note {
+  font-size: 12px;
+  color: var(--s2-gray-600, #6e6e6e);
   line-height: 1.4;
 }
 

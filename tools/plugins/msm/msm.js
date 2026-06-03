@@ -436,6 +436,63 @@ class DaMsm extends LitElement {
     this._confirmScope = [];
   }
 
+  // Display label for a site id (the current site, or a linked site).
+  _siteLabel(siteId) {
+    if (siteId === this.details.site) return this._asSource?.sourceLabel || this.details.site;
+    return this._linkedData.get(siteId)?.label || siteId;
+  }
+
+  // The source a linked site resolves to: nearest detached ancestor, else the
+  // current (root) site — mirrors the app's effectiveSource.
+  _effectiveSourceSite(siteId) {
+    const nearest = this._ancestorChain(siteId)
+      .find((id) => this._linkedData.get(id)?.isDetached === true);
+    return nearest || this.details.site;
+  }
+
+  // Label of the upstream source this page links to (Source-section context).
+  _upstreamLabel() {
+    return this._effectiveSource?.label
+      || this._asLinked?.sourceLabel || this._asLinked?.source || 'source';
+  }
+
+  // Confirm sentence (+ optional clarifier note), aligned with the MSM app's
+  // locked phrasing. Publish names the source and defers the target list to the
+  // scope chips; the copy actions name source/target inline.
+  _confirmText() {
+    const c = this._pendingConfirm;
+    if (!c) return {};
+    const { type, siteId } = c;
+    if (type === 'publish') {
+      return { message: `Publish this page from ${this._siteLabel(this.details.site)} to these linked sites:` };
+    }
+    // Source-section sync acts on this page's own link to its upstream source;
+    // linked-row actions act on a linked site relative to its source.
+    const sourceContext = type === 'sync-source';
+    const target = sourceContext ? this._siteLabel(this.details.site) : this._siteLabel(siteId);
+    const source = sourceContext
+      ? this._upstreamLabel() : this._siteLabel(this._effectiveSourceSite(siteId));
+    if (type === 'detach') {
+      return {
+        message: `Detach this page in ${target} from ${source}?`,
+        note: 'Creates an independent copy, breaking the link to the source.',
+      };
+    }
+    if (type === 'reconnect') {
+      return {
+        message: `Reconnect this page in ${target} to ${source}?`,
+        note: 'Removes the independent copy and restores the link to the source.',
+      };
+    }
+    if (type === 'sync' || type === 'sync-source') {
+      return {
+        message: `Sync this page in ${target} from ${source}?`,
+        note: 'Merge keeps your edits; Replace overwrites them with the source.',
+      };
+    }
+    return { message: c.message || null };
+  }
+
   // ── Overflow menu ─────────────────────────────────────────────────────────
 
   _openMenu(siteId, anchor) {
@@ -582,9 +639,13 @@ class DaMsm extends LitElement {
         <button class="btn btn-secondary" @click=${() => this._dismissConfirm()}>Cancel</button>`;
     }
 
+    const { message, note } = this._confirmText();
     return html`
       <div class="confirm-row ${isDestructive ? 'destructive' : ''}">
-        ${c.message ? html`<div class="confirm-msg">${c.message}</div>` : nothing}
+        ${message ? html`<div class="confirm-text">
+          <div class="confirm-msg">${message}</div>
+          ${note ? html`<div class="confirm-note">${note}</div>` : nothing}
+        </div>` : nothing}
         ${scopeChips}
         <div class="confirm-actions">${actions}</div>
       </div>`;
@@ -602,15 +663,10 @@ class DaMsm extends LitElement {
       const { path } = this.details;
       const effectiveSite = this._effectiveSource?.site || this._asLinked?.source;
       const pageUrl = `https://da.live/edit#/${org}/${effectiveSite}${path}`;
+      // No Reconnect here: in the source context it would delete the current
+      // page's own content (the page being edited). That destructive cleanup
+      // lives in the MSM app, not the in-editor plugin.
       items = [
-        ...(this._isDetached ? [{
-          label: 'Reconnect',
-          danger: true,
-          action: () => {
-            const source = this._asLinked?.sourceLabel || this._asLinked?.source || 'source';
-            this._openConfirm(this.details.site, 'reconnect', `Reconnect this page to its source? Your independent copy is removed and the page serves ${source}'s content again. This cannot be undone.`);
-          },
-        }, { sep: true }] : []),
         { label: 'Open source page ↗', action: () => { window.open(pageUrl, '_blank', 'noopener'); this._closeMenu(); } },
         { sep: true },
         manageApp,
@@ -625,7 +681,7 @@ class DaMsm extends LitElement {
           {
             label: 'Detach',
             danger: true,
-            action: () => this._openConfirm(siteId, 'detach', `Detach ${d.label || siteId}? It becomes an independent copy you preview and publish separately.`),
+            action: () => this._openConfirm(siteId, 'detach'),
           },
           { sep: true },
           manageApp,
@@ -634,7 +690,7 @@ class DaMsm extends LitElement {
           {
             label: 'Reconnect',
             danger: true,
-            action: () => this._openConfirm(siteId, 'reconnect', `Reconnect ${d.label || siteId} to its source? Its independent copy is removed and it serves source content again. This cannot be undone.`),
+            action: () => this._openConfirm(siteId, 'reconnect'),
           },
           { sep: true },
           openPage,

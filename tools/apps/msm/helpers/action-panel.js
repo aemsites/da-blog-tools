@@ -406,19 +406,22 @@ class MsmActionPanel extends LitElement {
 
   // ── Execution ─────────────────────────────────────────────────────────────
 
-  // Confirm detail: distinct page count and (for the linked-sites view) the
-  // target site names, so the confirm can name where the action lands.
+  // Confirm detail: counts plus the distinct source and target site names, taken
+  // from the execution grouping. Because the grouping resolves each page's real
+  // source, multi-level cases that pull from different sources surface as
+  // multiple sourceNames (so the confirm won't claim a single wrong "from").
   _confirmDetail(view, scope) {
-    if (view === 'linked') {
-      const cells = this._scopedCells(scope);
-      const pages = new Set(cells.map((c) => c.page.path));
-      const sites = [...new Set(cells.map((c) => c.targetSite))];
-      return {
-        count: cells.length, pageCount: pages.size, siteNames: sites.map((s) => this._labelFor(s)),
-      };
-    }
-    const pages = this._scopedPagesUp(scope);
-    return { count: pages.length, pageCount: pages.length, siteNames: [] };
+    const groups = view === 'linked' ? this._downGroups(scope) : this._upGroups(scope);
+    const count = groups.reduce((n, g) => n + g.pages.length, 0);
+    const pageCount = new Set(groups.flatMap((g) => g.pages.map((pg) => pg.path))).size;
+    const sources = [...new Set(groups.map((g) => g.source))];
+    const targets = [...new Set(groups.map((g) => g.target))];
+    return {
+      count,
+      pageCount,
+      sourceNames: sources.map((s) => this._siteTitle(s)),
+      targetNames: targets.map((t) => this._siteTitle(t)),
+    };
   }
 
   _requestAction(def) {
@@ -745,15 +748,24 @@ class MsmActionPanel extends LitElement {
     const c = this._confirm;
     if (!c) return nothing;
     const p = `${c.pageCount} page${c.pageCount === 1 ? '' : 's'}`;
-    // Publish/preview push content TO sites; the copy-affecting actions act on
-    // copies AT sites.
-    const prep = (c.exec === 'publish' || c.exec === 'preview') ? 'to' : 'at';
+    // Name the source only when the whole batch shares one — multi-level work
+    // can resolve to several sources, where a single source would be wrong.
+    const src = c.sourceNames.length === 1 ? c.sourceNames[0] : null;
+    let tgt = null;
+    if (c.targetNames.length === 1) [tgt] = c.targetNames;
+    else if (c.targetNames.length > 1) tgt = `${c.targetNames.length} sites: ${c.targetNames.join(', ')}`;
+    const from = src ? ` from ${src}` : '';
+    const inTgt = tgt ? ` in ${tgt}` : '';
     let msg;
-    if (c.view === 'linked' && c.siteNames.length) {
-      const n = c.siteNames.length;
-      msg = `${c.label} ${p} ${prep} ${n} site${n === 1 ? '' : 's'}: ${c.siteNames.join(', ')}?`;
+    if (c.exec === 'publish' || c.exec === 'preview') {
+      // Push the source's content down to the target (destination framing).
+      msg = `${c.label} ${p}${from}${tgt ? ` to ${tgt}` : ''}?`;
+    } else if (c.exec === 'reconnect') {
+      // Relink the target's pages back up to their source.
+      msg = `${c.label} ${p}${inTgt}${src ? ` to ${src}` : ''}?`;
     } else {
-      msg = `${c.label} ${p}?`;
+      // Merge / Replace / Detach act on the copy held in the target, from its source.
+      msg = `${c.label} ${p}${inTgt}${from}?`;
     }
     return html`
       <div class="confirm-row ${c.destructive ? 'destructive' : ''}">
