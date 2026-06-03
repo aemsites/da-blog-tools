@@ -32,13 +32,37 @@
   color: var(--s2-gray-600);
 }
 
-/* ===== Section ===== */
+/* ===== Tabs (dual / mid-tier sites) ===== */
 
-/* A clear divider so the two scoped sections (this-site vs satellites) read
-   as separate units rather than one continuous strip of buttons. */
-.section + .section {
-  border-top: 8px solid var(--s2-gray-100, #f0f0f0);
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px 0;
+  border-bottom: 1px solid var(--s2-gray-200);
 }
+
+.tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--s2-gray-600);
+  cursor: pointer;
+}
+
+.tab.active {
+  color: var(--s2-gray-900);
+  border-bottom-color: var(--s2-blue-800, #1473e6);
+}
+
+.tab:hover:not(.active) {
+  color: var(--s2-gray-800);
+}
+
+/* ===== Section ===== */
 
 .section-head {
   padding: 10px 16px 6px;
@@ -205,6 +229,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--s2-gray-900);
+}
+
+a.page-link {
+  color: var(--s2-blue-800, #1473e6);
+  text-decoration: none;
+}
+
+a.page-link:hover {
+  text-decoration: underline;
 }
 
 .matrix .target.off .target-label {
