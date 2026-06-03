@@ -26,7 +26,9 @@ export function clearMsmCache() {
 function fetchOrgConfig(org) {
   if (!org) return Promise.resolve(null);
   orgConfigPromises[org] ??= (async () => {
-    const resp = await daFetch(`${DA_ORIGIN}/config/${org}/`);
+    // no-store so a fresh Load (which clears the JS cache) actually re-reads
+    // the sheet rather than a heuristically-cached response.
+    const resp = await daFetch(`${DA_ORIGIN}/config/${org}/`, { cache: 'no-store' });
     if (!resp.ok) return null;
     return resp.json();
   })();

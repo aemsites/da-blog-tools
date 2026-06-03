@@ -19,6 +19,7 @@ export {
   fetchMsmConfig,
   getAllMsmSites,
   getSiteRoles,
+  clearMsmCache,
 } from '../core/config.js';
 export {
   previewPage,
@@ -72,7 +73,9 @@ async function runWithConcurrency(tasks, limit = MAX_CONCURRENT) {
 export async function listFolder(org, site, path = '/') {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   const url = `${DA_ORIGIN}/list/${org}/${site}${cleanPath}`;
-  const resp = await daFetch(url);
+  // no-store: admin.da.live sends no cache-control, so the browser would
+  // heuristic-cache listings and miss content changes after an MSM action.
+  const resp = await daFetch(url, { cache: 'no-store' });
   if (!resp.ok) return [];
   const items = await resp.json();
   const prefix = `/${org}/${site}`;

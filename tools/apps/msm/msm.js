@@ -1,7 +1,7 @@
 /* eslint-disable no-underscore-dangle, import/no-unresolved, no-console, class-methods-use-this */
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { LitElement, html, nothing } from 'da-lit';
-import { fetchMsmConfig } from './helpers/api.js';
+import { fetchMsmConfig, clearMsmCache } from './helpers/api.js';
 import 'https://da.live/nx/public/sl/components.js';
 import './helpers/column-browser.js';
 import './helpers/action-panel.js';
@@ -114,6 +114,9 @@ class MsmApp extends LitElement {
     this._selectedItems = [];
     this._currentSite = '';
     this._state = 'loading';
+    // An explicit Load means "give me fresh" — drop cached org config so an
+    // edited MSM config sheet is picked up without a hard reload.
+    clearMsmCache();
     this.loadConfig(org);
   }
 
@@ -133,6 +136,11 @@ class MsmApp extends LitElement {
     const { site, path } = e.detail || {};
     const browser = this.shadowRoot.querySelector('msm-column-browser');
     browser?.deselectPath(site, path);
+  }
+
+  handleContentChanged() {
+    const browser = this.shadowRoot.querySelector('msm-column-browser');
+    browser?.refreshContent();
   }
 
   handleDeepLinkWarning(e) {
@@ -202,6 +210,7 @@ class MsmApp extends LitElement {
           .pages=${this._selectedItems}
           @navigate-pages=${this.handleNavigatePages}
           @deselect-page=${this.handleDeselectPage}
+          @content-changed=${this.handleContentChanged}
         ></msm-action-panel>
       </div>
     `;

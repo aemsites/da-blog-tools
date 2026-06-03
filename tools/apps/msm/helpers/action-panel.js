@@ -498,6 +498,9 @@ class MsmActionPanel extends LitElement {
     this._success = {
       label, action: exec, ok: succeeded.length, failed: errors.length, results: succeeded, errors,
     };
+    // Content changed on disk — tell the browser to drop its stale folder/status
+    // caches and re-list, so its link badges and status icons stay truthful.
+    this.dispatchEvent(new CustomEvent('content-changed', { bubbles: true, composed: true }));
   }
 
   // Re-select the same pages at another site (an ancestor via the breadcrumb,

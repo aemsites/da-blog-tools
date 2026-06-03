@@ -95,6 +95,31 @@ class MsmColumnBrowser extends LitElement {
     this._mergedFolderCache = new Map();
   }
 
+  // Called after the action panel mutates content (detach/reconnect/sync):
+  // the cached merged listings and per-row statuses are now stale. Drop both
+  // and re-list every navigated column so link badges + status icons reflect
+  // the change. Selection and column path are preserved (paths don't move —
+  // only a page's link state / timestamp changes).
+  async refreshContent() {
+    this.invalidateMergedCache();
+    this._rowStatus = new Map();
+    const cols = [...this._columns];
+    /* eslint-disable no-await-in-loop */
+    for (let i = 1; i < cols.length; i += 1) {
+      const parent = cols[i - 1];
+      const parentItem = parent.items.find((it) => it.path === parent.selectedPath);
+      if (parentItem?.site) {
+        const listPath = parentItem.isSite ? '/' : parentItem.path;
+        const raw = await this._loadFolderItems(parentItem.site, listPath).catch(() => []);
+        const items = raw.map((it) => ({ ...it, site: it.site || parentItem.site }));
+        cols[i] = { ...cols[i], items };
+      }
+    }
+    /* eslint-enable no-await-in-loop */
+    this._columns = cols;
+    cols.forEach((c) => this._loadRowStatuses(c.items));
+  }
+
   _siteHasSource(site) {
     if (!this.msmConfig || !site) return false;
     return (this.msmConfig.rows || []).some((row) => (row.satellite ?? row.linked) === site);
