@@ -422,14 +422,20 @@
 
 .success-banner {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  gap: 10px;
   margin: 12px 16px 0;
   padding: 10px 14px;
   border: 1px solid var(--s2-green-400, #a3e3bf);
   background: var(--s2-green-100, #e8f8ef);
   border-radius: 8px;
+}
+
+.success-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .success-title {
@@ -439,6 +445,71 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--s2-gray-900);
+}
+
+.success-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.success-link {
+  font-size: 12px;
+  color: var(--s2-blue-800, #1473e6);
+  text-decoration: none;
+}
+
+.success-link:hover {
+  text-decoration: underline;
+}
+
+.success-more {
+  font-size: 12px;
+  color: var(--s2-gray-600);
+}
+
+.success-banner.has-errors {
+  border-color: var(--s2-orange-400, #ffbe7d);
+  background: var(--s2-orange-100, #fff3e6);
+}
+
+.success-banner.has-errors .success-title svg {
+  color: var(--s2-orange-700, #e68619);
+}
+
+.error-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--s2-gray-800);
+}
+
+.error-list li {
+  padding: 1px 0;
+}
+
+/* ===== Busy banner ===== */
+
+.busy-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 16px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--s2-gray-300);
+  background: var(--s2-gray-75, #f8f8f8);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--s2-gray-700);
+}
+
+.busy-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--s2-gray-200);
+  border-top-color: var(--s2-gray-600);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
 /* stylelint-disable-next-line no-descending-specificity */

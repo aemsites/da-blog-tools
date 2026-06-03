@@ -75,6 +75,7 @@ class MsmActionPanel extends LitElement {
     this._success = null;
     this._loadGen = 0;
     this._lastKey = '';
+    this._busyTotal = 0;
   }
 
   updated(changed) {
@@ -444,9 +445,11 @@ class MsmActionPanel extends LitElement {
       this._taskStatus = next;
     };
 
-    let ok = 0;
-    let failed = 0;
-    await this._downGroups(scope).reduce((chain, g) => chain.then(async () => {
+    const groups = this._downGroups(scope);
+    this._busyTotal = groups.reduce((n, g) => n + g.pages.length, 0);
+    const succeeded = [];
+    const errors = [];
+    await groups.reduce((chain, g) => chain.then(async () => {
       const results = await executeBulkAction({
         org: this.org,
         baseSite: g.source,
@@ -457,16 +460,21 @@ class MsmActionPanel extends LitElement {
         onPageStatus,
       });
       results.forEach((r) => {
-        if (r.status !== 'fulfilled') return;
-        if (r.value?.status === 'success') ok += 1;
-        else if (r.value?.status === 'error') failed += 1;
+        if (r.status === 'fulfilled' && r.value?.status === 'success') {
+          succeeded.push(r.value.key);
+        } else {
+          const v = r.status === 'fulfilled' ? r.value : null;
+          errors.push({ key: v?.key || null, error: v?.error || r.reason?.message || 'Failed' });
+        }
       });
     }), Promise.resolve());
 
     await this._loadAll();
     this._taskStatus = new Map();
     this._busy = false;
-    this._success = { label, ok, failed };
+    this._success = {
+      label, action: exec, ok: succeeded.length, failed: errors.length, results: succeeded, errors,
+    };
   }
 
   // Hand the satellite's selected pages off to its base, where the matrix can
@@ -672,14 +680,72 @@ class MsmActionPanel extends LitElement {
       </div>`;
   }
 
+  // Where to open a succeeded (page, satellite) result. Rollouts open the
+  // published page (preview → aem.page, live → aem.live); sync/cancel open the
+  // editor for the now-local copy. Re-enable removed the copy, so no link.
+  _resultUrl(action, pagePath, site) {
+    const clean = pagePath.replace(/\.html$/, '');
+    if (action === 'preview' || action === 'publish') {
+      const host = action === 'publish' ? 'aem.live' : 'aem.page';
+      return `https://main--${site}--${this.org}.${host}${clean}`;
+    }
+    if (action === 'resume-inheritance') return null;
+    return `https://da.live/edit#/${this.org}/${site}${clean}`;
+  }
+
+  // Short "{site} · {page}" label for a `${path}:${site}` result key.
+  _resultLabel(key) {
+    const ci = key.lastIndexOf(':');
+    const leaf = key.slice(0, ci).split('/').pop().replace(/\.[^/.]+$/, '');
+    return `${this._siteTitle(key.slice(ci + 1))} · ${leaf}`;
+  }
+
+  renderBusy() {
+    const done = [...this._taskStatus.values()]
+      .filter((t) => t.status === 'success' || t.status === 'error').length;
+    const total = this._busyTotal || this._taskStatus.size;
+    const progress = total ? ` ${done}/${total}` : '';
+    return html`
+      <div class="busy-banner">
+        <span class="busy-spinner"></span>
+        <span>Working…${progress}</span>
+      </div>`;
+  }
+
   renderSuccess() {
     const s = this._success;
     if (!s) return nothing;
+    const links = (s.results || []).map((key) => {
+      const ci = key.lastIndexOf(':');
+      const url = this._resultUrl(s.action, key.slice(0, ci), key.slice(ci + 1));
+      return url ? { url, label: this._resultLabel(key) } : null;
+    }).filter(Boolean);
+    const shown = links.slice(0, 10);
+    const extra = links.length - shown.length;
+
+    const errs = (s.errors || []).slice(0, 8).map((e) => (
+      e.key ? `${this._resultLabel(e.key)}: ${e.error}` : e.error
+    ));
+    const moreErr = (s.errors?.length || 0) - errs.length;
+    const allFailed = s.failed > 0 && s.ok === 0;
+
     return html`
-      <div class="success-banner">
-        <span class="success-title">${icon('S2_Icon_CheckmarkCircle_20_N')}
-          ${s.label} — ${s.ok} succeeded${s.failed ? `, ${s.failed} failed` : ''}</span>
-        <button class="success-dismiss" @click=${() => { this._success = null; }}>Dismiss</button>
+      <div class="success-banner ${s.failed ? 'has-errors' : ''}">
+        <div class="success-head">
+          <span class="success-title">${icon(allFailed ? 'S2_Icon_AlertDiamond_20_N' : 'S2_Icon_CheckmarkCircle_20_N')}
+            ${s.label} — ${s.ok} succeeded${s.failed ? `, ${s.failed} failed` : ''}</span>
+          <button class="success-dismiss" @click=${() => { this._success = null; }}>Dismiss</button>
+        </div>
+        ${shown.length ? html`
+          <div class="success-links">
+            ${shown.map((l) => html`<a class="success-link" href=${l.url} target="_blank" rel="noopener">${l.label} ↗</a>`)}
+            ${extra > 0 ? html`<span class="success-more">+${extra} more</span>` : nothing}
+          </div>` : nothing}
+        ${errs.length ? html`
+          <ul class="error-list">
+            ${errs.map((m) => html`<li>${m}</li>`)}
+            ${moreErr > 0 ? html`<li>+${moreErr} more</li>` : nothing}
+          </ul>` : nothing}
       </div>`;
   }
 
@@ -740,9 +806,9 @@ class MsmActionPanel extends LitElement {
       <div class="panel">
         <div class="panel-header">
           ${this.renderChain()}
-          <span class="panel-sub">${this._pages.length} page${this._pages.length === 1 ? '' : 's'} selected${this._busy ? ' · working…' : ''}</span>
+          <span class="panel-sub">${this._pages.length} page${this._pages.length === 1 ? '' : 's'} selected</span>
         </div>
-        ${this.renderSuccess()}
+        ${this._busy ? this.renderBusy() : this.renderSuccess()}
         ${roles.asSatellite ? this.renderUpSection() : nothing}
         ${roles.asBase ? this.renderDownSection() : nothing}
         ${!roles.asBase && !roles.asSatellite

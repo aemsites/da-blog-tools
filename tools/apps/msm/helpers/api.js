@@ -198,9 +198,12 @@ export async function executeBulkAction({
           case 'preview':
             result = await previewSatellite(org, satSite, pagePath, ext);
             break;
-          case 'publish':
-            result = await publishSatellite(org, satSite, pagePath, ext);
+          case 'publish': {
+            // AEM requires a current preview before publishing to live.
+            const pv = await previewSatellite(org, satSite, pagePath, ext);
+            result = pv?.error ? pv : await publishSatellite(org, satSite, pagePath, ext);
             break;
+          }
           case 'break':
           case 'cancel-inheritance':
             result = await createOverride(org, baseSite, satSite, pagePath, ext);
