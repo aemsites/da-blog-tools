@@ -30,6 +30,7 @@ function getAppRef() {
   try {
     const { hostname } = new URL(import.meta.url);
     if (hostname === 'localhost') return 'local';
+    if (!hostname.endsWith('.aem.page') && !hostname.endsWith('.aem.live')) return null;
     const [branch] = hostname.split('--');
     return branch === 'main' ? null : branch;
   } catch {
