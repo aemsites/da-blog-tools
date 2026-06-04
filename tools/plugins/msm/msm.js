@@ -26,6 +26,17 @@ import { PUBLISH_LAG_MS } from '../../apps/msm/core/fetch.js';
 const MSM_APP_URL = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/msm/msm';
 const NX = 'https://da.live/nx';
 
+function getAppRef() {
+  try {
+    const { hostname } = new URL(import.meta.url);
+    if (hostname === 'localhost') return 'local';
+    const [branch] = hostname.split('--');
+    return branch === 'main' ? null : branch;
+  } catch {
+    return null;
+  }
+}
+
 let nexter = null;
 let styles = null;
 try {
@@ -172,7 +183,8 @@ class DaMsm extends LitElement {
   _getAppDeepLink() {
     const { org, site, path } = this.details;
     const params = new URLSearchParams({ org, site, path });
-    params.set('ref', 'msm');
+    const ref = getAppRef();
+    if (ref) params.set('ref', ref);
     return `${MSM_APP_URL}?${params.toString()}`;
   }
 
