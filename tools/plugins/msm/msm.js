@@ -20,6 +20,7 @@ import {
   setEditUrlOrigin,
 } from './utils.js';
 import { icon } from '../../apps/msm/core/icons.js';
+import { buildParentMap, effectiveSource, isOutOfSync } from '../../apps/msm/core/source-tree.js';
 
 const MSM_APP_URL = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/msm/msm';
 const NX = 'https://da.live/nx';
@@ -221,22 +222,18 @@ class DaMsm extends LitElement {
     }, undefined);
   }
 
-  _ancestorChain(siteId) {
-    const chain = [];
-    let current = this._parentOf(siteId);
-    while (current) {
-      chain.push(current);
-      current = this._parentOf(current);
-    }
-    return chain;
+  // The source this page in `siteId` resolves to — nearest detached ancestor,
+  // else the root (current) site — using the shared resolver so the plugin and
+  // the MSM app stay in lockstep. Returns { site, lm }.
+  _resolveSource(siteId) {
+    const { site } = this.details;
+    const pm = buildParentMap(this._tree, site, (n) => n.siteId);
+    const lookup = (id) => this._linkedData.get(id);
+    return effectiveSource(siteId, pm, lookup, site, this._sourceLastModified);
   }
 
   _effectiveSourceLM(siteId) {
-    const ancestors = this._ancestorChain(siteId);
-    const nearest = ancestors.find((id) => this._linkedData.get(id)?.isDetached === true);
-    return nearest
-      ? (this._linkedData.get(nearest)?.lastModified || null)
-      : this._sourceLastModified;
+    return this._resolveSource(siteId).lm;
   }
 
   async _loadNodes(siteIds) {
@@ -247,13 +244,8 @@ class DaMsm extends LitElement {
 
     const update = new Map(this._linkedData);
     timestamps.forEach(({ id, exists, lastModified }) => {
-      const siteTime = lastModified ? new Date(lastModified).getTime() : null;
-      let outOfSync = false;
-      if (exists) {
-        const refLM = this._effectiveSourceLM(id);
-        const refTime = refLM ? new Date(refLM).getTime() : null;
-        outOfSync = refTime !== null && siteTime !== null && siteTime + PUBLISH_LAG_MS < refTime;
-      }
+      const outOfSync = exists
+        && isOutOfSync(this._effectiveSourceLM(id), lastModified, PUBLISH_LAG_MS);
       update.set(id, {
         ...update.get(id), isDetached: exists, outOfSync, lastModified,
       });
@@ -312,8 +304,9 @@ class DaMsm extends LitElement {
 
   async _detach(siteId) {
     this._busy = true;
-    const { org, site, path } = this.details;
-    const result = await copyFromSource(org, site, siteId, path);
+    const { org, path } = this.details;
+    const sourceSite = this._effectiveSourceSite(siteId);
+    const result = await copyFromSource(org, sourceSite, siteId, path);
     if (!result.error) {
       this._setLinkedField(siteId, { isDetached: true, outOfSync: false });
       this._successData = { targets: [siteId], action: 'detach' };
@@ -346,10 +339,11 @@ class DaMsm extends LitElement {
 
   async _sync(siteId, mode) {
     this._busy = true;
-    const { org, site, path } = this.details;
+    const { org, path } = this.details;
+    const sourceSite = this._effectiveSourceSite(siteId);
     const result = mode === 'merge'
-      ? await mergeFromSource(org, site, siteId, path)
-      : await copyFromSource(org, site, siteId, path);
+      ? await mergeFromSource(org, sourceSite, siteId, path)
+      : await copyFromSource(org, sourceSite, siteId, path);
     if (!result?.error) {
       this._setLinkedField(siteId, {
         outOfSync: false,
@@ -442,12 +436,8 @@ class DaMsm extends LitElement {
     return this._linkedData.get(siteId)?.label || siteId;
   }
 
-  // The source a linked site resolves to: nearest detached ancestor, else the
-  // current (root) site — mirrors the app's effectiveSource.
   _effectiveSourceSite(siteId) {
-    const nearest = this._ancestorChain(siteId)
-      .find((id) => this._linkedData.get(id)?.isDetached === true);
-    return nearest || this.details.site;
+    return this._resolveSource(siteId).site;
   }
 
   // Label of the upstream source this page links to (Source-section context).

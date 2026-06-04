@@ -11,6 +11,12 @@
 //   rows        Map(path -> { category, source, ... })  upward source-view rows
 //   included    Set(site)                              target sites in scope
 
+import {
+  buildParentMap,
+  effectiveSource as resolveSource,
+  isOutOfSync as resolveOutOfSync,
+} from '../core/source-tree.js';
+
 // Stable key for a (page, linked-site) matrix cell.
 export const cellKey = (pagePath, targetSite) => `${pagePath}:${targetSite}`;
 
@@ -40,15 +46,7 @@ export function subtreeSites(tree, site) {
 }
 
 // Map of child site -> parent site; top-level columns map to `rootSite`.
-export function parentMap(tree, rootSite) {
-  const m = new Map();
-  const walk = (nodes, parent) => nodes.forEach((n) => {
-    m.set(n.site, parent);
-    if (n.children?.length) walk(n.children, n.site);
-  });
-  walk(tree, rootSite);
-  return m;
-}
+export const parentMap = (tree, rootSite) => buildParentMap(tree, rootSite, (n) => n.site);
 
 // Every column in the subtree, depth-first, regardless of expansion — the basis
 // for data loading, target inclusion, and action scope.
@@ -125,13 +123,8 @@ export function ancestorsToExpand(tree, rootSite, sites) {
 // The source a linked site pulls from for a page: the nearest ancestor holding
 // a detached copy (per already-loaded cells), else the root site.
 export function effectiveSource(page, targetSite, pm, cells, rootSite) {
-  let cur = pm.get(targetSite);
-  while (cur && cur !== rootSite) {
-    const cell = cells.get(cellKey(page.path, cur));
-    if (cell?.isDetached) return { site: cur, lm: cell.lastModified };
-    cur = pm.get(cur);
-  }
-  return { site: rootSite, lm: page.lastModified };
+  const lookup = (site) => cells.get(cellKey(page.path, site));
+  return resolveSource(targetSite, pm, lookup, rootSite, page.lastModified);
 }
 
 // Link category of a page from whether it has a detached copy and whether any
@@ -144,10 +137,7 @@ export function deriveCategory({ isDetached, sourceExists }) {
 
 // A detached copy is behind its source when the source changed after the copy
 // was last modified (beyond the publish-lag grace window).
-export function isOutOfSync(sourceLm, selfLm, lagMs) {
-  return !!(sourceLm && selfLm
-    && new Date(sourceLm).getTime() > new Date(selfLm).getTime() + lagMs);
-}
+export const isOutOfSync = resolveOutOfSync;
 
 // Included downward cells matching a scope.
 // scope: 'linked' (publish / detach) | 'detached' (sync / reconnect).
