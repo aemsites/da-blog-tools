@@ -173,6 +173,22 @@
   transform: rotate(45deg);
 }
 
+.item input[type="checkbox"]:indeterminate {
+  background: var(--s2-gray-800);
+  border-color: var(--s2-gray-800);
+}
+
+.item input[type="checkbox"]:indeterminate::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 7px;
+  height: 2px;
+  background: #fff;
+  border-radius: 1px;
+}
+
 .item input[type="checkbox"]:focus-visible {
   outline: 2px solid var(--s2-blue-900);
   outline-offset: 2px;
@@ -192,71 +208,82 @@
 }
 
 .item-arrow {
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
-  width: 12px;
-  height: 12px;
   color: var(--s2-gray-400);
 }
 
+.item-arrow svg {
+  width: 14px;
+  height: 14px;
+}
+
 .item-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
   color: var(--s2-gray-500);
 }
 
-/* ===== Inherited item (page or folder served via MSM fallback) ===== */
-
-.item.inherited .item-label {
-  color: var(--s2-gray-600, #6e6e6e);
+.item-icon svg {
+  width: 16px;
+  height: 16px;
 }
 
-.item.inherited .item-icon {
-  opacity: 0.7;
-}
-
-.inherited-badge {
-  flex-shrink: 0;
-  width: 14px;
-  height: 14px;
-  margin-left: -2px;
-  color: var(--s2-gray-700, #505050);
-}
-
-/* ===== Blocked item (selection mutex: different category from current) ===== */
-
-.item.blocked {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.item.blocked .item-label,
-.item.blocked .item-icon,
-.item.blocked .inherited-badge {
-  pointer-events: none;
-}
-
-.item.blocked input[type="checkbox"]:disabled {
-  cursor: not-allowed;
-  border-color: var(--s2-gray-400, #b1b1b1);
-  background: transparent;
-}
-
-/* ===== Override dot indicator ===== */
-
-.override-dot {
-  width: 6px;
-  height: 6px;
+/* Inheritance state badge overlaid on the type icon's corner */
+.inherit-badge {
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px;
   border-radius: 50%;
+  background: var(--s2-gray-50, #fafafa);
+  color: var(--s2-gray-600);
+}
+
+.inherit-badge svg {
+  width: 10px;
+  height: 10px;
+}
+
+/* Local override is the notable exception — give it a touch more weight */
+.inherit-badge.override {
+  color: var(--s2-gray-900, #292929);
+}
+
+/* Trailing slot: chevron (containers) or status icon (pages) — never both */
+.item-trailing {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  width: 18px;
 }
 
-.override-dot.inherited {
-  background: var(--s2-gray-400);
+/* ===== Status icon (action-required) ===== */
+
+.row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
 }
 
-.override-dot.has-overrides {
-  background: var(--s2-orange-700, #e68619);
+.row-icon-loading {
+  width: 12px;
+  height: 12px;
+  margin: 0 3px;
+  border: 2px solid var(--s2-gray-200);
+  border-top-color: var(--s2-gray-500);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
 /* ===== Column loading ===== */

@@ -4,6 +4,8 @@
   "version": "1.0.0",
   "description": "Block collection for AEM",
   "scripts": {
+    "test": "node --test test/",
+    "test:watch": "node --test --watch test/",
     "lint:js": "eslint .",
     "lint:fix": "eslint . --fix",
     "lint:css": "stylelint 'blocks/**/*.css' 'styles/*.css'",
