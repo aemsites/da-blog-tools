@@ -21,13 +21,10 @@ import {
 } from './utils.js';
 import { icon } from '../../apps/msm/core/icons.js';
 import { buildParentMap, effectiveSource, isOutOfSync } from '../../apps/msm/core/source-tree.js';
+import { PUBLISH_LAG_MS } from '../../apps/msm/core/fetch.js';
 
 const MSM_APP_URL = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/msm/msm';
 const NX = 'https://da.live/nx';
-
-// Publishing a page bumps its lastModified date after the publish timestamp is
-// recorded, producing a spurious "behind source" signal. This tolerance absorbs that lag.
-const PUBLISH_LAG_MS = 5000;
 
 let nexter = null;
 let styles = null;
@@ -175,8 +172,7 @@ class DaMsm extends LitElement {
   _getAppDeepLink() {
     const { org, site, path } = this.details;
     const params = new URLSearchParams({ org, site, path });
-    // TODO: remove ref once msm-ux-rewrite branch is merged to main
-    params.set('ref', 'msm-ux-rewrite');
+    params.set('ref', 'msm');
     return `${MSM_APP_URL}?${params.toString()}`;
   }
 

@@ -53,7 +53,7 @@ const sanitizeId = (s) => s.replace(/[^a-zA-Z0-9]/g, '-');
 async function runPool(makeTasks, limit) {
   const executing = new Set();
   for (const task of makeTasks) {
-    const p = task().then(() => executing.delete(p));
+    const p = task().finally(() => executing.delete(p));
     executing.add(p);
     if (executing.size >= limit) await Promise.race(executing);
   }

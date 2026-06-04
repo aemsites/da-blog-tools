@@ -156,7 +156,6 @@ class MsmColumnBrowser extends LitElement {
     const siteItem = this._columns[0]?.items.find((it) => it.site === this.initialSite);
     if (!siteItem) {
       this._dispatchDeepLinkWarning(this.initialSite, '');
-      this._dispatchDeepLinkConsumed();
       return;
     }
     await this.navigateToFolder(0, siteItem);
