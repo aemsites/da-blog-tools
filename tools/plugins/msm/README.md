@@ -74,7 +74,7 @@ plugin into your own repo:
 | Page role     | Direction available  | Actions                                            |
 | ------------- | -------------------- | -------------------------------------------------- |
 | Source only   | Linked sites (down)  | Publish · Preview · Detach · Sync (Merge/Replace) · Reconnect |
-| Linked only   | Source (up)          | Get from source · Sync (Merge/Replace) · Reconnect |
+| Linked only   | Source (up)          | Get from source · Sync (Merge/Replace) |
 | Both          | Source + Linked sites sections | Both sets                                |
 
 ### Sync modes
@@ -106,11 +106,11 @@ dependency wiring also differs:
 | ------------------ | ----------------------------------------------- | ------------------------------------------------------------------ |
 | Lit                | `da-lit` resolved internally                    | `da-lit` resolved via importmap → `/tools/deps/lit/dist/index.js`  |
 | `daFetch`          | `blocks/shared/utils.js`                        | `DA_SDK.actions.daFetch`, plumbed in via `setSdkFetch`             |
-| `DA_ORIGIN`        | `blocks/shared/constants.js`                    | `https://da.live/nx/public/utils/constants.js`                     |
+| `DA_ORIGIN`        | `blocks/shared/constants.js`                    | `admin.da.live`, defined in the shared `core/fetch.js`             |
 | NX URL             | `getNx()` (versioned/branch-aware)              | Hardcoded `https://da.live/nx`                                     |
 | `mergeCopy`        | Dynamic import via `getNx()`                    | Dynamic import via the hardcoded NX URL                            |
-| UI primitives      | `se-*` components from `${nx}/public/se/components.js`   | `sl-*` components from `${NX}/public/sl/components.js`, styled via nexter + `sl/styles.css` + `buttons.css` (loaded with `loadStyle` / `getStyle`) |
-| Icons              | Relative paths `/blocks/edit/img/...`           | Absolute URLs `https://da.live/blocks/edit/img/...`                |
+| UI primitives      | `se-*` components from `${nx}/public/se/components.js`   | Own plain `<button>` elements styled in `msm.css` (no `se-*`/`sl-*` component lib); base typography via nexter (`loadStyle` / `getStyle`) |
+| Icons              | Relative paths `/blocks/edit/img/...`           | Shared `core/icons.js` — inline `<svg><use>` from SVGs in `core/img/` |
 | Edit-link origin   | `window.location.origin` (always da.live)       | Derived from `document.referrer`; falls back to `https://da.live`  |
 
 ## Files

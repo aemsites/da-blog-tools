@@ -74,6 +74,9 @@ tools/apps/msm/
 │   ├── config.js               # Org config + link graph (source/linked)
 │   ├── status.js               # Page timestamp + publish status + status config
 │   ├── operations.js           # preview/publish/copy/delete/merge primitives
+│   ├── source-tree.js          # Shared source resolution (nearest detached ancestor)
+│   ├── icons.js                # Inline SVG icon helper
+│   ├── img/                    # S2 icon SVGs referenced via <use>
 │   └── fetch.js                # Pluggable daFetch + constants
 └── helpers/
     ├── api.js                  # App-facing API facade (folder listing, bulk exec)
