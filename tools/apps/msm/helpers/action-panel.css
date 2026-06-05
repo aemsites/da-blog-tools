@@ -1,0 +1,709 @@
+:host {
+  display: block;
+}
+
+.panel-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--s2-gray-500);
+  font-size: 14px;
+  font-style: italic;
+}
+
+.panel {
+  border: 1px solid var(--s2-gray-200);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* ===== Header ===== */
+
+.panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--s2-gray-200);
+  background: var(--s2-gray-75, #f8f8f8);
+}
+
+.panel-sub {
+  font-size: 13px;
+  color: var(--s2-gray-600);
+}
+
+/* ===== Tabs (dual / mid-tier sites) ===== */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px 0;
+  border-bottom: 1px solid var(--s2-gray-200);
+}
+
+.tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--s2-gray-600);
+  cursor: pointer;
+}
+
+.tab.active {
+  color: var(--s2-gray-900);
+  border-bottom-color: var(--s2-blue-800, #1473e6);
+}
+
+.tab:hover:not(.active) {
+  color: var(--s2-gray-800);
+}
+
+/* ===== Section ===== */
+
+.section-head {
+  padding: 10px 16px 6px;
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--s2-gray-500);
+}
+
+/* Inheritance breadcrumb — the panel's primary header */
+.chain {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 16px;
+}
+
+.chain-node {
+  color: var(--s2-gray-600);
+}
+
+.chain-node.current {
+  color: var(--s2-gray-900);
+  font-weight: 700;
+}
+
+.chain-link {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--s2-blue-800, #1473e6);
+  cursor: pointer;
+}
+
+.chain-link:disabled {
+  color: var(--s2-gray-400);
+  cursor: default;
+}
+
+.chain-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.chain-sep {
+  color: var(--s2-gray-400);
+}
+
+/* ===== Matrix ===== */
+
+.matrix-scroll {
+  overflow-x: auto;
+  padding: 0 16px;
+}
+
+.matrix {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+}
+
+.matrix th,
+.matrix td {
+  border-bottom: 1px solid var(--s2-gray-150, #e8e8e8);
+  padding: 0;
+}
+
+.matrix thead th {
+  border-bottom: 1px solid var(--s2-gray-300);
+  vertical-align: bottom;
+}
+
+.matrix .corner {
+  text-align: left;
+  width: 1%;
+  white-space: nowrap;
+  padding: 8px 16px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--s2-gray-500);
+}
+
+/* Target column headers */
+.matrix .target {
+  padding: 8px 10px;
+  text-align: center;
+  min-width: 84px;
+}
+
+.matrix .target.off {
+  opacity: 0.45;
+}
+
+/* Nested-level columns get a grouping rule on their left edge */
+.matrix .target.nested,
+.matrix .cell.nested {
+  border-left: 1px solid var(--s2-gray-200);
+}
+
+.target-head {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.target-label {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--s2-gray-800);
+}
+
+/* Linked-site name: reads as a column label, reveals its jump affordance
+   (down the tree) on hover so a row of columns isn't a wall of blue links. */
+.target-jump {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--s2-gray-800);
+  cursor: pointer;
+}
+
+.target-jump:disabled {
+  color: var(--s2-gray-400);
+  cursor: default;
+}
+
+.target-jump:hover:not(:disabled) {
+  color: var(--s2-blue-800, #1473e6);
+  text-decoration: underline;
+}
+
+.col-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 3px;
+  border: none;
+  border-radius: 4px;
+  background: var(--s2-gray-100);
+  color: var(--s2-gray-600);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.col-toggle:hover:not(:disabled) {
+  background: var(--s2-gray-200);
+}
+
+.col-toggle svg {
+  transition: transform 0.15s;
+}
+
+.col-toggle.open svg {
+  transform: rotate(90deg);
+}
+
+.col-count {
+  line-height: 1;
+}
+
+/* Page row headers */
+.matrix .page {
+  text-align: left;
+  padding: 6px 16px 6px 4px;
+  font-weight: 400;
+  min-width: 240px;
+  max-width: 320px;
+}
+
+.page-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.page-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--s2-gray-900);
+}
+
+/* Per-row remove — subtle, revealed on row hover / focus */
+.row-remove {
+  appearance: none;
+  background: none;
+  border: none;
+  flex-shrink: 0;
+  padding: 0 2px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--s2-gray-500);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.row-remove:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--s2-blue-800, #1473e6);
+  outline-offset: 1px;
+}
+
+.row-remove:hover:not(:disabled) {
+  color: var(--s2-gray-900);
+}
+
+.matrix tr:hover .row-remove,
+.matrix tr:focus-within .row-remove {
+  opacity: 1;
+}
+
+a.page-link {
+  color: var(--s2-blue-800, #1473e6);
+  text-decoration: none;
+}
+
+a.page-link:hover {
+  text-decoration: underline;
+}
+
+.matrix .target.off .target-label {
+  color: var(--s2-gray-400);
+}
+
+/* Cells */
+.matrix .cell {
+  text-align: center;
+  height: 34px;
+}
+
+.matrix .cell.dim {
+  opacity: 0.25;
+}
+
+/* Cells / page rows the pending confirm will act on — tinted to match the
+   confirm row (blue, or red when the action is destructive). */
+.matrix .cell.affected {
+  background: var(--s2-blue-100, #e0ecff);
+  box-shadow: inset 0 0 0 2px var(--s2-blue-400, #66a3ff);
+}
+
+.matrix .page.affected {
+  background: var(--s2-blue-100, #e0ecff);
+}
+
+.matrix .cell.affected.destructive {
+  background: var(--s2-red-100, #ffefed);
+  box-shadow: inset 0 0 0 2px var(--s2-red-400, #ffaaa0);
+}
+
+.matrix .page.affected.destructive {
+  background: var(--s2-red-100, #ffefed);
+}
+
+/* Rows with nothing in scope for the pending confirm are de-emphasized (not
+   hidden) so the affected rows stand out while the full selection stays in view.
+   Distinct from `.dim`, which marks excluded target columns. */
+.matrix tr.row-deemph {
+  opacity: 0.4;
+}
+
+/* Un-applied cells inside an affected row — dimmed so the highlighted cells in
+   the same row stand out. Only applied where the row is not already deemphasized
+   (see `_cellHl`), so opacities never compound. */
+.matrix .cell.cell-deemph {
+  opacity: 0.35;
+}
+
+.cell-pair {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+/* A local-copy cell links to that site's editor doc */
+.cell-link {
+  display: inline-flex;
+  text-decoration: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.cell-link:hover {
+  background: var(--s2-gray-100, #f5f5f5);
+}
+
+/* ===== Upward (source) table ===== */
+
+.up-col {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--s2-gray-500);
+}
+
+.up-table .cell {
+  text-align: left;
+  padding-left: 12px;
+}
+
+.cell-inherit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--s2-gray-500);
+}
+
+.cell-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.cell-loading {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--s2-gray-200);
+  border-top-color: var(--s2-gray-500);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Checkbox label wrapper (header + rows) */
+.cb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.cb input[type="checkbox"] {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 2px solid var(--s2-gray-600);
+  border-radius: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  background: transparent;
+  transition: background-color 0.13s, border-color 0.13s;
+}
+
+.cb input[type="checkbox"]:checked,
+.cb input[type="checkbox"]:indeterminate {
+  background: var(--s2-gray-800);
+  border-color: var(--s2-gray-800);
+}
+
+.cb input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  margin-top: -1px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.cb input[type="checkbox"]:indeterminate::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 7px;
+  height: 2px;
+  background: #fff;
+  border-radius: 1px;
+}
+
+
+/* ===== Action bar ===== */
+
+.action-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--s2-gray-200);
+  background: var(--s2-gray-75, #f8f8f8);
+}
+
+/* A row of actions grouped by the cell state they target, with a leading label.
+   The fixed-width label aligns the button columns across the two rows. */
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.action-row-label {
+  flex-shrink: 0;
+  min-width: 76px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--s2-gray-500);
+}
+
+.action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Shown above the action bar while cells are still resolving — explains why the
+   buttons are disabled. */
+.action-calc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 16px 0;
+  padding: 8px 14px;
+  border: 1px solid var(--s2-gray-200);
+  background: var(--s2-gray-75, #f8f8f8);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--s2-gray-600);
+}
+
+.action-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--s2-gray-600);
+}
+
+/* ===== Confirm row ===== */
+
+.confirm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 12px 16px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--s2-blue-300, #b3d4ff);
+  background: var(--s2-blue-100, #e0ecff);
+  border-radius: 8px;
+}
+
+.confirm-row.destructive {
+  border-color: var(--s2-red-400, #ffaaa0);
+  background: var(--s2-red-100, #ffefed);
+}
+
+.confirm-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.confirm-msg {
+  font-size: 13px;
+  color: var(--s2-gray-900);
+}
+
+.confirm-note {
+  font-size: 12px;
+  color: var(--s2-gray-600);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.s2-btn {
+  appearance: none;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.s2-btn-confirm {
+  background: var(--s2-gray-800);
+  color: #fff;
+}
+
+.s2-btn-confirm:disabled {
+  background: var(--s2-gray-300);
+  cursor: not-allowed;
+}
+
+.s2-btn-outline {
+  background: transparent;
+  border-color: var(--s2-gray-400);
+  color: var(--s2-gray-800);
+}
+
+/* ===== Success banner ===== */
+
+.success-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 16px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--s2-green-400, #a3e3bf);
+  background: var(--s2-green-100, #e8f8ef);
+  border-radius: 8px;
+}
+
+.success-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.success-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--s2-gray-900);
+}
+
+.success-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.success-link {
+  font-size: 12px;
+  color: var(--s2-blue-800, #1473e6);
+  text-decoration: none;
+}
+
+.success-link:hover {
+  text-decoration: underline;
+}
+
+.success-more {
+  font-size: 12px;
+  color: var(--s2-gray-600);
+}
+
+.success-banner.has-errors {
+  border-color: var(--s2-orange-400, #ffbe7d);
+  background: var(--s2-orange-100, #fff3e6);
+}
+
+.success-banner.has-errors .success-title svg {
+  color: var(--s2-orange-700, #e68619);
+}
+
+.error-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--s2-gray-800);
+}
+
+.error-list li {
+  padding: 1px 0;
+}
+
+/* ===== Busy banner ===== */
+
+.busy-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 16px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--s2-gray-300);
+  background: var(--s2-gray-75, #f8f8f8);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--s2-gray-700);
+}
+
+.busy-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--s2-gray-200);
+  border-top-color: var(--s2-gray-600);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* stylelint-disable-next-line no-descending-specificity */
+.success-title svg {
+  color: var(--s2-green-700, #0ba45d);
+}
+
+.success-dismiss {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--s2-gray-700);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ===== Responsive ===== */
+
+@media (width <= 600px) {
+  .action-bar {
+    gap: 12px;
+  }
+}

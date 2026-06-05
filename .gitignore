@@ -12,3 +12,5 @@ tools/node_modules/*
 tools/plugins/da-chat/node_modules/*
 run-publisher-local.sh
 .worktrees/
+.agents/diagrams/
+.playwright-cli/

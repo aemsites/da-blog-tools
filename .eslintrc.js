@@ -16,4 +16,10 @@ module.exports = {
     'no-param-reassign': [2, { props: false }], // allow modifying properties of param
     'import/no-cycle': 0, // Allow modules to use each other
   },
+  overrides: [
+    {
+      files: ['test/**/*.js'],
+      env: { node: true },
+    },
+  ],
 };
