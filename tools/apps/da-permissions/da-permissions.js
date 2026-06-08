@@ -577,7 +577,7 @@ class DaPermissionsApp extends LitElement {
               <sl-input
                 type="text"
                 class="site-combobox-input"
-                placeholder="All sites (org level)"
+                placeholder="All sites"
                 autocomplete="off"
                 aria-label="Site"
                 aria-expanded=${this._siteDropdownOpen}
@@ -588,6 +588,7 @@ class DaPermissionsApp extends LitElement {
                 @keydown=${this.handleSiteInputKey}
                 @sl-blur=${this.handleSiteInputBlur}
               ></sl-input>
+              <span class="site-chevron ${this._siteDropdownOpen ? 'is-open' : ''}" aria-hidden="true">${icon('Smock_ChevronDown_18_N', 18, 18, '0 0 18 18')}</span>
               ${this._siteDropdownOpen ? html`
                 <div class="site-dropdown" role="listbox">
                   ${this.filteredSites.map((site, i) => html`
