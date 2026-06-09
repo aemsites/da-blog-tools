@@ -249,6 +249,11 @@ sl-button.pw-quiet-danger::part(base):hover:not(:disabled) {
   color: var(--s2-red-900);
 }
 
+.message.warning {
+  background: var(--s2-orange-100);
+  color: var(--s2-orange-900);
+}
+
 /* ---- Content area ---- */
 
 .da-content {
@@ -396,6 +401,11 @@ sl-button.pw-quiet-danger::part(base):hover:not(:disabled) {
 .level-write {
   background: var(--s2-green-100);
   color: var(--s2-green-900);
+}
+
+.level-none {
+  background: var(--s2-red-100);
+  color: var(--s2-red-900);
 }
 
 .level-row-members {

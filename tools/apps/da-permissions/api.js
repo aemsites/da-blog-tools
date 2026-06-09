@@ -27,7 +27,7 @@ export async function updateOrgConfig(org, config) {
       method: 'POST',
       body: formData,
     });
-    return { success: response.ok, error: response.ok ? null : `HTTP ${response.status}` };
+    return { success: response.ok, status: response.status, error: response.ok ? null : `HTTP ${response.status}` };
   } catch (error) {
     return { success: false, error: error.message };
   }

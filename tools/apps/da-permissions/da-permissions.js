@@ -64,6 +64,11 @@ function splitGroups(groups) {
   return (groups || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
+// DA actions values: 'write' | 'read' | '' (empty = deny/none)
+// UI level names:    'write' | 'read' | 'none'
+const levelToActions = (level) => (level === 'none' ? '' : level);
+const actionsToLevel = (actions) => (actions === 'write' || actions === 'read' ? actions : 'none');
+
 // ---- Component ----
 
 class DaPermissionsApp extends LitElement {
@@ -97,6 +102,7 @@ class DaPermissionsApp extends LitElement {
     _selectedFolderPath: { state: true },
     _infoDismissed: { state: true },
     _confirmRemove: { state: true },
+    _readOnly: { state: true },
   };
 
   connectedCallback() {
@@ -124,6 +130,7 @@ class DaPermissionsApp extends LitElement {
     this._selectedFolderPath = '';
     this._infoDismissed = localStorage.getItem('da-permissions-info-dismissed') === 'true';
     this._confirmRemove = null;
+    this._readOnly = false;
 
     this._handleDocMousedown = (e) => {
       if (!this._siteDropdownOpen) return;
@@ -185,7 +192,13 @@ class DaPermissionsApp extends LitElement {
 
     this.defaultPaths.forEach((path) => {
       slotMap.set(path, {
-        path, read: [], write: [], inheritedRead: [], inheritedWrite: [],
+        path,
+        read: [],
+        write: [],
+        none: [],
+        inheritedRead: [],
+        inheritedWrite: [],
+        inheritedNone: [],
       });
     });
 
@@ -193,7 +206,13 @@ class DaPermissionsApp extends LitElement {
       const pending = `/${site}/${this._pendingFolderPath}/ + **`;
       if (!slotMap.has(pending)) {
         slotMap.set(pending, {
-          path: pending, read: [], write: [], inheritedRead: [], inheritedWrite: [],
+          path: pending,
+          read: [],
+          write: [],
+          none: [],
+          inheritedRead: [],
+          inheritedWrite: [],
+          inheritedNone: [],
         });
       }
     }
@@ -209,16 +228,18 @@ class DaPermissionsApp extends LitElement {
       const key = normPath(rule.path);
       if (!slotMap.has(key)) {
         slotMap.set(key, {
-          path: key, read: [], write: [], inheritedRead: [], inheritedWrite: [],
+          path: key,
+          read: [],
+          write: [],
+          none: [],
+          inheritedRead: [],
+          inheritedWrite: [],
+          inheritedNone: [],
         });
       }
       const slot = slotMap.get(key);
       const groups = splitGroups(rule.groups);
-      if (rule.actions === 'write') {
-        slot.write.push(...groups);
-      } else {
-        slot.read.push(...groups);
-      }
+      slot[actionsToLevel(rule.actions)].push(...groups);
     });
 
     // In site context, populate inherited members on the top-level site slot
@@ -229,13 +250,10 @@ class DaPermissionsApp extends LitElement {
       if (siteSlot) {
         this._rules.filter((r) => normPath(r.path) === '/ + **').forEach((rule) => {
           const groups = splitGroups(rule.groups);
-          if (rule.actions === 'write') {
-            groups.filter((g) => !siteSlot.write.includes(g))
-              .forEach((g) => siteSlot.inheritedWrite.push(g));
-          } else {
-            groups.filter((g) => !siteSlot.read.includes(g))
-              .forEach((g) => siteSlot.inheritedRead.push(g));
-          }
+          const lvl = actionsToLevel(rule.actions);
+          const inheritedKey = `inherited${lvl.charAt(0).toUpperCase()}${lvl.slice(1)}`;
+          groups.filter((g) => !siteSlot[lvl].includes(g))
+            .forEach((g) => siteSlot[inheritedKey].push(g));
         });
       }
     }
@@ -285,6 +303,7 @@ class DaPermissionsApp extends LitElement {
     this._folderColumns = [];
     this._folderLoading = false;
     this._selectedFolderPath = '';
+    this._readOnly = false;
 
     const [orgResult, siteList] = await Promise.all([
       fetchOrgConfig(org),
@@ -368,8 +387,9 @@ class DaPermissionsApp extends LitElement {
       return;
     }
 
+    const actions = levelToActions(level);
     const existing = config.permissions.data.find(
-      (r) => normPath(r.path) === normPath(path) && r.actions === level,
+      (r) => normPath(r.path) === normPath(path) && r.actions === actions,
     );
     if (existing) {
       const current = splitGroups(existing.groups);
@@ -377,7 +397,7 @@ class DaPermissionsApp extends LitElement {
         existing.groups = [...current, who].join(', ');
       }
     } else {
-      config.permissions.data.push({ path, groups: who, actions: level });
+      config.permissions.data.push({ path, groups: who, actions });
       config.permissions.total = config.permissions.data.length;
       config.permissions.limit = config.permissions.data.length;
     }
@@ -391,6 +411,8 @@ class DaPermissionsApp extends LitElement {
       }
       this._addingToPath = null;
       this._addingToLevel = null;
+    } else if (result.status === 403 || result.status === 401) {
+      this._readOnly = true;
     } else {
       this._message = { type: 'error', text: `Failed to save: ${result.error}` };
     }
@@ -420,7 +442,7 @@ class DaPermissionsApp extends LitElement {
     }
 
     const ruleIdx = config.permissions.data.findIndex(
-      (r) => normPath(r.path) === normPath(path) && r.actions === level,
+      (r) => normPath(r.path) === normPath(path) && r.actions === levelToActions(level),
     );
     if (ruleIdx === -1) {
       this._isProcessing = false;
@@ -439,6 +461,8 @@ class DaPermissionsApp extends LitElement {
     const result = await updateOrgConfig(this._org, config);
     if (result.success) {
       this._rules = config.permissions.data;
+    } else if (result.status === 403 || result.status === 401) {
+      this._readOnly = true;
     } else {
       this._message = { type: 'error', text: `Failed to remove: ${result.error}` };
     }
@@ -661,14 +685,15 @@ class DaPermissionsApp extends LitElement {
   }
 
   renderLevelRow(slot, level) {
-    const members = level === 'write' ? slot.write : slot.read;
-    const inherited = level === 'write' ? slot.inheritedWrite : slot.inheritedRead;
+    const members = slot[level];
+    const inherited = slot[`inherited${level.charAt(0).toUpperCase()}${level.slice(1)}`] ?? [];
     const isAdding = this._addingToPath === slot.path && this._addingToLevel === level;
     const isEmpty = members.length === 0 && inherited.length === 0 && !isAdding;
+    const labels = { write: 'Write', read: 'Read', none: 'None' };
 
     return html`
       <div class="level-row">
-        <span class="level-row-label level-${level}">${level === 'write' ? 'Write' : 'Read'}</span>
+        <span class="level-row-label level-${level}">${labels[level]}</span>
         <div class="level-row-members">
           ${members.map((member) => this.renderPill(slot, level, member))}
           ${inherited.map((member) => html`
@@ -716,6 +741,7 @@ class DaPermissionsApp extends LitElement {
         <div class="perm-slot-header">${labelEl}</div>
         ${this.renderLevelRow(slot, 'read')}
         ${this.renderLevelRow(slot, 'write')}
+        ${slot.none.length > 0 ? this.renderLevelRow(slot, 'none') : nothing}
       </div>
     `;
   }
@@ -781,6 +807,9 @@ class DaPermissionsApp extends LitElement {
   renderAdmin() {
     const orgSectionTitles = { CONFIG: 'Config Permissions', '/ + **': 'Content Permissions' };
     return html`
+      ${this._readOnly ? html`
+        <div class="message warning">You have read-only access to this configuration.</div>
+      ` : nothing}
       ${this._site ? html`
         <div class="context-back-bar">
           <button class="context-back-btn" @click=${() => this.navigateToOrg()}>← ${this._org}</button>
