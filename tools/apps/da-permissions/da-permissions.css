@@ -164,6 +164,26 @@ sl-button.pw-quiet-danger::part(base):hover:not(:disabled) {
   transform: translateY(-50%) rotate(180deg);
 }
 
+.site-clear-btn {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--s2-gray-500);
+  border-radius: var(--s2-radius-75);
+}
+
+.site-clear-btn:hover {
+  color: var(--s2-gray-800);
+  background: var(--s2-gray-100);
+}
+
 .site-dropdown {
   position: absolute;
   top: calc(100% + 4px);

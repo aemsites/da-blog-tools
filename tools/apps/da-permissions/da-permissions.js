@@ -612,7 +612,11 @@ class DaPermissionsApp extends LitElement {
                 @keydown=${this.handleSiteInputKey}
                 @sl-blur=${this.handleSiteInputBlur}
               ></sl-input>
-              <span class="site-chevron ${this._siteDropdownOpen ? 'is-open' : ''}" aria-hidden="true">${icon('Smock_ChevronDown_18_N', 18, 18, '0 0 18 18')}</span>
+              ${this._site && !this._siteDropdownOpen ? html`
+                <button class="site-clear-btn" aria-label="Clear site" @click=${() => this.navigateToOrg()}>${icon('S2_Icon_Close_20_N')}</button>
+              ` : html`
+                <span class="site-chevron ${this._siteDropdownOpen ? 'is-open' : ''}" aria-hidden="true">${icon('Smock_ChevronDown_18_N', 18, 18, '0 0 18 18')}</span>
+              `}
               ${this._siteDropdownOpen ? html`
                 <div class="site-dropdown" role="listbox">
                   ${this.filteredSites.map((site, i) => html`
@@ -802,6 +806,17 @@ class DaPermissionsApp extends LitElement {
     `;
   }
 
+  renderContextBar() {
+    if (this._state !== 'admin' || !this._site) return nothing;
+    return html`
+      <div class="context-back-bar">
+        <button class="context-back-btn" @click=${() => this.navigateToOrg()}>← ${this._org}</button>
+        <span class="context-sep">›</span>
+        <span class="context-site-label">${this._site}</span>
+      </div>
+    `;
+  }
+
   // ---- Render: admin view ----
 
   renderAdmin() {
@@ -809,13 +824,6 @@ class DaPermissionsApp extends LitElement {
     return html`
       ${this._readOnly ? html`
         <div class="message warning">You have read-only access to this configuration.</div>
-      ` : nothing}
-      ${this._site ? html`
-        <div class="context-back-bar">
-          <button class="context-back-btn" @click=${() => this.navigateToOrg()}>← ${this._org}</button>
-          <span class="context-sep">›</span>
-          <span class="context-site-label">${this._site}</span>
-        </div>
       ` : nothing}
       <div class="slots-list">
         ${this.permissionSlots.map((slot) => this.renderSlot(slot, orgSectionTitles[slot.path] ?? null))}
@@ -882,6 +890,7 @@ class DaPermissionsApp extends LitElement {
   render() {
     return html`
       ${this.renderToolbar()}
+      ${this.renderContextBar()}
       ${this.renderInfoPanel()}
       ${this.renderMessage()}
       <div class="da-content">
