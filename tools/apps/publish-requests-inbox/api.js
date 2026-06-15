@@ -5,6 +5,8 @@ const WORKER_URL = 'https://publish-requests.aem-poc-lab.workers.dev';
 const CI_WORKER_URL = 'https://publish-requests-ci.aem-poc-lab.workers.dev';
 const LOCAL_WORKER_URL = 'http://localhost:8787';
 
+const APP_BASE_URL = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/publish-requests-inbox/publish-requests-inbox';
+
 const CORS_PROXY = 'https://da-etc.adobeaem.workers.dev/cors';
 
 const { getDaAdmin } = await import('https://da.live/nx/public/utils/constants.js');
@@ -786,6 +788,7 @@ export async function resendPublishRequest(org, site, path, requesterEmail, toke
     const previewUrl = `https://main--${site}--${org}.aem.page${pagePath}`;
 
     const opts = getOpts(token, 'POST', {
+      appBaseUrl: APP_BASE_URL,
       org,
       site,
       path,
