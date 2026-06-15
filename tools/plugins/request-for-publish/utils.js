@@ -5,6 +5,8 @@ const WORKER_URL = 'https://publish-requests.aem-poc-lab.workers.dev';
 const CI_WORKER_URL = 'https://publish-requests-ci.aem-poc-lab.workers.dev';
 const LOCAL_WORKER_URL = 'http://localhost:8787';
 
+const APP_BASE_URL = 'https://da.live/app/aemsites/da-blog-tools/tools/apps/publish-requests-inbox/publish-requests-inbox';
+
 const { getDaAdmin } = await import('https://da.live/nx/public/utils/constants.js');
 const { daFetch } = await import('https://da.live/nx/utils/daFetch.js');
 const DA_ADMIN = getDaAdmin();
@@ -424,7 +426,7 @@ export async function previewContent(org, site, path) {
  */
 export async function submitPublishRequest(requestData, token) {
   try {
-    const opts = getOpts(token, 'POST', requestData);
+    const opts = getOpts(token, 'POST', { appBaseUrl: APP_BASE_URL, ...requestData });
     const response = await fetch(`${getWorkerUrl()}/api/request-publish`, opts);
 
     const result = await response.json();
@@ -473,7 +475,7 @@ export async function submitPublishRequest(requestData, token) {
  */
 export async function resendPublishRequest(requestData, token) {
   try {
-    const opts = getOpts(token, 'POST', requestData);
+    const opts = getOpts(token, 'POST', { appBaseUrl: APP_BASE_URL, ...requestData });
     const response = await fetch(`${getWorkerUrl()}/api/request-publish`, opts);
 
     const result = await response.json();
