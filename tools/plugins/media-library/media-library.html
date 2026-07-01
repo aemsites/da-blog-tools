@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- ml-plugin rev: 2026-04-28-rev3 — NX imports from da.live (main); View Source must match after deploy -->
-<html lang="en" data-ml-plugin-rev="2026-04-28-rev3">
+<!-- ml-plugin rev: TEST-medialib-plugin-branch — NX imports from medialib-plugin branch for testing -->
+<html lang="en" data-ml-plugin-rev="TEST-medialib-plugin-branch">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Media Library · plugin rev3</title>
+  <title>Media Library · plugin TEST</title>
   <link rel="stylesheet" href="media-library.css">
 
   <script type="importmap">
@@ -21,8 +21,8 @@
   </div>
 
   <script type="module">
-    const PLUGIN_REV = '2026-04-28-rev3';
-    console.info(`[ml-plugin] ${PLUGIN_REV} — if Network still shows da.live for media-library.js, the browser is not serving this file (push + wait for preview, then hard refresh).`);
+    const PLUGIN_REV = 'TEST-medialib-plugin-branch';
+    console.info(`[ml-plugin] ${PLUGIN_REV} — Loading from medialib-plugin branch`);
 
     import { setConfig } from 'https://da.live/nx/scripts/nexter.js';
 
@@ -30,7 +30,7 @@
 
     setConfig({ imsClientId: 'da-web', env: 'prod' });
 
-    await import('https://da.live/nx/blocks/media-library/media-library.js');
+    await import('https://medialib-plugin--da-nx--adobe.aem.live/nx/blocks/media-library/media-library.js');
 
     const { context } = await DA_SDK;
     const ml = document.createElement('nx-media-library');
