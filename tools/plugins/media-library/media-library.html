@@ -25,14 +25,27 @@
     console.info(`[ml-plugin] ${PLUGIN_REV} — Loading from medialib-plugin branch`);
 
     import { setConfig } from 'https://da.live/nx/scripts/nexter.js';
-
     import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 
     setConfig({ imsClientId: 'da-web', env: 'prod' });
 
+    // Get token from SDK
+    const { context, token } = await DA_SDK;
+    console.info('[ml-plugin] Got token from SDK:', token ? 'YES' : 'NO');
+
+    // Import setImsDetails from nx daFetch
+    const { setImsDetails } = await import('https://medialib-plugin--da-nx--adobe.aem.live/nx/utils/daFetch.js');
+
+    // Inject token before loading media-library
+    if (token) {
+      setImsDetails(token);
+      console.info('[ml-plugin] Token injected via setImsDetails');
+    } else {
+      console.warn('[ml-plugin] No token from SDK!');
+    }
+
     await import('https://medialib-plugin--da-nx--adobe.aem.live/nx/blocks/media-library/media-library.js');
 
-    const { context } = await DA_SDK;
     const ml = document.createElement('nx-media-library');
     const org = context?.org;
     const repo = context?.repo;
