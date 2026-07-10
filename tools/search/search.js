@@ -1306,6 +1306,17 @@ async function scanFiles() {
         // Only process HTML files
         if (!item.path.endsWith('.html')) return;
 
+        // Apply exclude paths filter (mirrors logic in fetchFiles)
+        const excludePathsInput = document.getElementById('exclude-paths')?.value?.trim() || '';
+        if (excludePathsInput) {
+          const excludePaths = excludePathsInput.split(',').map((p) => p.trim());
+          const isExcluded = excludePaths.some((excludePath) => {
+            if (excludePath.startsWith('/')) return item.path.includes(excludePath);
+            return item.path.includes(`/${excludePath}`);
+          });
+          if (isExcluded) return;
+        }
+
         filesScanned++;
         updateProgress(20 + Math.min((filesScanned / 100) * 70, 70), `Scanning ${item.name}...`);
 
