@@ -1,5 +1,7 @@
 /* eslint-disable import/no-unresolved, no-console, no-restricted-syntax */
 /* eslint-disable no-continue, no-await-in-loop, prefer-destructuring */
+// eslint-disable-next-line import/extensions
+import { readSheetResponse, assertConfigResponse } from './response-utils.js';
 
 const WORKER_URL = 'https://publish-requests.aem-poc-lab.workers.dev';
 const CI_WORKER_URL = 'https://publish-requests-ci.aem-poc-lab.workers.dev';
@@ -159,19 +161,18 @@ function resolveApproversWithGroups(approversList, groupsData) {
  * See: https://docs.da.live/developers/api/config#get-config
  * @param {string} org - Organization
  * @param {string} site - Site
- * @param {string} token - Authorization token
  * @returns {Promise<Object|null>} Config data or null on failure
  */
-async function fetchWorkflowConfig(org, site, token) {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/json',
-  };
+async function fetchWorkflowConfig(org, site) {
+  // daFetch injects a fresh IMS token; no-store avoids a stale cached config.
+  const opts = { headers: { Accept: 'application/json' }, cache: 'no-store' };
 
-  // 1. Try site-level root config
+  // 1. Try site-level root config. A 404 is a legitimate "no site config"
+  // (fall through to org); assertConfigResponse throws on a transient failure
+  // so it is never silently mistaken for "no config".
   const siteUrl = `${DA_ADMIN}/config/${org}/${site}/`;
-  const siteResp = await fetch(siteUrl, { headers });
-  if (siteResp.ok) {
+  const siteResp = await daFetch(siteUrl, opts);
+  if (assertConfigResponse(siteResp)) {
     const config = await siteResp.json();
     if (config['publish-workflow-config']) {
       return config;
@@ -180,8 +181,8 @@ async function fetchWorkflowConfig(org, site, token) {
 
   // 2. Fallback to org-level root config
   const orgUrl = `${DA_ADMIN}/config/${org}/`;
-  const orgResp = await fetch(orgUrl, { headers });
-  if (orgResp.ok) {
+  const orgResp = await daFetch(orgUrl, opts);
+  if (assertConfigResponse(orgResp)) {
     const config = await orgResp.json();
     if (config['publish-workflow-config']) {
       return config;
@@ -555,16 +556,17 @@ export async function removePublishRequest(org, site, path, token) {
  * @param {string} org - Organization
  * @param {string} site - Site
  * @param {string} userEmail - The logged-in user's email
- * @param {string} token - Authorization token
  * @returns {Promise<Object[]>} Array of pending request objects the user can approve
  */
-export async function getAllPendingRequestsForUser(org, site, userEmail, token) {
-  // Fetch config and requests in parallel
+export async function getAllPendingRequestsForUser(org, site, userEmail) {
+  // Fetch config and requests in parallel via daFetch (fresh token) with caching
+  // disabled. A transient failure on either read now throws (surfaced by the UI)
+  // rather than silently yielding an empty inbox.
   const [config, requestsResp] = await Promise.all([
-    fetchWorkflowConfig(org, site, token),
-    fetch(
+    fetchWorkflowConfig(org, site),
+    daFetch(
       `${DA_ADMIN}/source/${org}/${site}${REQUESTS_SHEET_PATH}`,
-      getOpts(token, 'GET'),
+      { cache: 'no-store' },
     ),
   ]);
 
@@ -575,9 +577,7 @@ export async function getAllPendingRequestsForUser(org, site, userEmail, token) 
     );
   }
 
-  if (!requestsResp.ok) return [];
-
-  const requestsSheet = await requestsResp.json();
+  const requestsSheet = await readSheetResponse(requestsResp);
   const allRequests = requestsSheet.data || [];
   const pendingRequests = allRequests.filter((r) => r.status === 'pending' && r.path);
 
@@ -818,16 +818,15 @@ export async function resendPublishRequest(org, site, path, requesterEmail, toke
  * @param {string} org - Organization
  * @param {string} site - Site
  * @param {string} userEmail - The logged-in user's email
- * @param {string} token - Authorization token
  * @returns {Promise<Object[]>} Array of pending request objects submitted by the user
  */
-export async function getAllPendingRequestsByRequester(org, site, userEmail, token) {
+export async function getAllPendingRequestsByRequester(org, site, userEmail) {
   const sheetUrl = `${DA_ADMIN}/source/${org}/${site}${REQUESTS_SHEET_PATH}`;
-  const resp = await fetch(sheetUrl, getOpts(token, 'GET'));
+  // daFetch (fresh token) + no-store; a transient failure throws rather than
+  // silently showing the requester an empty "my requests" list.
+  const resp = await daFetch(sheetUrl, { cache: 'no-store' });
 
-  if (!resp.ok) return [];
-
-  const requestsSheet = await resp.json();
+  const requestsSheet = await readSheetResponse(resp);
   const allRequests = requestsSheet.data || [];
   const normalizedUser = userEmail.toLowerCase();
 
