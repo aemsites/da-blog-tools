@@ -220,6 +220,9 @@ class MsmApp extends LitElement {
   render() {
     return html`
       ${this.renderToolbar()}
+      <div class="nx-alert warning">
+        <p>This MSM app is deprecated and no longer maintained. Use the <a href="https://da.live/app/adobe-rnd/aem-apps/tools/apps/msm/msm" target="_top">aem-apps version</a> instead.</p>
+      </div>
       ${this.renderContent()}
     `;
   }
