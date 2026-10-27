@@ -2,6 +2,7 @@
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { LitElement, html, nothing } from 'da-lit';
 import { fetchMsmConfig, clearMsmCache } from './helpers/api.js';
+import { setMergeCopy } from './core/operations.js';
 import 'https://da.live/nx/public/sl/components.js';
 import './helpers/column-browser.js';
 import './helpers/action-panel.js';
@@ -219,6 +220,9 @@ class MsmApp extends LitElement {
   render() {
     return html`
       ${this.renderToolbar()}
+      <div class="nx-alert warning">
+        <p>This MSM app is deprecated and no longer maintained. Use the <a href="https://da.live/app/adobe-rnd/aem-apps/tools/apps/msm/msm" target="_top">aem-apps version</a> instead.</p>
+      </div>
       ${this.renderContent()}
     `;
   }
@@ -228,7 +232,8 @@ customElements.define('msm-app', MsmApp);
 
 (async function init() {
   const deepLink = parseDeepLink();
-  const { context, token } = await DA_SDK;
+  const { context, token, actions } = await DA_SDK;
+  setMergeCopy(actions.loc.mergeCopy);
   const cmp = document.createElement('msm-app');
   cmp.context = context;
   cmp.token = token;

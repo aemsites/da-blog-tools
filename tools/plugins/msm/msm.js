@@ -18,6 +18,7 @@ import {
   getStatusConfig,
   setSdkFetch as setUtilsSdkFetch,
   setEditUrlOrigin,
+  setMergeCopy,
 } from './utils.js';
 import { icon } from '../../apps/msm/core/icons.js';
 import { buildParentMap, effectiveSource, isOutOfSync } from '../../apps/msm/core/source-tree.js';
@@ -836,18 +837,27 @@ class DaMsm extends LitElement {
       </div>`;
   }
 
+  renderDeprecation() {
+    return html`
+      <div class="deprecation-banner">
+        This MSM plugin is deprecated. Switch your <code>prepare</code> sheet to
+        <code>https://main--aem-apps--adobe-rnd.aem.live/tools/plugins/msm/msm.html</code>.
+      </div>`;
+  }
+
   render() {
     if (this._loading) {
       return html`<p class="loading">${this._loading}</p>`;
     }
 
     if (!this._asSource && !this._asLinked) {
-      return html`<p class="no-linked">No linked sites configured.</p>`;
+      return html`${this.renderDeprecation()}<p class="no-linked">No linked sites configured.</p>`;
     }
 
     const { org, site, path } = this.details;
 
     return html`
+      ${this.renderDeprecation()}
       <div class="plugin-meta">${org}/${site} · ${path}</div>
       <hr class="plugin-hr">
       ${this._busy
@@ -885,6 +895,7 @@ export default function render(details) {
 
     setConfigSdkFetch(actions.daFetch);
     setUtilsSdkFetch(actions.daFetch);
+    setMergeCopy(actions.loc.mergeCopy);
 
     if (document.referrer) {
       try {

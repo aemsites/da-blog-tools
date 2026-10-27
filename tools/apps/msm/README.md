@@ -1,5 +1,7 @@
 # MSM — Multi-Site Management
 
+> **Deprecated:** MSM has moved to aem-apps. Use https://da.live/app/adobe-rnd/aem-apps/tools/apps/msm/msm instead. This copy is no longer maintained.
+
 A DA (Document Authoring) tool for managing content links across source sites and the sites that link to them. MSM lets authors preview, publish, sync, and control independent copies between a source site and its linked sites from a single interface.
 
 ## Overview
@@ -100,7 +102,7 @@ tools/apps/msm/
 | Lit (via `da-lit`) | `/tools/deps/lit/dist/index.js` | Web component framework |
 | DA SDK | `https://da.live/nx/utils/sdk.js` | Provides auth context and token |
 | DA Fetch | `https://da.live/nx/utils/daFetch.js` | Authenticated requests to DA APIs |
-| NX Merge | `https://da.live/nx/blocks/loc/project/index.js` | `mergeCopy` for content merging |
+| NX Merge | `DA_SDK.actions.loc.mergeCopy` | `mergeCopy` for content merging |
 | Shoelace components | `https://da.live/nx/public/sl/components.js` | UI primitives (`sl-input`, `sl-button`, etc.) |
 | NX Styles | `https://da.live/nx/styles/` and `https://da.live/nx/public/sl/styles.css` | Shared design tokens and component styles |
 
