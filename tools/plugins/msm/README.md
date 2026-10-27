@@ -1,5 +1,7 @@
 # Multi-site Manager (MSM) Plugin
 
+> **Deprecated:** MSM has moved to aem-apps. Point your `prepare` sheet at https://main--aem-apps--adobe-rnd.aem.live/tools/plugins/msm/msm.html instead. This copy is no longer maintained.
+
 A DA Prepare-menu plugin for managing multi-site links from the page editor.
 Lets authors publish, sync, detach, and reconnect between a source site and the
 sites that link to it without leaving DA.
@@ -84,8 +86,7 @@ current site from its source), two modes are available:
 
 - **Merge** — runs a 3-way merge that preserves local edits in the linked site
   while pulling in changes from the source. Backed by the
-  `mergeCopy` function from [`nx/blocks/loc/project`](https://da.live/nx/blocks/loc/project/index.js),
-  loaded dynamically at runtime.
+  `DA_SDK.actions.loc.mergeCopy`, injected at startup.
 - **Replace** — replaces the linked site's content with the source's content.
   Local edits are lost.
 
@@ -108,7 +109,7 @@ dependency wiring also differs:
 | `daFetch`          | `blocks/shared/utils.js`                        | `DA_SDK.actions.daFetch`, plumbed in via `setSdkFetch`             |
 | `DA_ORIGIN`        | `blocks/shared/constants.js`                    | `admin.da.live`, defined in the shared `core/fetch.js`             |
 | NX URL             | `getNx()` (versioned/branch-aware)              | Hardcoded `https://da.live/nx`                                     |
-| `mergeCopy`        | Dynamic import via `getNx()`                    | Dynamic import via the hardcoded NX URL                            |
+| `mergeCopy`        | Dynamic import via `getNx()`                    | `DA_SDK.actions.loc.mergeCopy`, plumbed in via `setMergeCopy`      |
 | UI primitives      | `se-*` components from `${nx}/public/se/components.js`   | Own plain `<button>` elements styled in `msm.css` (no `se-*`/`sl-*` component lib); base typography via nexter (`loadStyle` / `getStyle`) |
 | Icons              | Relative paths `/blocks/edit/img/...`           | Shared `core/icons.js` — inline `<svg><use>` from SVGs in `core/img/` |
 | Edit-link origin   | `window.location.origin` (always da.live)       | Derived from `document.referrer`; falls back to `https://da.live`  |
