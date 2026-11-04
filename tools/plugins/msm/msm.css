@@ -62,6 +62,16 @@
 
 /* ── Success banner ───────────────────────────────────────────────────────── */
 
+.deprecation-banner {
+  background: var(--s2-orange-100, #fff3e0);
+  border: 1.5px solid var(--s2-orange-500, #e68619);
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: 12px;
+  color: var(--s2-gray-900, #292929);
+  overflow-wrap: anywhere;
+}
+
 .success-banner {
   background: #f2fbf6;
   border: 1.5px solid var(--s2-green-700, #0ba45d);

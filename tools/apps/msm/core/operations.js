@@ -3,8 +3,6 @@ import {
   daFetch, DA_ORIGIN, AEM_ADMIN, cleanPath,
 } from './fetch.js';
 
-const NX = 'https://da.live/nx';
-
 const EXT_MIME_TYPES = {
   html: 'text/html',
   json: 'application/json',
@@ -23,13 +21,12 @@ let editUrlOrigin = 'https://da.live';
 export function setEditUrlOrigin(origin) { if (origin) editUrlOrigin = origin; }
 export function getEditUrlOrigin() { return editUrlOrigin; }
 
+const NX_LOC = 'https://da.live/nx/public/loc/index.js';
+
 let mergeCopyFn;
 export function setMergeCopy(fn) { mergeCopyFn = fn; }
 async function ensureMergeCopy() {
-  if (!mergeCopyFn) {
-    const mod = await import(`${NX}/blocks/loc/project/index.js`);
-    mergeCopyFn = mod.mergeCopy;
-  }
+  if (!mergeCopyFn) ({ mergeCopy: mergeCopyFn } = await import(NX_LOC));
   return mergeCopyFn;
 }
 
@@ -81,12 +78,14 @@ export async function mergeFromSource(org, sourceSite, targetSite, pagePath, ext
   try {
     const clean = cleanPath(pagePath, ext);
     const mergeCopy = await ensureMergeCopy();
-    const url = {
-      source: `/${org}/${sourceSite}${clean}.${ext}`,
-      destination: `/${org}/${targetSite}${clean}.${ext}`,
-    };
-    const result = await mergeCopy(url, 'MSM Merge');
-    if (!result?.ok) return { error: 'Merge failed' };
+    const result = await mergeCopy({
+      fetch: daFetch,
+      daOrigin: DA_ORIGIN,
+      urlSource: `/${org}/${sourceSite}${clean}.${ext}`,
+      urlTarget: `/${org}/${targetSite}${clean}.${ext}`,
+      msg: 'MSM Merge',
+    });
+    if (!result?.ok) return { error: result?.error || `Merge failed (${result?.status || 'unknown'})` };
     return { ok: true, editUrl: `${editUrlOrigin}/edit#/${org}/${targetSite}${clean}` };
   } catch (e) {
     return { error: e.message || 'Merge failed' };
