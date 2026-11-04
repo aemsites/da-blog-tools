@@ -85,8 +85,8 @@ When syncing content from a source into a linked site (or pulling into the
 current site from its source), two modes are available:
 
 - **Merge** — runs a 3-way merge that preserves local edits in the linked site
-  while pulling in changes from the source. Backed by the
-  `DA_SDK.actions.loc.mergeCopy`, injected at startup.
+  while pulling in changes from the source. Backed by `mergeCopy` from
+  https://da.live/nx/public/loc/index.js, using the SDK's `daFetch` as transport.
 - **Replace** — replaces the linked site's content with the source's content.
   Local edits are lost.
 
@@ -109,7 +109,7 @@ dependency wiring also differs:
 | `daFetch`          | `blocks/shared/utils.js`                        | `DA_SDK.actions.daFetch`, plumbed in via `setSdkFetch`             |
 | `DA_ORIGIN`        | `blocks/shared/constants.js`                    | `admin.da.live`, defined in the shared `core/fetch.js`             |
 | NX URL             | `getNx()` (versioned/branch-aware)              | Hardcoded `https://da.live/nx`                                     |
-| `mergeCopy`        | Dynamic import via `getNx()`                    | `DA_SDK.actions.loc.mergeCopy`, plumbed in via `setMergeCopy`      |
+| `mergeCopy`        | Dynamic import via `getNx()`                    | Dynamic import of `nx/public/loc/index.js`; SDK `daFetch` transport |
 | UI primitives      | `se-*` components from `${nx}/public/se/components.js`   | Own plain `<button>` elements styled in `msm.css` (no `se-*`/`sl-*` component lib); base typography via nexter (`loadStyle` / `getStyle`) |
 | Icons              | Relative paths `/blocks/edit/img/...`           | Shared `core/icons.js` — inline `<svg><use>` from SVGs in `core/img/` |
 | Edit-link origin   | `window.location.origin` (always da.live)       | Derived from `document.referrer`; falls back to `https://da.live`  |

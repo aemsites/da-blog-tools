@@ -12,6 +12,5 @@ export {
   mergeFromSource,
   setEditUrlOrigin,
   getEditUrlOrigin,
-  setMergeCopy,
 } from '../../apps/msm/core/operations.js';
 export { getPageStatus, getStatusConfig } from '../../apps/msm/core/status.js';
